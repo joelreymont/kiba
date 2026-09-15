@@ -105,15 +105,22 @@ Panel {
     return n.indexOf("revoked") >= 0 || n.indexOf("expired") >= 0
   }
 
+  // The window that decides the color: the session when there is one, else
+  // the only window reported.
+  function headlineLimit(usage) {
+    var s = sessionLimit(usage)
+    return s ? s : weeklyLimit(usage)
+  }
+
   // blocked: a window is used up; dead: the login no longer works; tight:
-  // nearly used up; ok: room; unknown: no data
+  // under half of the session left; ok: at least half left; unknown: no data
   function usageState(usage) {
     if (loginDead(usage)) return "dead"
     if (!usage || usage.limits.length === 0) return "unknown"
-    var worst = 0
-    for (var i = 0; i < usage.limits.length; i += 1) worst = Math.max(worst, usage.limits[i].percent)
-    if (worst >= 100) return "blocked"
-    if (worst >= 90) return "tight"
+    for (var i = 0; i < usage.limits.length; i += 1)
+      if (usage.limits[i].percent >= 100) return "blocked"
+    var h = headlineLimit(usage)
+    if (h && 100 - h.percent < 50) return "tight"
     return "ok"
   }
 
@@ -156,12 +163,14 @@ Panel {
     return parts.length > 0 ? "(" + parts.join(", ") + ")" : ""
   }
 
-  // right-hand figures: session and weekly use
+  // right-hand figures: what is left of the session and of the week; a
+  // used-up account just says so
   function figuresText(usage) {
+    if (usageState(usage) === "blocked") return "limit"
     var s = sessionLimit(usage), w = weeklyLimit(usage)
     var parts = []
-    if (s) parts.push(s.percent + "%")
-    if (w) parts.push(w.percent + "%")
+    if (s) parts.push((100 - s.percent) + "%")
+    if (w) parts.push((100 - w.percent) + "%")
     return parts.join(" · ")
   }
 
@@ -172,7 +181,8 @@ Panel {
     else for (var i = 0; i < a.usage.limits.length; i += 1) {
       var l = a.usage.limits[i]
       var when = l.resetsAt !== "" ? " · resets in " + resetLong(l.resetsAt) : ""
-      lines.push(l.label + ": " + l.percent + "%" + when)
+      var left = l.percent >= 100 ? "limit reached" : (100 - l.percent) + "% left"
+      lines.push(l.label + ": " + left + when)
     }
     if (a.usage && a.usage.fetchedAt > 0) lines.push("Probed " + ageText(a.usage.fetchedAt))
     if (usageState(a.usage) === "dead") lines.push("Click to log in to this account again")

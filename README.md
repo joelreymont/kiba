@@ -107,10 +107,11 @@ account again. Every failure is recorded as that account's `note` and the run
 continues with the next account. The probe's scratch files live under
 `<store>/probe/` and are removed after each request.
 
-The widget colors each account's dot: green has room, yellow is above 90% of
-a window, red has used a window up (the label then carries the reset time,
-as in `(pro, 5d)`), grey has no data. Hovering a row shows every window and
-its reset time. The panel re-probes once per open when the newest record is
+The widget shows what is left of each window rather than what is used:
+green with at least half of the session left, yellow below that, red once a
+window is used up (the figures then read `limit` and the label carries the
+reset time, as in `(pro, 5d)`), grey with no data. Hovering a row shows every
+window with what is left and when it resets. The panel re-probes once per open when the newest record is
 older than ten minutes, and "Refresh usage" probes on demand.
 
 ## Bar widget
