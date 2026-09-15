@@ -152,7 +152,7 @@ Panel {
     if (account.plan !== "") parts.push(account.plan)
     var b = blockingLimit(account.usage)
     if (b && b.resetsAt !== "") parts.push(resetShort(b.resetsAt))
-    if (loginDead(account.usage)) parts.push("add again")
+    if (loginDead(account.usage)) parts.push("log in again")
     return parts.length > 0 ? "(" + parts.join(", ") + ")" : ""
   }
 
@@ -175,7 +175,8 @@ Panel {
       lines.push(l.label + ": " + l.percent + "%" + when)
     }
     if (a.usage && a.usage.fetchedAt > 0) lines.push("Probed " + ageText(a.usage.fetchedAt))
-    if (!a.active) lines.push("Click to switch " + p.title + " to this account")
+    if (usageState(a.usage) === "dead") lines.push("Click to log in to this account again")
+    else if (!a.active) lines.push("Click to switch " + p.title + " to this account")
     return lines.join("\n")
   }
 
@@ -263,10 +264,23 @@ Panel {
     if (delta !== 0) setCursor(cursor + (delta > 0 ? 1 : -1))
   }
 
+  // a dead saved login cannot be switched to; the row starts a fresh login
+  function useOrReadd(provider, email) {
+    for (var i = 0; i < providers.length; i += 1) {
+      if (providers[i].id !== provider) continue
+      for (var j = 0; j < providers[i].accounts.length; j += 1) {
+        var a = providers[i].accounts[j]
+        if (a.email !== email) continue
+        if (usageState(a.usage) === "dead") { root.close(); status.add(provider); return }
+      }
+    }
+    status.use(provider, email)
+  }
+
   function activate() {
     if (status.busy || actions.length === 0) return
     var a = actions[Math.max(0, Math.min(actions.length - 1, cursor))]
-    if (a.kind === "use") { if (!a.active) status.use(a.provider, a.email) }
+    if (a.kind === "use") { if (!a.active) useOrReadd(a.provider, a.email) }
     else if (a.kind === "save") status.save(a.provider)
     else if (a.kind === "add") { root.close(); status.add(a.provider) }
     else if (a.kind === "usage") status.probeUsage()
@@ -547,7 +561,7 @@ Panel {
       hoverEnabled: true
       cursorShape: row.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
       onContainsMouseChanged: if (containsMouse) root.setCursor(row.actionIndex)
-      onClicked: if (row.enabled) status.use(row.provider.id, row.account.email)
+      onClicked: if (row.enabled) root.useOrReadd(row.provider.id, row.account.email)
     }
 
     PanelToolTip {

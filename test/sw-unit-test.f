@@ -196,15 +196,20 @@ create UT-BUF 256 allot
    LOCK$ DIR? TFALSE ;
 
 \ a second login under the same email but another organization gets its own
-\ slot, "a@x.test (Org C)", and the active mark follows the organization
+\ slot, "a@x.test #2", and the active mark follows the organization
 : CFG-A2$ ( -- ptr u8 n )
    s\" {\"oauthAccount\":{\"accountUuid\":\"u9\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-c\",\"organizationName\":\"Org C\"}}" ;
+
+\ a third organization whose name only repeats the email
+: CFG-A3$ ( -- ptr u8 n )
+   s\" {\"oauthAccount\":{\"accountUuid\":\"u8\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-d\",\"organizationName\":\"a@x.test's Organization\"}}" ;
 
 : CREDS-A2$ ( -- ptr u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-a2\",\"subscriptionType\":\"team\"}}" ;
 
 : UT-SAME-EMAIL ( -- )
-   s" a@x.test (Org C)" s" a@x.test" NAME-FOR-EMAIL? TTRUE
+   s" a@x.test (Org C)" s" a@x.test" NAME-FOR-EMAIL? TFALSE
+   s" a@x.test #2" s" a@x.test" NAME-FOR-EMAIL? TTRUE
    s" a@x.test" s" a@x.test" NAME-FOR-EMAIL? TTRUE
    s" a@x.testx" s" a@x.test" NAME-FOR-EMAIL? TFALSE
    s" b@x.test (Org C)" s" a@x.test" NAME-FOR-EMAIL? TFALSE
@@ -213,19 +218,28 @@ create UT-BUF 256 allot
    P-CLAUDE CMD-SAVE
    P-CLAUDE LIST-ACCOUNTS ACCT# 2 T=
    0 ACCT-NAME s" a@x.test" T$=
-   1 ACCT-NAME s" a@x.test (Org C)" T$=
-   P-CLAUDE s" a@x.test (Org C)" s" credentials.json" SLOT-FILE$ READ-FILE$ CREDS-A2$ T$=
+   1 ACCT-NAME s" a@x.test #2" T$=
+   P-CLAUDE s" a@x.test #2" s" credentials.json" SLOT-FILE$ READ-FILE$ CREDS-A2$ T$=
    P-CLAUDE s" a@x.test" s" credentials.json" SLOT-FILE$ READ-FILE$ CREDS-A$ T$=
-   STATUS-JSON$ s\" \"email\":\"a@x.test (Org C)\",\"plan\":\"team\",\"active\":true" CONTAINS? TTRUE
+   STATUS-JSON$ s\" \"email\":\"a@x.test #2\",\"plan\":\"team\",\"active\":true" CONTAINS? TTRUE
    STATUS-JSON$ s\" \"email\":\"a@x.test\",\"plan\":\"max\",\"active\":false" CONTAINS? TTRUE
    P-CLAUDE s" a@x.test" CMD-USE
    CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
    STATUS-JSON$ s\" \"email\":\"a@x.test\",\"plan\":\"max\",\"active\":true" CONTAINS? TTRUE
-   P-CLAUDE s" a@x.test (Org C)" CMD-USE
+   P-CLAUDE s" a@x.test #2" CMD-USE
    CLAUDE-CREDS$ READ-FILE$ CREDS-A2$ T$=
    P-CLAUDE LIVE-IDENTITY TTRUE ORG$ s" org-c" T$=
    P-CLAUDE s" a@x.test" CMD-USE
-   P-CLAUDE s" a@x.test (Org C)" CMD-FORGET ;
+   CLAUDE-CONFIG$ CFG-A3$ WRITE-PRIVATE
+   CLAUDE-CREDS$ CREDS-A2$ WRITE-PRIVATE
+   P-CLAUDE CMD-SAVE
+   P-CLAUDE CMD-SAVE
+   P-CLAUDE LIST-ACCOUNTS ACCT# 3 T=
+   1 ACCT-NAME s" a@x.test #2" T$=
+   2 ACCT-NAME s" a@x.test #3" T$=
+   P-CLAUDE s" a@x.test" CMD-USE
+   P-CLAUDE s" a@x.test #2" CMD-FORGET
+   P-CLAUDE s" a@x.test #3" CMD-FORGET ;
 
 \ install into a config that has no oauthAccount, an empty one, and none at all
 : UT-INSTALL-INSERT ( -- )
@@ -415,9 +429,7 @@ create UT-BUF 256 allot
    d du s\" \"refresh_token\":\"rt-d2\"" CONTAINS? TTRUE
    d du s\" \"account_id\":\"acct\"" CONTAINS? TTRUE
    d du CODEX-IDENTITY TTRUE EMAIL$ s" d@x.test" T$=
-   P-CODEX s" z@x.test" LOAD-USAGE TTRUE
-   LIM#@ 0 T=
-   NOTE$ s" login revoked" STARTS-WITH? TTRUE
+   P-CODEX s" z@x.test" SLOT-DIR$ DIR? TFALSE
    STATUS-JSON$ s\" \"usage\":{\"fetchedAt\":" CONTAINS? TTRUE
    STATUS-JSON$ s\" \"limits\":[{\"label\":\"Session (5-hour)\",\"percent\":56," CONTAINS? TTRUE
    LOG$ READ-FILE$ {: l lu :}
@@ -429,8 +441,10 @@ create UT-BUF 256 allot
    l lu s" Authorization: Bearer sk-a" CONTAINS? TTRUE
    l lu s" Authorization: Bearer at-z" CONTAINS? TTRUE
    s" /body.json" PSUB-PUBLIC$ FILE? TFALSE
-   P-CLAUDE s" b@x.test" CMD-FORGET
-   P-CODEX s" z@x.test" CMD-FORGET ;
+   P-CODEX s" d@x.test" CMD-USE
+   P-CODEX s" d@x.test" LOAD-USAGE TTRUE LIM#@ 2 T=
+   P-CODEX s" c@x.test" CMD-USE
+   P-CLAUDE s" b@x.test" CMD-FORGET ;
 
 \ `add` runs the login with the live file out of the way and restores it on
 \ failure; the fake `codex` records what it saw and writes AUTH-D on success

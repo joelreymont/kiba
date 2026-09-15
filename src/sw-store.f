@@ -17,6 +17,7 @@ create ID-EMAIL 256 allot           variable ID-EMAIL-U    \ the identity being 
 create ID-ORG 128 allot             variable ID-ORG-U
 create ID-ORGNAME 128 allot         variable ID-ORGNAME-U
 create SLOT-ORG 128 allot           variable SLOT-ORG-U    \ a slot's organization
+create SAVED-NAME NAME-CAP allot    variable SAVED-NAME-U  \ the slot the last save went to
 
 : ACCT-SLOT ( n -- ptr u8 )
    ACCT-NAMES swap NAME-CAP * + ;
@@ -93,22 +94,30 @@ private
    then
    ORG$ SLOT-ORG SLOT-ORG-U 128 SPAN! ;
 
-: NAME-WITH-ORG ( -- ptr u8 n )
-   SB-RESET ID-EMAIL$ SB-APPEND s"  (" SB-APPEND
-   ID-ORGNAME-U @ 0 > if ID-ORGNAME$ SB-APPEND else ID-ORG$ 8 min SB-APPEND then
-   s" )" SB-APPEND SB$ ;
+9 constant NAME-TRIES
 
-\ the slot name for the identity in ID-*: the bare email unless another
-\ organization already holds that name, then "email (organization)"
+\ candidate n: the bare email, then "email #2", "email #3", ...
+: NAME-CANDIDATE ( n -- ptr u8 n ) {: n :}
+   n 1 = if ID-EMAIL$ exit then
+   SB-RESET ID-EMAIL$ SB-APPEND s"  #" SB-APPEND n FMT:SB-U SB$ ;
+
+\ does the slot named by NAME-OUT hold the organization in ID-*?
+: SLOT-MATCHES-ID? ( n -- bool ) {: p :}
+   p NAME-OUT NAME-OUT-U @ SLOT-ORG-READ
+   SLOT-ORG-U @ 0= if true exit then
+   ID-ORG-U @ 0= if true exit then
+   SLOT-ORG SLOT-ORG-U @ ID-ORG$ STR= ;
+
+\ the slot name for the identity in ID-*: the first candidate that either
+\ does not exist yet or already holds this organization
 : RESOLVE-NAME ( n -- ptr u8 n ) {: p :}
-   ID-EMAIL$ NAME-OUT NAME-OUT-U NAME-CAP 1- SPAN!
-   p ID-EMAIL$ SLOT-DIR$ DIR? 0= if NAME-OUT NAME-OUT-U @ exit then
-   p ID-EMAIL$ SLOT-ORG-READ
-   SLOT-ORG-U @ 0= if NAME-OUT NAME-OUT-U @ exit then
-   ID-ORG-U @ 0= if NAME-OUT NAME-OUT-U @ exit then
-   SLOT-ORG SLOT-ORG-U @ ID-ORG$ STR= if NAME-OUT NAME-OUT-U @ exit then
-   NAME-WITH-ORG NAME-OUT NAME-OUT-U NAME-CAP 1- SPAN!
-   NAME-OUT NAME-OUT-U @ ;
+   1 begin dup NAME-TRIES <= while
+      dup NAME-CANDIDATE NAME-OUT NAME-OUT-U NAME-CAP 1- SPAN!
+      p NAME-OUT NAME-OUT-U @ SLOT-DIR$ DIR? 0= if drop NAME-OUT NAME-OUT-U @ exit then
+      p SLOT-MATCHES-ID? if drop NAME-OUT NAME-OUT-U @ exit then
+      1+
+   repeat drop
+   E-SW-CAPACITY throw ;
 
 : SLOT-PLAN-RAW ( n ptr u8 n -- ) {: p a u :}
    p case
@@ -155,8 +164,11 @@ public
      E-SW-PROVIDER throw
    endcase ;
 
+: SAVED-NAME$ ( -- ptr u8 n ) SAVED-NAME SAVED-NAME-U @ ;
+
 : SAVE-LIVE ( n -- ) {: p :}
-   p LIVE-NAME {: a u :}
+   p LIVE-NAME SAVED-NAME SAVED-NAME-U NAME-CAP 1- SPAN!
+   SAVED-NAME$ {: a u :}
    p LIVE-IDENTITY drop
    p case
      P-CLAUDE of a u CLAUDE-SAVE-LIVE endof

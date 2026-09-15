@@ -24,7 +24,8 @@ back in place, so a switch is one command instead of a browser round trip.
   restored under the fixed name `api-key`.
 - **Two logins under one email** (a second Claude organization or a second
   ChatGPT workspace) get separate slots: the first keeps the bare email, the
-  next is named `email (Organization)`. Every command takes that full name.
+  next ones are `email #2`, `email #3`, and so on. Every command takes that
+  full name; the store matches a login to its slot by organization.
 - **Store**: `$XDG_DATA_HOME/switcher/<provider>/<email>/` (default
   `~/.local/share/switcher`), directories `0700`, files `0600`, every write
   through a same-directory temp file and rename. A `lock` directory serializes

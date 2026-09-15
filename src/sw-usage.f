@@ -42,6 +42,7 @@ create RESET-BUF LIM-RESET-CAP allot
 variable OUT-FD
 variable HTTP-CODE
 variable PROBE-LIVE?                \ bool: the account being probed is the live one
+variable PROBE-REVOKED              \ bool: the provider says this login is gone for good
 
 : USAGE-NAME$ ( -- ptr u8 n ) s" usage.json" ;
 
@@ -511,7 +512,10 @@ create WEEKLY-RESET LIM-RESET-CAP allot    variable WEEKLY-RESET-U
    code -2 = if s" no access token saved" NOTE! exit then
    code 200 = if BODY-READ CODEX-LIMITS exit then
    code 401 = if
-      CODEX-REVOKED? if s" login revoked by a later `codex login`: add this account again" NOTE! exit then
+      CODEX-REVOKED? if
+         true PROBE-REVOKED !
+         s" login revoked by a later `codex login`" NOTE! exit
+      then
       PROBE-LIVE? @ 0= if
          CODEX-REFRESH if
             p a u AUTH-NAME$ SLOT-FILE$ CFG$ WRITE-PRIVATE
@@ -583,6 +587,7 @@ EXPORT HUNDREDTHS
 \ probe one saved account and fill the limit table
 : PROBE-RAW ( n ptr u8 n bool -- ) {: p a u live :}
    live PROBE-LIVE? !
+   false PROBE-REVOKED !
    PROBE-PREPARE
    p a u p MARKER$ SLOT-FILE$ CFG-BUF CFG-U READ-INTO 2drop
    p case
@@ -598,11 +603,17 @@ EXPORT HUNDREDTHS
    SB-RESET s" probe failed (error " SB-APPEND FMT:SB-INT s" )" SB-APPEND SB$ NOTE! ;
 
 \ probe one saved account and record the outcome in its usage file; a failure
-\ becomes that account's note and the run moves on to the next account
+\ becomes that account's note and the run moves on to the next account. A
+\ saved login the provider has revoked is useless, so its slot is removed;
+\ the live account keeps its slot, because the live files are what to fix.
 : PROBE-SLOT ( n ptr u8 n bool -- ) {: p a u live :}
    p a u live [: PROBE-KEEP ;] catch {: rc :} 2drop 2drop
    rc 0<> if LIM-RESET rc PROBE-FAILED-NOTE then
+   PROBE-REVOKED @ live 0= and if p a u SLOT-DIR$ REMOVE-TREE PROBE-CLEANUP exit then
    p a u WRITE-USAGE
    PROBE-CLEANUP ;
+
+: PROBE-REMOVED? ( -- bool )
+   PROBE-REVOKED @ PROBE-LIVE? @ 0= and ;
 
 ;package

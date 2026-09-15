@@ -194,9 +194,11 @@ private
    p INSTALLING? if exit then
    p LIVE-IDENTITY if p SAVE-LIVE then ;
 
+\ the account just installed is probed at once so its figures are current
 : USE-LOCKED ( -- )
    CMD-P @ SAVE-BACK
-   CMD-P @ NAME$ INSTALL ;
+   CMD-P @ NAME$ INSTALL
+   CMD-P @ NAME$ true PROBE-SLOT ;
 
 : ADD-LOCKED ( -- )
    CMD-P @ INSTALLING? ADD-MARKED !
@@ -214,10 +216,12 @@ private
    CMD-P @ LIVE-IDENTITY 0= if CMD-P @ RESTORE-ASIDE E-SW-NO-LIVE throw then
    CMD-P @ CLEAR-MARK
    CMD-P @ SAVE-LIVE
-   CMD-P @ DROP-ASIDE ;
+   CMD-P @ DROP-ASIDE
+   CMD-P @ SAVED-NAME$ true PROBE-SLOT ;
 
 : .PROBED ( n n -- ) {: p i :}
    p PROVIDER$ type s" : " type i ACCT-NAME type s"   " type
+   PROBE-REMOVED? if s" login revoked; removed" type cr exit then
    p i ACCT-NAME LOAD-USAGE drop
    LIM#@ 0= if NOTE$ type cr exit then
    .LIMITS cr ;
@@ -276,7 +280,7 @@ public
    rc 0<> if drop [: ADD-RESTORE-LOCKED ;] WITH-LOCK rc throw then
    0 <> if [: ADD-RESTORE-LOCKED ;] WITH-LOCK E-SW-LOGIN throw then
    [: ADD-SAVE-LOCKED ;] WITH-LOCK
-   p PROVIDER$ type s" : added " type EMAIL$ type cr
+   p PROVIDER$ type s" : added " type SAVED-NAME$ type cr
    p USAGE-REFRESH ;
 
 : CMD-FORGET ( n ptr u8 n -- ) {: p a u :}

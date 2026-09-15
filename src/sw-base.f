@@ -86,12 +86,12 @@ $3D constant EQUALS
 : CHECK-NAME ( ptr u8 n -- )
    NAME-OK? 0= if E-SW-NAME throw then ;
 
-\ a slot name belongs to an email when it is the email or "email (…)"
+\ a slot name belongs to an email when it is the email or "email #n"
 : NAME-FOR-EMAIL? ( ptr u8 n ptr u8 n -- bool ) {: a u e eu :}
    a u e eu STR= if true exit then
    u eu 2 + <= if false exit then
    a eu e eu STR= 0= if false exit then
-   a eu + 2 s"  (" STR= ;
+   a eu + 2 s"  #" STR= ;
 
 : STR< ( ptr u8 n ptr u8 n -- bool ) {: a u b v :}
    0 begin
