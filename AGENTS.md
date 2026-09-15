@@ -30,8 +30,8 @@ checked Habu program; a thin Omarchy bar widget runs it.
 ## Layout
 
 - `src/` checked Habu sources; `test/sw-unit-test.f` the checked test suite,
-  which writes fake `curl`, `codex`, and collector scripts into the scratch
-  PATH (`KIBA_TEST_LOG` collects what they were called with).
+  which writes fake `curl` and `codex` scripts into the scratch PATH
+  (`KIBA_TEST_LOG` collects what they were called with).
 - `plugin/kiba/` Omarchy bar widget (QML). It only runs the CLI and
   renders `kiba status --json`; no account logic lives in QML.
 - `build.sh` builds the native binary with `tools/hb-build.f --repl`,

@@ -44,8 +44,7 @@ kiba usage [claude|codex]     probe the rate limits of every saved account
 `<name>` is the account's email, or `email #2`, `email #3` for further
 logins under the same email. Exit codes: 0 ok, 64 usage, 1 any other failure
 with a one-line reason on stderr. `use` and `add` re-probe the account they
-touched and ask `omarchy-agent-usage-update --limits-only` to refresh the
-Omarchy agents widget when it is on PATH.
+touched, so the widget shows its figures at once.
 
 `status --json` shape:
 

@@ -302,8 +302,7 @@ public
    a u CHECK-NAME
    p CMD-P !  a u NAME-BUF NAME-U 256 SPAN!
    [: USE-LOCKED ;] WITH-LOCK
-   p PROVIDER$ type s" : now " type a u type cr
-   p USAGE-REFRESH ;
+   p PROVIDER$ type s" : now " type a u type cr ;
 
 : CMD-ADD ( n -- ) {: p :}
    p CHECK-LOGIN-CLI
@@ -313,8 +312,7 @@ public
    rc 0<> if drop [: ADD-RESTORE-LOCKED ;] WITH-LOCK rc throw then
    0 <> if [: ADD-RESTORE-LOCKED ;] WITH-LOCK E-SW-LOGIN throw then
    [: ADD-SAVE-LOCKED ;] WITH-LOCK
-   p PROVIDER$ type s" : added " type SAVED-NAME$ type cr
-   p USAGE-REFRESH ;
+   p PROVIDER$ type s" : added " type SAVED-NAME$ type cr ;
 
 : CMD-FORGET ( n ptr u8 n -- ) {: p a u :}
    a u CHECK-NAME

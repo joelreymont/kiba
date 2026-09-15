@@ -335,23 +335,9 @@ create UT-BUF 256 allot
    CODEX-AUTH$ REMOVE-FILE
    r ru CODEX-AUTH$ RENAME-FILE ;
 
-\ the usage refresh runs the collector command found on PATH with the
-\ provider as its last argument; the fake collector records its argv
-: UT-FAKE-COLLECTOR ( -- )
-   HOME$ {: h hu :}
-   SB-RESET h hu SB-APPEND s" /bin" SB-APPEND SB$ ENSURE-PRIVATE
-   SB-RESET h hu SB-APPEND s" /bin/omarchy-agent-usage-update" SB-APPEND SB$ UT-BUF 256 SPAN-COPY {: f fu :}
-   f fu s\" #!/bin/sh\nprintf '%s\\n' \"$@\" > \"$HOME/collector.args\"\n" WRITE-ALL
-   f fu CHMOD-X ;
-
-: UT-USAGE-REFRESH ( -- )
-   UT-FAKE-COLLECTOR
-   P-CODEX USAGE-REFRESH
-   HOME$ {: h hu :}
-   SB-RESET h hu SB-APPEND s" /collector.args" SB-APPEND SB$ READ-FILE$ s\" --limits-only\ncodex\n" T$= ;
-
 : UT-WRITE-SCRIPT ( ptr u8 n ptr u8 n -- ) {: n nu body bu :}
    HOME$ {: h hu :}
+   SB-RESET h hu SB-APPEND s" /bin" SB-APPEND SB$ ENSURE-PRIVATE
    SB-RESET h hu SB-APPEND s" /bin/" SB-APPEND n nu SB-APPEND SB$ UT-BUF 256 SPAN-COPY {: f fu :}
    f fu body bu WRITE-ALL
    f fu CHMOD-X ;
@@ -588,7 +574,6 @@ create UT-BUF 256 allot
    UT-API-KEY
    UT-SYMLINK
    UT-STRAY-MARKERS
-   UT-USAGE-REFRESH
    UT-ADD
    UT-PCT
    UT-USAGE
