@@ -1,12 +1,14 @@
 \ sw-cli.f - the switcher commands: status, save, use, add, forget.
 require ../src/sw-store.f
 require ../src/sw-run.f
+require ../src/sw-usage.f
 require lib/json-write.f
 require lib/fmt.f
 
 package SW
 
 create LEMAIL-BUF 256 allot   variable LEMAIL-U
+create LNAME-BUF 256 allot    variable LNAME-U
 create LPLAN-BUF 64 allot     variable LPLAN-U
 create NAME-BUF 256 allot     variable NAME-U
 variable CMD-P
@@ -15,15 +17,17 @@ variable SCAN-LIVE                   \ bool: the provider has a live login
 variable ADD-MARKED                  \ bool: a marker already existed before the login
 
 : LEMAIL$ ( -- ptr u8 n ) LEMAIL-BUF LEMAIL-U @ ;
+: LNAME$ ( -- ptr u8 n ) LNAME-BUF LNAME-U @ ;
 : LPLAN$ ( -- ptr u8 n ) LPLAN-BUF LPLAN-U @ ;
 : NAME$ ( -- ptr u8 n ) NAME-BUF NAME-U @ ;
 
 \ the live identity is copied aside because slot reads reuse EMAIL$/PLAN$
-: LOAD-LIVE ( n -- bool )
-   0 LEMAIL-U ! 0 LPLAN-U !
-   LIVE-IDENTITY dup if
+: LOAD-LIVE ( n -- bool ) {: p :}
+   0 LEMAIL-U ! 0 LPLAN-U ! 0 LNAME-U !
+   p LIVE-IDENTITY dup if
       EMAIL$ LEMAIL-BUF LEMAIL-U 256 SPAN!
       PLAN$ LPLAN-BUF LPLAN-U 64 SPAN!
+      p LIVE-NAME LNAME-BUF LNAME-U 256 SPAN!
    then ;
 
 \ the saved list comes first so a broken live file still leaves it readable
@@ -42,14 +46,16 @@ variable ADD-MARKED                  \ bool: a marker already existed before the
 
 : ACTIVE? ( n -- bool ) {: i :}
    SCAN-LIVE @ 0= if false exit then
-   i ACCT-NAME LEMAIL$ STR= ;
+   i ACCT-NAME LNAME$ STR= ;
 
 \ ---- reasons ----------------------------------------------------------------
 public
 
+\ LOCK$ builds through the same string builder, so it goes first
 : LOCKED-REASON$ ( -- ptr u8 n )
+   LOCK$ {: l lu :}
    SB-RESET s" switcher: another switcher holds the store lock; remove " SB-APPEND
-   LOCK$ SB-APPEND s"  if it is stale" SB-APPEND SB$ ;
+   l lu SB-APPEND s"  if it is stale" SB-APPEND SB$ ;
 
 : REASON$ ( n -- ptr u8 n ) {: rc :}
    rc E-SW-PROVIDER = if s" switcher: provider must be claude or codex" exit then
@@ -65,6 +71,7 @@ public
    rc E-SW-ENV = if s" switcher: HOME is not set" exit then
    rc E-SW-INTERRUPTED = if s" switcher: an earlier switch was interrupted; run `switcher use` to finish it" exit then
    rc E-SW-MISMATCH = if s" switcher: the saved file belongs to a different account than its folder name" exit then
+   rc E-SW-ASIDE = if s" switcher: an earlier `add` left a .switcher-aside login file; move it back or remove it" exit then
    rc E-FS-OPEN = if s" switcher: cannot open a login file" exit then
    rc E-FS-IO = if s" switcher: a file read, write, or rename failed" exit then
    rc E-FS-CAPACITY = if s" switcher: a login file is larger than 4 MiB" exit then
@@ -80,10 +87,22 @@ private
    u 0= if exit then
    s"  (" type a u type s" )" type ;
 
+: .AGE ( -- )
+   USAGE-AT@ 0 < if exit then
+   TIME:EPOCH-SECONDS USAGE-AT@ - 60 / {: m :}
+   s"  (" type m FMT:.U s" m ago)" type ;
+
+: .USAGE ( n n -- ) {: p i :}
+   p i ACCT-NAME LOAD-USAGE 0= if exit then
+   s"   " type
+   LIM#@ 0= if NOTE$ type .AGE exit then
+   .LIMITS .AGE ;
+
 : .ACCOUNT ( n n -- ) {: p i :}
    p i ACCT-NAME SLOT-PLAN
    i ACTIVE? if s"   * " else s"     " then type
-   i ACCT-NAME type PLAN$ .PLAN cr ;
+   i ACCT-NAME type PLAN$ .PLAN
+   p i .USAGE cr ;
 
 : .LIVE ( -- )
    SCAN-RC @ 0<> if SCAN-RC @ REASON$ type cr exit then
@@ -107,13 +126,23 @@ private
    s" plan" LPLAN$ JSON-WRITE:FIELD-S
    JSON-WRITE:OBJECT-END ;
 
+: JSON-USAGE ( n n -- ) {: p i :}
+   s" usage" JSON-WRITE:KEY
+   p i ACCT-NAME LOAD-USAGE 0= if JSON-WRITE:NULL exit then
+   JSON-WRITE:OBJECT-START
+   s" fetchedAt" USAGE-AT@ 0 max JSON-WRITE:FIELD-U JSON-WRITE:COMMA
+   s" note" NOTE$ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
+   s" limits" USAGE-LIMITS-RAW$ JSON-WRITE:FIELD-RAW
+   JSON-WRITE:OBJECT-END ;
+
 : JSON-ACCOUNT ( n n -- ) {: p i :}
    i 0 > if JSON-WRITE:COMMA then
    JSON-WRITE:OBJECT-START
    s" email" i ACCT-NAME JSON-WRITE:FIELD-S JSON-WRITE:COMMA
    p i ACCT-NAME SLOT-PLAN
    s" plan" PLAN$ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
-   s" active" i ACTIVE? JSON-WRITE:FIELD-BOOL
+   s" active" i ACTIVE? JSON-WRITE:FIELD-BOOL JSON-WRITE:COMMA
+   p i JSON-USAGE
    JSON-WRITE:OBJECT-END ;
 
 : JSON-PROVIDER ( n -- ) {: p :}
@@ -171,16 +200,46 @@ private
 
 : ADD-LOCKED ( -- )
    CMD-P @ INSTALLING? ADD-MARKED !
-   CMD-P @ SAVE-BACK ;
+   CMD-P @ SAVE-BACK
+   CMD-P @ SET-ASIDE ;
+
+: ADD-RESTORE-LOCKED ( -- )
+   CMD-P @ RESTORE-ASIDE ;
 
 \ a completed login rewrote every live file, so a marker from before it is
 \ stale; one that appeared while the lock was released belongs to another
 \ switcher's interrupted install and the live pair cannot be trusted
 : ADD-SAVE-LOCKED ( -- )
    CMD-P @ INSTALLING? ADD-MARKED @ 0= and if E-SW-INTERRUPTED throw then
-   CMD-P @ LIVE-IDENTITY 0= if E-SW-NO-LIVE throw then
+   CMD-P @ LIVE-IDENTITY 0= if CMD-P @ RESTORE-ASIDE E-SW-NO-LIVE throw then
    CMD-P @ CLEAR-MARK
-   CMD-P @ SAVE-LIVE ;
+   CMD-P @ SAVE-LIVE
+   CMD-P @ DROP-ASIDE ;
+
+: .PROBED ( n n -- ) {: p i :}
+   p PROVIDER$ type s" : " type i ACCT-NAME type s"   " type
+   p i ACCT-NAME LOAD-USAGE drop
+   LIM#@ 0= if NOTE$ type cr exit then
+   .LIMITS cr ;
+
+\ every saved account of one provider; the live login is saved first so its
+\ slot is fresh and so a login saved by this very run is probed by it
+: USAGE-PROVIDER ( n -- ) {: p :}
+   p SAVE-BACK
+   p SCAN-PROVIDER
+   SCAN-RC @ 0<> if SCAN-RC @ throw then
+   0 begin dup ACCT# < while
+      {: i :}
+      p i ACCT-NAME i ACTIVE? PROBE-SLOT
+      p i .PROBED
+      i 1+
+   repeat drop ;
+
+: USAGE-LOCKED ( -- )
+   CMD-P @ 0 < if
+      0 begin dup P-COUNT < while dup USAGE-PROVIDER 1+ repeat drop exit
+   then
+   CMD-P @ USAGE-PROVIDER ;
 
 : FORGET-LOCKED ( -- )
    CMD-P @ NAME$ SLOT-DIR$ DIR? 0= if E-SW-NO-ACCOUNT throw then
@@ -191,6 +250,11 @@ public
 : CMD-STATUS ( bool -- )
    if STATUS-JSON exit then
    STATUS-TEXT ;
+
+\ p < 0 probes every provider
+: CMD-USAGE ( n -- )
+   CMD-P !
+   [: USAGE-LOCKED ;] WITH-LOCK ;
 
 \ p < 0 saves every provider
 : CMD-SAVE ( n -- )
@@ -205,9 +269,12 @@ public
    p USAGE-REFRESH ;
 
 : CMD-ADD ( n -- ) {: p :}
+   p CHECK-LOGIN-CLI
    p CMD-P !
    [: ADD-LOCKED ;] WITH-LOCK
-   p LOGIN 0 <> if E-SW-LOGIN throw then
+   p [: LOGIN ;] catch {: rc :}
+   rc 0<> if drop [: ADD-RESTORE-LOCKED ;] WITH-LOCK rc throw then
+   0 <> if [: ADD-RESTORE-LOCKED ;] WITH-LOCK E-SW-LOGIN throw then
    [: ADD-SAVE-LOCKED ;] WITH-LOCK
    p PROVIDER$ type s" : added " type EMAIL$ type cr
    p USAGE-REFRESH ;

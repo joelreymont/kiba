@@ -4,6 +4,7 @@ require lib/fmt.f
 require lib/process.f
 require lib/process-argv.f
 require lib/process-env.f
+require lib/process-fork.f
 
 package SW
 
@@ -24,12 +25,18 @@ variable EXE-U
 : ARG+ ( ptr u8 n -- )
    >LEN PROC-ARGV+ ;
 
-\ the staged argv runs EXE$ on this terminal with this process's own
-\ environment block, so no copy and no entry limit stand between them
+\ the child keeps this process's group, terminal, descriptors, and
+\ environment block: the spawn primitives give a child its own process
+\ group, and a login that then reads the terminal is stopped by SIGTTIN
+: EXEC-STAGED ( ptr u8 ptr ptr u8 -- ) {: pathz argv :}
+   pathz argv ENVP-BASE execve drop
+   s" switcher: could not start the provider command" 127 die ;
+
 : RUN-INHERIT ( -- n )
-   EXE$ >LEN PROC-ARGV-PREPARE ENVP-BASE -1 >FD -1 >FD -1 >FD PROC-SPAWN-ARGV-ENV-RAW {: pid :}
+   EXE$ >LEN PROC-ARGV-PREPARE {: pathz argv :}
+   PROC-FORK:CHECKED {: pid :}
+   pid PID>N 0= if pathz argv EXEC-STAGED then
    PROC-ARGV-RESET
-   pid PID>N 0 < if E-PROC-SPAWN throw then
    pid PROC-WAIT-RC MATCH result
      ok OF ENDOF
      err OF ENDOF
@@ -55,6 +62,14 @@ public
    case
      P-CLAUDE of CLAUDE-LOGIN endof
      P-CODEX of CODEX-LOGIN endof
+     E-SW-PROVIDER throw
+   endcase ;
+
+\ the provider command must exist before anything is moved for its sake
+: CHECK-LOGIN-CLI ( n -- )
+   case
+     P-CLAUDE of s" claude" RESOLVE endof
+     P-CODEX of s" codex" RESOLVE endof
      E-SW-PROVIDER throw
    endcase ;
 

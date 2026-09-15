@@ -8,7 +8,8 @@ package SW
    s\"        switcher save [claude|codex]\n" ERR-TYPE
    s\"        switcher use <claude|codex> <email>\n" ERR-TYPE
    s\"        switcher add <claude|codex>\n" ERR-TYPE
-   s\"        switcher forget <claude|codex> <email>\n" ERR-TYPE ;
+   s\"        switcher forget <claude|codex> <email>\n" ERR-TYPE
+   s\"        switcher usage [claude|codex]\n" ERR-TYPE ;
 
 : ARG$ ( n -- ptr u8 n )
    dup SCRIPT-ARGC >= if drop E-SW-USAGE throw then
@@ -28,11 +29,17 @@ package SW
    2 ARG-COUNT
    1 ARG$ PROVIDER# CMD-SAVE ;
 
+: DISPATCH-USAGE ( -- )
+   SCRIPT-ARGC 1 = if -1 CMD-USAGE exit then
+   2 ARG-COUNT
+   1 ARG$ PROVIDER# CMD-USAGE ;
+
 : DISPATCH ( -- )
    SCRIPT-ARGC 0= if E-SW-USAGE throw then
    0 ARG$ {: c cu :}
    c cu s" status" STR= if DISPATCH-STATUS exit then
    c cu s" save" STR= if DISPATCH-SAVE exit then
+   c cu s" usage" STR= if DISPATCH-USAGE exit then
    c cu s" use" STR= if 3 ARG-COUNT 1 ARG$ PROVIDER# 2 ARG$ CMD-USE exit then
    c cu s" add" STR= if 2 ARG-COUNT 1 ARG$ PROVIDER# CMD-ADD exit then
    c cu s" forget" STR= if 3 ARG-COUNT 1 ARG$ PROVIDER# 2 ARG$ CMD-FORGET exit then

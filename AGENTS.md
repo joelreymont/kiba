@@ -9,7 +9,10 @@ accounts. The CLI is a checked Habu program; a thin Omarchy bar widget runs it.
   changing any `.f` file. Its naming, package, factoring, stack-comment, and
   checker rules apply here unchanged.
 - All Forth lives in `package SW`, split one concern per file under `src/`.
-  `src/switcher.f` is the entry and owns `MAIN`.
+  `src/switcher.f` is the entry and owns `MAIN`. `src/sw-usage.f` probes
+  saved accounts through the providers' usage endpoints with `curl`; the
+  fake `curl` and provider commands used by the tests are written by
+  `test/sw-unit-test.f` into the scratch PATH.
 - Library words come from the Habu checkout named by `HABU` (default
   `~/Work/habu`). `build.sh` and the test commands run `bin/hb` from that
   checkout, so relative `require lib/...` resolves there.
@@ -39,6 +42,14 @@ accounts. The CLI is a checked Habu program; a thin Omarchy bar widget runs it.
 
 - Never run `codex logout` or `claude auth logout` from code or tests: both
   revoke tokens server-side and kill every saved copy of that account.
+  `codex login` revokes the existing login too, so `add` moves the live file
+  aside before running it.
+- Never run a provider's token refresh for the live account, and never probe
+  a saved account through `codex app-server` in a copied home: both rotate
+  tokens the running CLI still holds.
+- Spawn interactive provider commands with fork plus `execve` (see
+  `RUN-INHERIT`), never the `spawn-*` primitives: those give the child its own
+  process group and a terminal read then stops it with SIGTTIN.
 - Credential files and account directories are written `0600`/`0700` and
   replaced atomically.
 - VCS is `jj`. One commit per feature or fix.

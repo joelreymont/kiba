@@ -8,25 +8,43 @@ package SW
 
 create EMAIL-BUF EMAIL-CAP allot   variable EMAIL-U
 create PLAN-BUF PLAN-CAP allot     variable PLAN-U
+create ORG-BUF 128 allot           variable ORG-U      \ organization or account id
+create ORGNAME-BUF 128 allot       variable ORGNAME-U  \ its human name, may be empty
 
 public
 
 : EMAIL$ ( -- ptr u8 n ) EMAIL-BUF EMAIL-U @ ;
 : PLAN$ ( -- ptr u8 n ) PLAN-BUF PLAN-U @ ;
+: ORG$ ( -- ptr u8 n ) ORG-BUF ORG-U @ ;
+: ORGNAME$ ( -- ptr u8 n ) ORGNAME-BUF ORGNAME-U @ ;
 
 : NO-IDENTITY ( -- )
-   0 EMAIL-U ! 0 PLAN-U ! ;
+   0 EMAIL-U ! 0 PLAN-U ! 0 ORG-U ! 0 ORGNAME-U ! ;
 
 \ ---- Claude Code ------------------------------------------------------------
 : CLAUDE-PLAN ( ptr u8 n -- )
    s" claudeAiOauth" s" subscriptionType" PLAN-BUF PLAN-CAP DOC-STR2
    dup 0 < if drop 0 then PLAN-U ! ;
 
+\ the organization tells two logins under one email apart
+: CLAUDE-ORG ( ptr u8 n -- ) {: cfg cu :}
+   cfg cu s" oauthAccount" s" organizationUuid" ORG-BUF 128 DOC-STR2 dup 0 < if drop 0 then ORG-U !
+   cfg cu s" oauthAccount" s" organizationName" ORGNAME-BUF 128 DOC-STR2 dup 0 < if drop 0 then ORGNAME-U ! ;
+
+\ the oauthAccount object on its own, as saved in a slot
+: CLAUDE-OAUTH-IDENTITY ( ptr u8 n -- bool ) {: d du :}
+   NO-IDENTITY
+   d du s" emailAddress" EMAIL-BUF EMAIL-CAP DOC-STR1 dup 0 < if drop false exit then EMAIL-U !
+   d du s" organizationUuid" ORG-BUF 128 DOC-STR1 dup 0 < if drop 0 then ORG-U !
+   d du s" organizationName" ORGNAME-BUF 128 DOC-STR1 dup 0 < if drop 0 then ORGNAME-U !
+   true ;
+
 \ config document (.claude.json) plus credentials document
 : CLAUDE-IDENTITY ( ptr u8 n ptr u8 n -- bool ) {: cfg cu cr cru :}
    NO-IDENTITY
    cfg cu s" oauthAccount" s" emailAddress" EMAIL-BUF EMAIL-CAP DOC-STR2
    dup 0 < if drop false exit then EMAIL-U !
+   cfg cu CLAUDE-ORG
    cr cru CLAUDE-PLAN
    true ;
 
@@ -60,6 +78,9 @@ public
    dup 0 < if drop false exit then EMAIL-U !
    OBJ$ s" https://api.openai.com/auth" s" chatgpt_plan_type" PLAN-BUF PLAN-CAP DOC-STR2
    dup 0 < if drop 0 then PLAN-U !
+   OBJ$ s" https://api.openai.com/auth" s" chatgpt_account_id" ORG-BUF 128 DOC-STR2
+   dup 0 < if drop 0 then ORG-U !
+   0 ORGNAME-U !
    true ;
 
 ;package

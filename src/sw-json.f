@@ -36,6 +36,19 @@ public
    k ku dst cap KEY-STR
    swap JR:CLOSE ;
 
+: DOC-INT1 ( ptr u8 n ptr u8 n -- n ) {: d du k ku :}
+   d du OPEN-DOC ENTER-OBJECT
+   k ku JR:FIND-KEY 0= if JR:CLOSE -1 exit then
+   JR:TOKEN JR:T-INT <> if JR:CLOSE -1 exit then
+   JR:INT swap JR:CLOSE ;
+
+: DOC-INT2 ( ptr u8 n ptr u8 n ptr u8 n -- n ) {: d du k1 k1u k2 k2u :}
+   d du OPEN-DOC ENTER-OBJECT
+   k1 k1u KEY-OBJECT 0= if JR:CLOSE -1 exit then
+   k2 k2u JR:FIND-KEY 0= if JR:CLOSE -1 exit then
+   JR:TOKEN JR:T-INT <> if JR:CLOSE -1 exit then
+   JR:INT swap JR:CLOSE ;
+
 : DOC-STR2 ( ptr u8 n ptr u8 n ptr u8 n ptr u8 n -- n ) {: d du k1 k1u k2 k2u dst cap :}
    d du OPEN-DOC ENTER-OBJECT
    k1 k1u KEY-OBJECT 0= if JR:CLOSE -1 exit then

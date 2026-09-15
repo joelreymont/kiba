@@ -14,17 +14,17 @@ create UT-BUF 256 allot
    dst u ;
 
 : CFG-A$ ( -- ptr u8 n )
-   s\" {\"numStartups\":3,\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationName\":\"Org A\"},\"projects\":{\"/x\":{\"allowedTools\":[]}}}" ;
+   s\" {\"numStartups\":3,\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-a\",\"organizationName\":\"Org A\"},\"projects\":{\"/x\":{\"allowedTools\":[]}}}" ;
 
 : OAUTH-A$ ( -- ptr u8 n )
-   s\" {\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationName\":\"Org A\"}" ;
+   s\" {\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-a\",\"organizationName\":\"Org A\"}" ;
 
 : CFG-B$ ( -- ptr u8 n )
    s\" {\"numStartups\":4,\"oauthAccount\":{\"accountUuid\":\"u2\",\"emailAddress\":\"b@x.test\"},\"projects\":{\"/x\":{\"allowedTools\":[]}}}" ;
 
 \ CFG-B with account A spliced back in
 : CFG-BA$ ( -- ptr u8 n )
-   s\" {\"numStartups\":4,\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationName\":\"Org A\"},\"projects\":{\"/x\":{\"allowedTools\":[]}}}" ;
+   s\" {\"numStartups\":4,\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-a\",\"organizationName\":\"Org A\"},\"projects\":{\"/x\":{\"allowedTools\":[]}}}" ;
 
 : CREDS-A$ ( -- ptr u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-a\",\"refreshToken\":\"r-a\",\"expiresAt\":1,\"scopes\":[\"user:inference\"],\"subscriptionType\":\"max\",\"rateLimitTier\":\"default_claude_max_20x\"}}" ;
@@ -137,7 +137,10 @@ create UT-BUF 256 allot
    [: UT-NESTED ;] E-SW-LOCKED TTHROWSQ
    UNLOCK-STORE
    [: UT-LOCKED-BOOM ;] E-SW-JSON TTHROWSQ
-   LOCK$ DIR? TFALSE ;
+   LOCK$ DIR? TFALSE
+   E-SW-LOCKED REASON$ s" switcher: another switcher holds the store lock; remove " STARTS-WITH? TTRUE
+   E-SW-LOCKED REASON$ s"  if it is stale" ENDS-WITH? TTRUE
+   E-SW-LOCKED REASON$ LOCK$ CONTAINS? TTRUE ;
 
 : UT-LIVE-A ( -- )
    CLAUDE-CREDS$ DIRNAME ENSURE-DIR
@@ -192,26 +195,58 @@ create UT-BUF 256 allot
    [: P-CLAUDE s" b@x.test" CMD-FORGET ;] E-SW-NO-ACCOUNT TTHROWSQ
    LOCK$ DIR? TFALSE ;
 
+\ a second login under the same email but another organization gets its own
+\ slot, "a@x.test (Org C)", and the active mark follows the organization
+: CFG-A2$ ( -- ptr u8 n )
+   s\" {\"oauthAccount\":{\"accountUuid\":\"u9\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-c\",\"organizationName\":\"Org C\"}}" ;
+
+: CREDS-A2$ ( -- ptr u8 n )
+   s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-a2\",\"subscriptionType\":\"team\"}}" ;
+
+: UT-SAME-EMAIL ( -- )
+   s" a@x.test (Org C)" s" a@x.test" NAME-FOR-EMAIL? TTRUE
+   s" a@x.test" s" a@x.test" NAME-FOR-EMAIL? TTRUE
+   s" a@x.testx" s" a@x.test" NAME-FOR-EMAIL? TFALSE
+   s" b@x.test (Org C)" s" a@x.test" NAME-FOR-EMAIL? TFALSE
+   CLAUDE-CONFIG$ CFG-A2$ WRITE-PRIVATE
+   CLAUDE-CREDS$ CREDS-A2$ WRITE-PRIVATE
+   P-CLAUDE CMD-SAVE
+   P-CLAUDE LIST-ACCOUNTS ACCT# 2 T=
+   0 ACCT-NAME s" a@x.test" T$=
+   1 ACCT-NAME s" a@x.test (Org C)" T$=
+   P-CLAUDE s" a@x.test (Org C)" s" credentials.json" SLOT-FILE$ READ-FILE$ CREDS-A2$ T$=
+   P-CLAUDE s" a@x.test" s" credentials.json" SLOT-FILE$ READ-FILE$ CREDS-A$ T$=
+   STATUS-JSON$ s\" \"email\":\"a@x.test (Org C)\",\"plan\":\"team\",\"active\":true" CONTAINS? TTRUE
+   STATUS-JSON$ s\" \"email\":\"a@x.test\",\"plan\":\"max\",\"active\":false" CONTAINS? TTRUE
+   P-CLAUDE s" a@x.test" CMD-USE
+   CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
+   STATUS-JSON$ s\" \"email\":\"a@x.test\",\"plan\":\"max\",\"active\":true" CONTAINS? TTRUE
+   P-CLAUDE s" a@x.test (Org C)" CMD-USE
+   CLAUDE-CREDS$ READ-FILE$ CREDS-A2$ T$=
+   P-CLAUDE LIVE-IDENTITY TTRUE ORG$ s" org-c" T$=
+   P-CLAUDE s" a@x.test" CMD-USE
+   P-CLAUDE s" a@x.test (Org C)" CMD-FORGET ;
+
 \ install into a config that has no oauthAccount, an empty one, and none at all
 : UT-INSTALL-INSERT ( -- )
    CLAUDE-CONFIG$ CFG-NOAUTH$ WRITE-PRIVATE
    P-CLAUDE s" a@x.test" CMD-USE
-   CLAUDE-CONFIG$ READ-FILE$ s\" {\"numStartups\":1,\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationName\":\"Org A\"}}" T$=
+   CLAUDE-CONFIG$ READ-FILE$ s\" {\"numStartups\":1,\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-a\",\"organizationName\":\"Org A\"}}" T$=
    P-CLAUDE LIVE-IDENTITY TTRUE EMAIL$ s" a@x.test" T$=
    CLAUDE-CONFIG$ CFG-EMPTY$ WRITE-PRIVATE
    P-CLAUDE s" a@x.test" CMD-USE
-   CLAUDE-CONFIG$ READ-FILE$ s\" {\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationName\":\"Org A\"}}" T$=
+   CLAUDE-CONFIG$ READ-FILE$ s\" {\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-a\",\"organizationName\":\"Org A\"}}" T$=
    CLAUDE-CONFIG$ REMOVE-FILE
    P-CLAUDE s" a@x.test" CMD-USE
-   CLAUDE-CONFIG$ READ-FILE$ s\" {\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationName\":\"Org A\"}}" T$=
+   CLAUDE-CONFIG$ READ-FILE$ s\" {\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-a\",\"organizationName\":\"Org A\"}}" T$=
    CLAUDE-CONFIG$ STAT-MODE $1FF and $180 T=
    CLAUDE-CONFIG$ s\" {\"a\":1,\"oauthAccount\":null,\"z\":2}" WRITE-PRIVATE
    P-CLAUDE s" a@x.test" CMD-USE
-   CLAUDE-CONFIG$ READ-FILE$ s\" {\"a\":1,\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationName\":\"Org A\"},\"z\":2}" T$=
+   CLAUDE-CONFIG$ READ-FILE$ s\" {\"a\":1,\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-a\",\"organizationName\":\"Org A\"},\"z\":2}" T$=
    P-CLAUDE LIVE-IDENTITY TTRUE EMAIL$ s" a@x.test" T$=
    CLAUDE-CONFIG$ s\" {\"oauthAccount\":\"gone\"}" WRITE-PRIVATE
    P-CLAUDE s" a@x.test" CMD-USE
-   CLAUDE-CONFIG$ READ-FILE$ s\" {\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationName\":\"Org A\"}}" T$= ;
+   CLAUDE-CONFIG$ READ-FILE$ s\" {\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-a\",\"organizationName\":\"Org A\"}}" T$= ;
 
 \ a config write that fails before its rename leaves no marker behind
 : UT-FAILED-FIRST-WRITE ( -- )
@@ -285,6 +320,150 @@ create UT-BUF 256 allot
    CODEX-AUTH$ REMOVE-FILE
    r ru CODEX-AUTH$ RENAME-FILE ;
 
+\ the usage refresh runs the collector command found on PATH with the
+\ provider as its last argument; the fake collector records its argv
+: UT-FAKE-COLLECTOR ( -- )
+   HOME$ {: h hu :}
+   SB-RESET h hu SB-APPEND s" /bin" SB-APPEND SB$ ENSURE-PRIVATE
+   SB-RESET h hu SB-APPEND s" /bin/omarchy-agent-usage-update" SB-APPEND SB$ UT-BUF 256 SPAN-COPY {: f fu :}
+   f fu s\" #!/bin/sh\nprintf '%s\\n' \"$@\" > \"$HOME/collector.args\"\n" WRITE-ALL
+   f fu CHMOD-X ;
+
+: UT-USAGE-REFRESH ( -- )
+   UT-FAKE-COLLECTOR
+   P-CODEX USAGE-REFRESH
+   HOME$ {: h hu :}
+   SB-RESET h hu SB-APPEND s" /collector.args" SB-APPEND SB$ READ-FILE$ s\" --limits-only\ncodex\n" T$= ;
+
+: UT-WRITE-SCRIPT ( ptr u8 n ptr u8 n -- ) {: n nu body bu :}
+   HOME$ {: h hu :}
+   SB-RESET h hu SB-APPEND s" /bin/" SB-APPEND n nu SB-APPEND SB$ UT-BUF 256 SPAN-COPY {: f fu :}
+   f fu body bu WRITE-ALL
+   f fu CHMOD-X ;
+
+\ a fake curl: answers each provider URL from the Authorization header it is
+\ given, writes the body to the -o file, prints the status, and logs the call
+: UT-FAKE-CURL ( -- )
+   s" curl"
+   s\" #!/bin/sh\nout=; auth=; url=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) case \"$2\" in Authorization:*) auth=$2;; esac; shift;; --data-binary) echo \"data $2\" >> \"$SW_TEST_LOG\"; shift;; -X|-m|-w) shift;; *) url=$1;; esac; shift; done\necho \"$url $auth\" >> \"$SW_TEST_LOG\"\ncode=200; body='{}'\ncase \"$url\" in\n*api.anthropic.com/api/oauth/usage) case \"$auth\" in *sk-a) body='{\"five_hour\":{\"utilization\":56.25,\"resets_at\":\"2026-09-15T14:00:00+00:00\"},\"seven_day\":{\"utilization\":100,\"resets_at\":\"2026-09-21T11:00:00+00:00\"}}';; *sk-b-new) body='{\"five_hour\":{\"utilization\":12.4,\"resets_at\":\"2026-09-15T15:00:00+00:00\"},\"seven_day_oauth_apps\":{\"utilization\":0.5,\"resets_at\":\"\"}}';; *) code=401; body='{\"error\":\"expired\"}';; esac;;\n*platform.claude.com/v1/oauth/token) body='{\"access_token\":\"sk-b-new\",\"refresh_token\":\"r-b-new\",\"expires_in\":3600}';;\n*chatgpt.com/backend-api/wham/usage) case \"$auth\" in *at-c) body='{\"plan_type\":\"pro\",\"rate_limit\":{\"allowed\":false,\"limit_reached\":true,\"primary_window\":{\"used_percent\":100,\"limit_window_seconds\":604800,\"reset_after_seconds\":433078,\"reset_at\":1789904220},\"secondary_window\":null}}';; *at-d2) body='{\"rate_limit\":{\"primary_window\":{\"used_percent\":12,\"limit_window_seconds\":18000,\"reset_at\":1789489142},\"secondary_window\":{\"used_percent\":40,\"limit_window_seconds\":604800,\"reset_at\":1790075942}}}';; *at-z) code=401; body='{\"error\":{\"code\":\"token_revoked\"}}';; *) code=401; body='{\"error\":{\"code\":\"token_expired\"}}';; esac;;\n*auth.openai.com/oauth/token) body='{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d2\",\"refresh_token\":\"rt-d2\"}';;\n*) code=404;;\nesac\nprintf '%s' \"$body\" > \"$out\"\nprintf '%s' \"$code\"\n"
+   UT-WRITE-SCRIPT ;
+
+: AUTH-D2$ ( -- ptr u8 n )
+   s\" {\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d2\",\"refresh_token\":\"rt-d2\",\"account_id\":\"acct\"}}" ;
+
+: AUTH-Z$ ( -- ptr u8 n )
+   s\" {\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-z\",\"refresh_token\":\"rt-z\",\"account_id\":\"acct\"}}" ;
+
+: UT-PCT ( -- )
+   s" 0.5625" HUNDREDTHS 56 T=
+   s" 56.25" HUNDREDTHS 5625 T=
+   s" 1" HUNDREDTHS 100 T=
+   s" 0.145" HUNDREDTHS 15 T=
+   s" 0.999" HUNDREDTHS 100 T=
+   s" 0" HUNDREDTHS 0 T=
+   s" 0.1" HUNDREDTHS 10 T=
+   s" x" HUNDREDTHS -1 T=
+   s" 0.5.1" HUNDREDTHS -1 T=
+   s" 99999999999999999999" HUNDREDTHS -1 T=
+   s" ." HUNDREDTHS -1 T= ;
+
+: LOG$ ( -- ptr u8 n )
+   s" SW_TEST_LOG" GETENV ;
+
+\ live claude a@x.test (sk-a, expired but live: no refresh) and codex c@x.test;
+\ saved b@x.test refreshes its expired token, saved d@x.test refreshes after 401,
+\ saved z@x.test is revoked
+: UT-USAGE ( -- )
+   UT-FAKE-CURL
+   P-CLAUDE s" b@x.test" SLOT-DIR$ ENSURE-PRIVATE
+   P-CLAUDE s" b@x.test" s" credentials.json" SLOT-FILE$ CREDS-B$ WRITE-PRIVATE
+   P-CLAUDE s" b@x.test" s" oauth-account.json" SLOT-FILE$ s\" {\"emailAddress\":\"b@x.test\"}" WRITE-PRIVATE
+   P-CODEX s" z@x.test" SLOT-DIR$ ENSURE-PRIVATE
+   P-CODEX s" z@x.test" s" auth.json" SLOT-FILE$ AUTH-Z$ WRITE-PRIVATE
+   -1 CMD-USAGE
+   P-CLAUDE s" a@x.test" LOAD-USAGE TTRUE
+   LIM#@ 2 T=
+   0 LIM-LABEL$ s" Session (5-hour)" T$=
+   0 LIM-PCT@ 56 T=
+   1 LIM-PCT@ 100 T=
+   1 LIM-RESET$ s" 2026-09-21T11:00:00+00:00" T$=
+   USAGE-AT@ 0 > TTRUE
+   CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
+   P-CLAUDE s" b@x.test" LOAD-USAGE TTRUE
+   LIM#@ 2 T=
+   0 LIM-PCT@ 12 T=
+   1 LIM-PCT@ 1 T=
+   1 LIM-LABEL$ s" Weekly (7-day)" T$=
+   P-CLAUDE s" b@x.test" s" credentials.json" SLOT-FILE$ READ-FILE$ {: c cu :}
+   c cu s\" \"accessToken\":\"sk-b-new\"" CONTAINS? TTRUE
+   c cu s\" \"refreshToken\":\"r-b-new\"" CONTAINS? TTRUE
+   c cu s\" \"expiresAt\":2," CONTAINS? TFALSE
+   c cu s\" \"subscriptionType\":\"pro\"" CONTAINS? TTRUE
+   P-CODEX s" c@x.test" LOAD-USAGE TTRUE
+   LIM#@ 1 T=
+   0 LIM-LABEL$ s" Weekly (7-day)" T$=
+   0 LIM-PCT@ 100 T=
+   0 LIM-RESET$ s" 2026-09-20T11:37:00Z" T$=
+   CODEX-AUTH$ READ-FILE$ AUTH-C$ T$=
+   P-CODEX s" d@x.test" LOAD-USAGE TTRUE
+   LIM#@ 2 T=
+   0 LIM-LABEL$ s" Session (5-hour)" T$=
+   0 LIM-PCT@ 12 T=
+   1 LIM-PCT@ 40 T=
+   P-CODEX s" d@x.test" s" auth.json" SLOT-FILE$ READ-FILE$ {: d du :}
+   d du s\" \"access_token\":\"at-d2\"" CONTAINS? TTRUE
+   d du s\" \"refresh_token\":\"rt-d2\"" CONTAINS? TTRUE
+   d du s\" \"account_id\":\"acct\"" CONTAINS? TTRUE
+   d du CODEX-IDENTITY TTRUE EMAIL$ s" d@x.test" T$=
+   P-CODEX s" z@x.test" LOAD-USAGE TTRUE
+   LIM#@ 0 T=
+   NOTE$ s" login revoked" STARTS-WITH? TTRUE
+   STATUS-JSON$ s\" \"usage\":{\"fetchedAt\":" CONTAINS? TTRUE
+   STATUS-JSON$ s\" \"limits\":[{\"label\":\"Session (5-hour)\",\"percent\":56," CONTAINS? TTRUE
+   LOG$ READ-FILE$ {: l lu :}
+   l lu s" https://platform.claude.com/v1/oauth/token" CONTAINS? TTRUE
+   STORE$ {: s su :}
+   SB-RESET s" data @" SB-APPEND s su SB-APPEND s" /probe/request.json" SB-APPEND
+   l lu SB$ CONTAINS? TTRUE
+   l lu s" https://auth.openai.com/oauth/token" CONTAINS? TTRUE
+   l lu s" Authorization: Bearer sk-a" CONTAINS? TTRUE
+   l lu s" Authorization: Bearer at-z" CONTAINS? TTRUE
+   s" /body.json" PSUB-PUBLIC$ FILE? TFALSE
+   P-CLAUDE s" b@x.test" CMD-FORGET
+   P-CODEX s" z@x.test" CMD-FORGET ;
+
+\ `add` runs the login with the live file out of the way and restores it on
+\ failure; the fake `codex` records what it saw and writes AUTH-D on success
+: UT-FAKE-CODEX ( -- )
+   s" codex"
+   s\" #!/bin/sh\nif [ -e \"$HOME/.codex/auth.json\" ]; then echo present >> \"$SW_TEST_LOG\"; else echo absent >> \"$SW_TEST_LOG\"; fi\nif [ -e \"$HOME/fail-login\" ]; then exit 3; fi\nprintf '%s' '{\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d\",\"refresh_token\":\"rt-d\",\"account_id\":\"acct\"}}' > \"$HOME/.codex/auth.json\"\n"
+   UT-WRITE-SCRIPT ;
+
+: UT-ADD ( -- )
+   UT-FAKE-CODEX
+   HOME$ {: h hu :}
+   SB-RESET h hu SB-APPEND s" /fail-login" SB-APPEND SB$ UT-BUF 256 SPAN-COPY {: f fu :}
+   f fu s" x" WRITE-ALL
+   P-CODEX s" c@x.test" CMD-USE
+   [: P-CODEX CMD-ADD ;] E-SW-LOGIN TTHROWSQ
+   CODEX-AUTH$ READ-FILE$ AUTH-C$ T$=
+   CODEX-AUTH$ ASIDE-FOR FILE? TFALSE
+   f fu REMOVE-FILE
+   HOME$ {: h2 h2u :}
+   SB-RESET h2 h2u SB-APPEND s" /bin/codex" SB-APPEND SB$ UT-BUF 256 SPAN-COPY {: cx cxu :}
+   SB-RESET h2 h2u SB-APPEND s" /bin/codex.off" SB-APPEND SB$ UT-BUF 256 SPAN-COPY {: cxo cxou :}
+   cx cxu cxo cxou RENAME-FILE
+   [: P-CODEX CMD-ADD ;] E-SW-NO-CLI TTHROWSQ
+   CODEX-AUTH$ FILE? TTRUE
+   CODEX-AUTH$ ASIDE-FOR FILE? TFALSE
+   cxo cxou cx cxu RENAME-FILE
+   P-CODEX CMD-ADD
+   CODEX-AUTH$ READ-FILE$ AUTH-D$ T$=
+   CODEX-AUTH$ ASIDE-FOR FILE? TFALSE
+   P-CODEX s" c@x.test" s" auth.json" SLOT-FILE$ READ-FILE$ AUTH-C$ T$=
+   LOG$ READ-FILE$ s\" absent\nabsent\n" ENDS-WITH? TTRUE
+   P-CODEX s" c@x.test" CMD-USE ;
+
 \ marker files outside <provider>/<name>/ are not accounts
 : UT-STRAY-MARKERS ( -- )
    P-CODEX PROVIDER-DIR$ {: d du :}
@@ -309,6 +488,7 @@ create UT-BUF 256 allot
    UT-DOC-CLOSE
    UT-LOCK
    UT-FLOW
+   UT-SAME-EMAIL
    UT-INSTALL-INSERT
    UT-FAILED-FIRST-WRITE
    UT-INTERRUPTED
@@ -318,6 +498,10 @@ create UT-BUF 256 allot
    UT-API-KEY
    UT-SYMLINK
    UT-STRAY-MARKERS
+   UT-USAGE-REFRESH
+   UT-ADD
+   UT-PCT
+   UT-USAGE
    T-REPORT ;
 
 UT-MAIN

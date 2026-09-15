@@ -42,6 +42,20 @@ Item {
     return { email: live.email, plan: String(live.plan || "") }
   }
 
+  // The CLI's usage record: fetchedAt (epoch seconds), note, limits[]. A limit
+  // is {label, percent (0-100), resetsAt (ISO or "")}.
+  function normalizeUsage(usage) {
+    if (usage === null || usage === undefined) return null
+    if (!usage || !Array.isArray(usage.limits)) return undefined
+    var limits = []
+    for (var i = 0; i < usage.limits.length; i += 1) {
+      var l = usage.limits[i]
+      if (!l || typeof l.label !== "string") return undefined
+      limits.push({ label: l.label, percent: Number(l.percent), resetsAt: String(l.resetsAt || "") })
+    }
+    return { fetchedAt: Number(usage.fetchedAt || 0), note: String(usage.note || ""), limits: limits }
+  }
+
   function normalize(content) {
     var value
     try { value = JSON.parse(String(content || "")) }
@@ -58,7 +72,9 @@ Item {
       for (var j = 0; j < p.accounts.length; j += 1) {
         var a = p.accounts[j]
         if (!a || typeof a.email !== "string") return null
-        accounts.push({ email: a.email, plan: String(a.plan || ""), active: a.active === true })
+        var usage = normalizeUsage(a.usage)
+        if (usage === undefined) return null
+        accounts.push({ email: a.email, plan: String(a.plan || ""), active: a.active === true, usage: usage })
       }
       out.push({ id: p.id, title: providerTitle(p.id), live: live, accounts: accounts,
         error: String(p.error || "") })
@@ -90,6 +106,21 @@ Item {
   function use(provider, email) {
     runAction("Switching " + providerTitle(provider) + " to " + email + "…",
       ["switcher", "use", provider, email])
+  }
+
+  function probeUsage() {
+    runAction("Probing usage for every saved account…", ["switcher", "usage"])
+  }
+
+  // The newest usage record across every saved account; 0 when none exists.
+  function newestUsageAt() {
+    var newest = 0
+    for (var i = 0; i < providers.length; i += 1)
+      for (var j = 0; j < providers[i].accounts.length; j += 1) {
+        var u = providers[i].accounts[j].usage
+        if (u && u.fetchedAt > newest) newest = u.fetchedAt
+      }
+    return newest
   }
 
   function save(provider) {

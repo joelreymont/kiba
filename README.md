@@ -22,6 +22,9 @@ back in place, so a switch is one command instead of a browser round trip.
   keeps its old tokens until restarted, new `codex` processes use the new login.
   `CODEX_HOME` is honored. An API-key login has no email; it is saved and
   restored under the fixed name `api-key`.
+- **Two logins under one email** (a second Claude organization or a second
+  ChatGPT workspace) get separate slots: the first keeps the bare email, the
+  next is named `email (Organization)`. Every command takes that full name.
 - **Store**: `$XDG_DATA_HOME/switcher/<provider>/<email>/` (default
   `~/.local/share/switcher`), directories `0700`, files `0600`, every write
   through a same-directory temp file and rename. A `lock` directory serializes
@@ -33,8 +36,19 @@ back in place, so a switch is one command instead of a browser round trip.
   so that a switch interrupted between them can never save one account's
   tokens under another account's email. `save` refuses while the marker is
   present and the next `use` clears it.
-- **Live files that are symlinks** stay symlinks: the write replaces the file
-  the link points at.
+- **Live files that are symlinks** stay symlinks on `use` and `save`: the
+  write replaces the file the link points at. `add` is the exception: the
+  provider's own login creates a fresh regular file, so after an `add` the
+  live file is a plain file and the old link target keeps the previous
+  account's tokens until you remove it.
+- **Login runs in the foreground**: `add` forks and execs the provider's
+  login so it stays in the terminal's process group; a child in its own
+  group is stopped by SIGTTIN the moment it reads the terminal.
+- **The live login steps aside for a login**: `codex login` revokes whatever
+  login it finds before it starts, which would kill the saved copy of the
+  account being left. `add` therefore moves the live login file to
+  `<file>.switcher-aside` first (after saving it back), and moves it back if
+  the login fails.
 - **Never log out**: `codex logout` and `claude auth logout` revoke tokens
   server-side, which would kill the saved copy too. `add` runs the provider's
   login command with the store's copy of the live login refreshed first, then
@@ -43,11 +57,12 @@ back in place, so a switch is one command instead of a browser round trip.
 ## Commands
 
 ```
-switcher status [--json]          live account and saved accounts per provider
+switcher status [--json]          live account, saved accounts, and their usage
 switcher save [claude|codex]      copy the live login(s) into the store
 switcher use <provider> <email>   save back the live login, install <email>
 switcher add <provider>           run the provider login, then save the result
 switcher forget <provider> <email>
+switcher usage [claude|codex]     probe the rate limits of every saved account
 ```
 
 Exit codes: 0 ok, 64 usage, 1 any other failure with a one-line reason on
@@ -58,12 +73,44 @@ refresh the Omarchy agents widget for that provider when it is on PATH.
 
 ```json
 {"providers":[{"id":"claude","live":{"email":"a@x","plan":"max"},
-  "accounts":[{"email":"a@x","plan":"max","active":true}]}, ...]}
+  "accounts":[{"email":"a@x","plan":"max","active":true,
+    "usage":{"fetchedAt":1789480000,"note":"",
+      "limits":[{"label":"Session (5-hour)","percent":56,"resetsAt":"2026-09-15T14:00:00+00:00"},
+                {"label":"Weekly (7-day)","percent":14,"resetsAt":"2026-09-21T11:00:00+00:00"}]}}]}, ...]}
 ```
 
 `live` is `null` without a login; `plan` is `""` when the file has none. A
 provider whose files cannot be read carries an `"error"` string and keeps its
 `accounts` list, so the other provider and every saved login stay usable.
+`usage` is `null` until `switcher usage` has run for that account; `percent`
+is a whole number and `note` explains an empty `limits` list.
+
+## Usage per account
+
+`switcher usage` answers "which account still has room". For every saved
+account it asks the provider's own usage endpoint with that account's saved
+token, through `curl`, and keeps the reported windows in `<slot>/usage.json`:
+
+- Claude: `GET https://api.anthropic.com/api/oauth/usage` with the OAuth
+  access token. Windows: `Session (5-hour)` and `Weekly (7-day)`.
+- Codex: `GET https://chatgpt.com/backend-api/wham/usage` with the access
+  token and account id. Windows are named from their length: five hours is
+  the session, seven days the week.
+
+A saved (non-live) account whose access token has expired is refreshed once
+through the provider's token endpoint, and the new tokens replace the slot's.
+The live account is never refreshed by the switcher: its CLI owns that token,
+and rotating it underneath a running session would log the session out. A
+Codex login that a later `codex login` revoked is reported as such; add that
+account again. Every failure is recorded as that account's `note` and the run
+continues with the next account. The probe's scratch files live under
+`<store>/probe/` and are removed after each request.
+
+The widget colors each account's dot: green has room, yellow is above 90% of
+a window, red has used a window up (the label then carries the reset time,
+as in `(pro, 5d)`), grey has no data. Hovering a row shows every window and
+its reset time. The panel re-probes once per open when the newest record is
+older than ten minutes, and "Refresh usage" probes on demand.
 
 ## Bar widget
 

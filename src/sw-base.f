@@ -23,6 +23,7 @@ public
 -9911 constant E-SW-ENV         \ HOME is not set
 -9912 constant E-SW-INTERRUPTED \ an earlier switch stopped between its two file writes
 -9913 constant E-SW-MISMATCH    \ a saved file names a different account than its slot
+-9914 constant E-SW-ASIDE       \ a login file set aside for a login is still there
 
 0 constant P-CLAUDE
 1 constant P-CODEX
@@ -73,14 +74,24 @@ $3D constant EQUALS
 
 \ account names become directory names: no control bytes, no slash, no
 \ leading dot; any other byte an email may carry is fine in a path
-: CHECK-NAME ( ptr u8 n -- ) {: a u :}
-   u 0 <= if E-SW-NAME throw then
-   u NAME-CAP 1- > if E-SW-NAME throw then
-   a c@ DOT = if E-SW-NAME throw then
+: NAME-OK? ( ptr u8 n -- bool ) {: a u :}
+   u 0 <= if false exit then
+   u NAME-CAP 1- > if false exit then
+   a c@ DOT = if false exit then
    0 begin dup u < while
-      dup a + c@ NAME-BYTE? 0= if E-SW-NAME throw then
+      dup a + c@ NAME-BYTE? 0= if drop false exit then
       1+
-   repeat drop ;
+   repeat drop true ;
+
+: CHECK-NAME ( ptr u8 n -- )
+   NAME-OK? 0= if E-SW-NAME throw then ;
+
+\ a slot name belongs to an email when it is the email or "email (…)"
+: NAME-FOR-EMAIL? ( ptr u8 n ptr u8 n -- bool ) {: a u e eu :}
+   a u e eu STR= if true exit then
+   u eu 2 + <= if false exit then
+   a eu e eu STR= 0= if false exit then
+   a eu + 2 s"  (" STR= ;
 
 : STR< ( ptr u8 n ptr u8 n -- bool ) {: a u b v :}
    0 begin

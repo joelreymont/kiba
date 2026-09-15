@@ -67,9 +67,11 @@ package SW
 : CHECK-SLOT-EMAIL ( ptr u8 n -- ) {: a u :}
    OBJ$ s" emailAddress" EMAIL-BUF EMAIL-CAP DOC-STR1
    dup 0 < if drop E-SW-JSON throw then EMAIL-U !
-   EMAIL$ a u STR= 0= if E-SW-MISMATCH throw then ;
+   a u EMAIL$ NAME-FOR-EMAIL? 0= if E-SW-MISMATCH throw then ;
 
 public
+
+EXPORT CREDS-NAME$
 
 \ loads both live documents; false when Claude Code has no login
 : CLAUDE-LIVE-IDENTITY ( -- bool )
@@ -80,11 +82,11 @@ public
    CLAUDE-IDENTITY ;
 
 \ requires CLAUDE-LIVE-IDENTITY to have loaded the live documents
-: CLAUDE-SAVE-LIVE ( -- )
-   P-CLAUDE EMAIL$ SLOT-DIR$ ENSURE-PRIVATE
-   P-CLAUDE EMAIL$ CREDS-NAME$ SLOT-FILE$ FILE$ WRITE-PRIVATE
+: CLAUDE-SAVE-LIVE ( ptr u8 n -- ) {: a u :}
+   P-CLAUDE a u SLOT-DIR$ ENSURE-PRIVATE
+   P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ FILE$ WRITE-PRIVATE
    CFG$ OAUTH-KEY$ DOC-OBJ-SPAN {: off len :}
-   P-CLAUDE EMAIL$ OAUTH-NAME$ SLOT-FILE$ CFG-BUF off + len WRITE-PRIVATE ;
+   P-CLAUDE a u OAUTH-NAME$ SLOT-FILE$ CFG-BUF off + len WRITE-PRIVATE ;
 
 : CLAUDE-SLOT-PLAN ( ptr u8 n -- ) {: a u :}
    0 PLAN-U !

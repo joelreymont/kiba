@@ -6,5 +6,5 @@ HABU=${HABU:-$HOME/Work/habu}
 SCRATCH=$(mktemp -d)
 trap 'rm -rf "$SCRATCH"' EXIT
 cd "$HABU"
-env HOME="$SCRATCH" XDG_DATA_HOME="$SCRATCH/data" PATH="$SCRATCH/bin" \
+env HOME="$SCRATCH" XDG_DATA_HOME="$SCRATCH/data" PATH="$SCRATCH/bin" SW_TEST_LOG="$SCRATCH/collector.log" \
   bin/hb --load "$HERE/test/sw-unit-test.f" </dev/null

@@ -12,6 +12,7 @@ create SFILE-BUF FS-PATH-CAP allot   variable SFILE-U
 create LIVE-BUF FS-PATH-CAP allot    variable LIVE-U
 create CONFIG-BUF FS-PATH-CAP allot  variable CONFIG-U
 create LOCK-BUF FS-PATH-CAP allot    variable LOCK-U
+create ASIDE-BUF FS-PATH-CAP allot   variable ASIDE-U
 
 public
 
@@ -67,6 +68,11 @@ public
    s" /.claude.json" SB-APPEND
    SB$ CONFIG-BUF CONFIG-U PATH!
    CONFIG-BUF CONFIG-U @ ;
+
+: ASIDE-FOR ( ptr u8 n -- ptr u8 n )
+   SB-RESET SB-APPEND s" .switcher-aside" SB-APPEND
+   SB$ ASIDE-BUF ASIDE-U PATH!
+   ASIDE-BUF ASIDE-U @ ;
 
 : CODEX-AUTH$ ( -- ptr u8 n )
    SB-RESET
