@@ -1,4 +1,4 @@
-\ sw-cli.f - the switcher commands: status, save, use, add, forget.
+\ sw-cli.f - the kiba commands: status, save, use, add, forget.
 require ../src/sw-store.f
 require ../src/sw-run.f
 require ../src/sw-usage.f
@@ -54,31 +54,31 @@ public
 \ LOCK$ builds through the same string builder, so it goes first
 : LOCKED-REASON$ ( -- ptr u8 n )
    LOCK$ {: l lu :}
-   SB-RESET s" switcher: another switcher holds the store lock; remove " SB-APPEND
+   SB-RESET s" kiba: another kiba holds the store lock; remove " SB-APPEND
    l lu SB-APPEND s"  if it is stale" SB-APPEND SB$ ;
 
 : REASON$ ( n -- ptr u8 n ) {: rc :}
-   rc E-SW-PROVIDER = if s" switcher: provider must be claude or codex" exit then
-   rc E-SW-NO-LIVE = if s" switcher: no live login to save" exit then
-   rc E-SW-NO-ACCOUNT = if s" switcher: no such saved account" exit then
-   rc E-SW-NAME = if s" switcher: account name has unsafe characters" exit then
+   rc E-SW-PROVIDER = if s" kiba: provider must be claude or codex" exit then
+   rc E-SW-NO-LIVE = if s" kiba: no live login to save" exit then
+   rc E-SW-NO-ACCOUNT = if s" kiba: no such saved account" exit then
+   rc E-SW-NAME = if s" kiba: account name has unsafe characters" exit then
    rc E-SW-LOCKED = if LOCKED-REASON$ exit then
-   rc E-SW-JSON = if s" switcher: a login file is missing an expected field" exit then
-   rc E-SW-LOGIN = if s" switcher: provider login did not complete" exit then
-   rc E-SW-CAPACITY = if s" switcher: too many saved accounts or a file over 4 MiB" exit then
-   rc E-SW-NO-CLI = if s" switcher: provider command is not on PATH" exit then
-   rc E-SW-BASE64 = if s" switcher: id_token is not base64url" exit then
-   rc E-SW-ENV = if s" switcher: HOME is not set" exit then
-   rc E-SW-INTERRUPTED = if s" switcher: an earlier switch was interrupted; run `switcher use` to finish it" exit then
-   rc E-SW-MISMATCH = if s" switcher: the saved file belongs to a different account than its folder name" exit then
-   rc E-SW-ASIDE = if s" switcher: an earlier `add` left a .switcher-aside login file; move it back or remove it" exit then
-   rc E-FS-OPEN = if s" switcher: cannot open a login file" exit then
-   rc E-FS-IO = if s" switcher: a file read, write, or rename failed" exit then
-   rc E-FS-CAPACITY = if s" switcher: a login file is larger than 4 MiB" exit then
-   rc E-FS-PATH-UNSAFE = if s" switcher: refusing to write through a symlink chain" exit then
-   rc E-PROC-SPAWN = if s" switcher: could not start the provider command" exit then
-   rc E-JR-LAST >= rc E-JR-FIRST <= and if s" switcher: a login file is not valid JSON" exit then
-   SB-RESET s" switcher: error code " SB-APPEND rc FMT:SB-INT SB$ ;
+   rc E-SW-JSON = if s" kiba: a login file is missing an expected field" exit then
+   rc E-SW-LOGIN = if s" kiba: provider login did not complete" exit then
+   rc E-SW-CAPACITY = if s" kiba: too many saved accounts or a file over 4 MiB" exit then
+   rc E-SW-NO-CLI = if s" kiba: provider command is not on PATH" exit then
+   rc E-SW-BASE64 = if s" kiba: id_token is not base64url" exit then
+   rc E-SW-ENV = if s" kiba: HOME is not set" exit then
+   rc E-SW-INTERRUPTED = if s" kiba: an earlier switch was interrupted; run `kiba use` to finish it" exit then
+   rc E-SW-MISMATCH = if s" kiba: the saved file belongs to a different account than its folder name" exit then
+   rc E-SW-ASIDE = if s" kiba: an earlier `add` left a .kiba-aside login file; move it back or remove it" exit then
+   rc E-FS-OPEN = if s" kiba: cannot open a login file" exit then
+   rc E-FS-IO = if s" kiba: a file read, write, or rename failed" exit then
+   rc E-FS-CAPACITY = if s" kiba: a login file is larger than 4 MiB" exit then
+   rc E-FS-PATH-UNSAFE = if s" kiba: refusing to write through a symlink chain" exit then
+   rc E-PROC-SPAWN = if s" kiba: could not start the provider command" exit then
+   rc E-JR-LAST >= rc E-JR-FIRST <= and if s" kiba: a login file is not valid JSON" exit then
+   SB-RESET s" kiba: error code " SB-APPEND rc FMT:SB-INT SB$ ;
 
 private
 
@@ -210,7 +210,7 @@ private
 
 \ a completed login rewrote every live file, so a marker from before it is
 \ stale; one that appeared while the lock was released belongs to another
-\ switcher's interrupted install and the live pair cannot be trusted
+\ kiba's interrupted install and the live pair cannot be trusted
 : ADD-SAVE-LOCKED ( -- )
    CMD-P @ INSTALLING? ADD-MARKED @ 0= and if E-SW-INTERRUPTED throw then
    CMD-P @ LIVE-IDENTITY 0= if CMD-P @ RESTORE-ASIDE E-SW-NO-LIVE throw then

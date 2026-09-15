@@ -1,6 +1,6 @@
-\ sw-unit-test.f - checked switcher tests.
+\ sw-unit-test.f - checked kiba tests.
 \ Run through test.sh: HOME, XDG_DATA_HOME, and PATH must point at a scratch tree.
-require ../src/switcher.f
+require ../src/kiba.f
 require lib/test.f
 
 package SW-TEST
@@ -138,7 +138,7 @@ create UT-BUF 256 allot
    UNLOCK-STORE
    [: UT-LOCKED-BOOM ;] E-SW-JSON TTHROWSQ
    LOCK$ DIR? TFALSE
-   E-SW-LOCKED REASON$ s" switcher: another switcher holds the store lock; remove " STARTS-WITH? TTRUE
+   E-SW-LOCKED REASON$ s" kiba: another kiba holds the store lock; remove " STARTS-WITH? TTRUE
    E-SW-LOCKED REASON$ s"  if it is stale" ENDS-WITH? TTRUE
    E-SW-LOCKED REASON$ LOCK$ CONTAINS? TTRUE ;
 
@@ -305,7 +305,7 @@ create UT-BUF 256 allot
 : UT-STATUS-ISOLATION ( -- )
    CLAUDE-CONFIG$ s" {not json" WRITE-PRIVATE
    STATUS-JSON$ s\" \"id\":\"claude\",\"live\":null,\"accounts\":[{\"email\":\"a@x.test\"" CONTAINS? TTRUE
-   STATUS-JSON$ s\" \"error\":\"switcher: a login file is not valid JSON\"" CONTAINS? TTRUE
+   STATUS-JSON$ s\" \"error\":\"kiba: a login file is not valid JSON\"" CONTAINS? TTRUE
    STATUS-JSON$ s\" \"id\":\"codex\",\"live\":{\"email\":\"c@x.test\",\"plan\":\"plus\"}" CONTAINS? TTRUE
    CLAUDE-CONFIG$ CFG-BA$ WRITE-PRIVATE ;
 
@@ -359,7 +359,7 @@ create UT-BUF 256 allot
 \ given, writes the body to the -o file, prints the status, and logs the call
 : UT-FAKE-CURL ( -- )
    s" curl"
-   s\" #!/bin/sh\nout=; auth=; url=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) case \"$2\" in Authorization:*) auth=$2;; esac; shift;; --data-binary) echo \"data $2\" >> \"$SW_TEST_LOG\"; shift;; -X|-m|-w) shift;; *) url=$1;; esac; shift; done\necho \"$url $auth\" >> \"$SW_TEST_LOG\"\ncode=200; body='{}'\ncase \"$url\" in\n*api.anthropic.com/api/oauth/usage) case \"$auth\" in *sk-a) body='{\"five_hour\":{\"utilization\":56.25,\"resets_at\":\"2026-09-15T14:00:00+00:00\"},\"seven_day\":{\"utilization\":100,\"resets_at\":\"2026-09-21T11:00:00+00:00\"}}';; *sk-b-new) body='{\"five_hour\":{\"utilization\":12.4,\"resets_at\":\"2026-09-15T15:00:00+00:00\"},\"seven_day_oauth_apps\":{\"utilization\":0.5,\"resets_at\":\"\"}}';; *) code=401; body='{\"error\":\"expired\"}';; esac;;\n*platform.claude.com/v1/oauth/token) body='{\"access_token\":\"sk-b-new\",\"refresh_token\":\"r-b-new\",\"expires_in\":3600}';;\n*chatgpt.com/backend-api/wham/usage) case \"$auth\" in *at-c) body='{\"plan_type\":\"pro\",\"rate_limit\":{\"allowed\":false,\"limit_reached\":true,\"primary_window\":{\"used_percent\":100,\"limit_window_seconds\":604800,\"reset_after_seconds\":433078,\"reset_at\":1789904220},\"secondary_window\":null}}';; *at-d2) body='{\"rate_limit\":{\"primary_window\":{\"used_percent\":12,\"limit_window_seconds\":18000,\"reset_at\":1789489142},\"secondary_window\":{\"used_percent\":40,\"limit_window_seconds\":604800,\"reset_at\":1790075942}}}';; *at-z) code=401; body='{\"error\":{\"code\":\"token_revoked\"}}';; *) code=401; body='{\"error\":{\"code\":\"token_expired\"}}';; esac;;\n*auth.openai.com/oauth/token) body='{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d2\",\"refresh_token\":\"rt-d2\"}';;\n*) code=404;;\nesac\nprintf '%s' \"$body\" > \"$out\"\nprintf '%s' \"$code\"\n"
+   s\" #!/bin/sh\nout=; auth=; url=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) case \"$2\" in Authorization:*) auth=$2;; esac; shift;; --data-binary) echo \"data $2\" >> \"$KIBA_TEST_LOG\"; shift;; -X|-m|-w) shift;; *) url=$1;; esac; shift; done\necho \"$url $auth\" >> \"$KIBA_TEST_LOG\"\ncode=200; body='{}'\ncase \"$url\" in\n*api.anthropic.com/api/oauth/usage) case \"$auth\" in *sk-a) body='{\"five_hour\":{\"utilization\":56.25,\"resets_at\":\"2026-09-15T14:00:00+00:00\"},\"seven_day\":{\"utilization\":100,\"resets_at\":\"2026-09-21T11:00:00+00:00\"}}';; *sk-b-new) body='{\"five_hour\":{\"utilization\":12.4,\"resets_at\":\"2026-09-15T15:00:00+00:00\"},\"seven_day_oauth_apps\":{\"utilization\":0.5,\"resets_at\":\"\"}}';; *) code=401; body='{\"error\":\"expired\"}';; esac;;\n*platform.claude.com/v1/oauth/token) body='{\"access_token\":\"sk-b-new\",\"refresh_token\":\"r-b-new\",\"expires_in\":3600}';;\n*chatgpt.com/backend-api/wham/usage) case \"$auth\" in *at-c) body='{\"plan_type\":\"pro\",\"rate_limit\":{\"allowed\":false,\"limit_reached\":true,\"primary_window\":{\"used_percent\":100,\"limit_window_seconds\":604800,\"reset_after_seconds\":433078,\"reset_at\":1789904220},\"secondary_window\":null}}';; *at-d2) body='{\"rate_limit\":{\"primary_window\":{\"used_percent\":12,\"limit_window_seconds\":18000,\"reset_at\":1789489142},\"secondary_window\":{\"used_percent\":40,\"limit_window_seconds\":604800,\"reset_at\":1790075942}}}';; *at-z) code=401; body='{\"error\":{\"code\":\"token_revoked\"}}';; *) code=401; body='{\"error\":{\"code\":\"token_expired\"}}';; esac;;\n*auth.openai.com/oauth/token) body='{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d2\",\"refresh_token\":\"rt-d2\"}';;\n*) code=404;;\nesac\nprintf '%s' \"$body\" > \"$out\"\nprintf '%s' \"$code\"\n"
    UT-WRITE-SCRIPT ;
 
 : AUTH-D2$ ( -- ptr u8 n )
@@ -382,7 +382,7 @@ create UT-BUF 256 allot
    s" ." HUNDREDTHS -1 T= ;
 
 : LOG$ ( -- ptr u8 n )
-   s" SW_TEST_LOG" GETENV ;
+   s" KIBA_TEST_LOG" GETENV ;
 
 \ live claude a@x.test (sk-a, expired but live: no refresh) and codex c@x.test;
 \ saved b@x.test refreshes its expired token, saved d@x.test refreshes after 401,
@@ -450,7 +450,7 @@ create UT-BUF 256 allot
 \ failure; the fake `codex` records what it saw and writes AUTH-D on success
 : UT-FAKE-CODEX ( -- )
    s" codex"
-   s\" #!/bin/sh\nif [ -e \"$HOME/.codex/auth.json\" ]; then echo present >> \"$SW_TEST_LOG\"; else echo absent >> \"$SW_TEST_LOG\"; fi\nif [ -e \"$HOME/fail-login\" ]; then exit 3; fi\nprintf '%s' '{\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d\",\"refresh_token\":\"rt-d\",\"account_id\":\"acct\"}}' > \"$HOME/.codex/auth.json\"\n"
+   s\" #!/bin/sh\nif [ -e \"$HOME/.codex/auth.json\" ]; then echo present >> \"$KIBA_TEST_LOG\"; else echo absent >> \"$KIBA_TEST_LOG\"; fi\nif [ -e \"$HOME/fail-login\" ]; then exit 3; fi\nprintf '%s' '{\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d\",\"refresh_token\":\"rt-d\",\"account_id\":\"acct\"}}' > \"$HOME/.codex/auth.json\"\n"
    UT-WRITE-SCRIPT ;
 
 : UT-ADD ( -- )

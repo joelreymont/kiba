@@ -130,7 +130,7 @@ private
    p a u SLOT-PLAN-RAW p a u ;
 
 : WARN-SLOT ( ptr u8 n n -- ) {: a u rc :}
-   SB-RESET s" switcher: saved account " SB-APPEND a u SB-APPEND
+   SB-RESET s" kiba: saved account " SB-APPEND a u SB-APPEND
    s"  has an unreadable file (error " SB-APPEND rc FMT:SB-INT s" )" SB-APPEND
    SB$ ERR-NOTE ;
 

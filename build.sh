@@ -1,21 +1,21 @@
 #!/bin/sh
-# Builds the native switcher binary with Habu and installs it to ~/.local/bin.
+# Builds the native kiba binary with Habu and installs it to ~/.local/bin.
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 HABU=${HABU:-$HOME/Work/habu}
-OUT="$HERE/build/switcher"
+OUT="$HERE/build/kiba"
 mkdir -p "$HERE/build"
 cd "$HABU"
-bin/hb --load tools/hb-build.f -- --repl "$HERE/src/switcher.f" -o "$OUT"
-install -m 0755 "$OUT" "$HOME/.local/bin/switcher"
-echo "installed $HOME/.local/bin/switcher"
+bin/hb --load tools/hb-build.f -- --repl "$HERE/src/kiba.f" -o "$OUT"
+install -m 0755 "$OUT" "$HOME/.local/bin/kiba"
+echo "installed $HOME/.local/bin/kiba"
 
 # The shell watches for a replaced plugin folder; stage a copy and swap it in.
 PLUGINS="$HOME/.config/omarchy/plugins"
-STAGE="$PLUGINS/.joel.switcher.staging"
+STAGE="$PLUGINS/.joel.kiba.staging"
 mkdir -p "$PLUGINS"
 rm -rf "$STAGE"
-cp -r "$HERE/plugin/joel.switcher" "$STAGE"
-rm -rf "$PLUGINS/joel.switcher"
-mv "$STAGE" "$PLUGINS/joel.switcher"
-echo "installed $PLUGINS/joel.switcher"
+cp -r "$HERE/plugin/joel.kiba" "$STAGE"
+rm -rf "$PLUGINS/joel.kiba"
+mv "$STAGE" "$PLUGINS/joel.kiba"
+echo "installed $PLUGINS/joel.kiba"

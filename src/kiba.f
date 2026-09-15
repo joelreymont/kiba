@@ -1,15 +1,15 @@
-\ switcher.f - entry point: argument dispatch and process exit.
+\ kiba.f - entry point: argument dispatch and process exit.
 require ../src/sw-cli.f
 
 package SW
 
 : USAGE ( -- )
-   s\" usage: switcher status [--json]\n" ERR-TYPE
-   s\"        switcher save [claude|codex]\n" ERR-TYPE
-   s\"        switcher use <claude|codex> <email>\n" ERR-TYPE
-   s\"        switcher add <claude|codex>\n" ERR-TYPE
-   s\"        switcher forget <claude|codex> <email>\n" ERR-TYPE
-   s\"        switcher usage [claude|codex]\n" ERR-TYPE ;
+   s\" usage: kiba status [--json]\n" ERR-TYPE
+   s\"        kiba save [claude|codex]\n" ERR-TYPE
+   s\"        kiba use <claude|codex> <email>\n" ERR-TYPE
+   s\"        kiba add <claude|codex>\n" ERR-TYPE
+   s\"        kiba forget <claude|codex> <email>\n" ERR-TYPE
+   s\"        kiba usage [claude|codex]\n" ERR-TYPE ;
 
 : ARG$ ( n -- ptr u8 n )
    dup SCRIPT-ARGC >= if drop E-SW-USAGE throw then

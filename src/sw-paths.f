@@ -23,7 +23,7 @@ public
    STORE-U @ 0 > if STORE-BUF STORE-U @ exit then
    SB-RESET
    s" XDG_DATA_HOME" GETENV dup 0 > if SB-APPEND else 2drop HOME$ SB-APPEND s" /.local/share" SB-APPEND then
-   s" /switcher" SB-APPEND
+   s" /kiba" SB-APPEND
    SB$ STORE-BUF STORE-U PATH!
    STORE-BUF STORE-U @ ;
 
@@ -70,7 +70,7 @@ public
    CONFIG-BUF CONFIG-U @ ;
 
 : ASIDE-FOR ( ptr u8 n -- ptr u8 n )
-   SB-RESET SB-APPEND s" .switcher-aside" SB-APPEND
+   SB-RESET SB-APPEND s" .kiba-aside" SB-APPEND
    SB$ ASIDE-BUF ASIDE-U PATH!
    ASIDE-BUF ASIDE-U @ ;
 

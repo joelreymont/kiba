@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "id": "joel.switcher",
+  "id": "joel.kiba",
   "name": "AI accounts",
   "version": "0.1.0",
   "author": "Joel",
@@ -12,7 +12,7 @@
   },
   "barWidget": {
     "displayName": "AI accounts",
-    "description": "Active Claude Code and Codex accounts with one-click switching through the switcher CLI.",
+    "description": "Active Claude Code and Codex accounts with one-click switching through the kiba CLI.",
     "category": "AI",
     "allowMultiple": false,
     "defaultSection": "right",

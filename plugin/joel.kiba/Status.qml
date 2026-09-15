@@ -2,7 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-// Model: runs the switcher CLI and holds its parsed status. No account logic lives here.
+// Model: runs the kiba CLI and holds its parsed status. No account logic lives here.
 Item {
   id: root
   visible: false
@@ -87,7 +87,7 @@ Item {
     refreshQueued = false
     statusOutput = ""
     statusProcessError = ""
-    statusProcess.command = ["switcher", "status", "--json"]
+    statusProcess.command = ["kiba", "status", "--json"]
     statusPending = true
     statusProcess.running = true
   }
@@ -105,11 +105,11 @@ Item {
 
   function use(provider, email) {
     runAction("Switching " + providerTitle(provider) + " to " + email + "…",
-      ["switcher", "use", provider, email])
+      ["kiba", "use", provider, email])
   }
 
   function probeUsage() {
-    runAction("Probing usage for every saved account…", ["switcher", "usage"])
+    runAction("Probing usage for every saved account…", ["kiba", "usage"])
   }
 
   // The newest usage record across every saved account; 0 when none exists.
@@ -125,14 +125,14 @@ Item {
 
   function save(provider) {
     runAction("Saving the current " + providerTitle(provider) + " login…",
-      ["switcher", "save", provider])
+      ["kiba", "save", provider])
   }
 
   // Login needs a browser hand-off and a terminal prompt, so it runs in its own terminal.
   function add(provider) {
     Quickshell.execDetached([
-      "xdg-terminal-exec", "--title=Switcher: add " + provider, "--hold", "--",
-      "switcher", "add", provider
+      "xdg-terminal-exec", "--title=Kiba: add " + provider, "--hold", "--",
+      "kiba", "add", provider
     ])
   }
 
@@ -141,7 +141,7 @@ Item {
     statusPending = false
     availability = "missing"
     providers = []
-    statusError = "The switcher command did not run. Install it to ~/.local/bin with build.sh."
+    statusError = "The kiba command did not run. Install it to ~/.local/bin with build.sh."
     if (refreshQueued) refresh()
   }
 
@@ -149,7 +149,7 @@ Item {
     if (!actionPending || actionProcess.running) return
     actionPending = false
     message = ""
-    actionError = "The switcher command did not run. Install it to ~/.local/bin with build.sh."
+    actionError = "The kiba command did not run. Install it to ~/.local/bin with build.sh."
   }
 
   Process {
@@ -174,13 +174,13 @@ Item {
       if (exitCode !== 0) {
         root.availability = "failed"
         root.providers = []
-        root.statusError = root.elide(stderr || stdout, "switcher status failed.")
+        root.statusError = root.elide(stderr || stdout, "kiba status failed.")
       } else {
         var next = root.normalize(stdout)
         if (next === null) {
           root.availability = "malformed"
           root.providers = []
-          root.statusError = "switcher status returned unreadable JSON."
+          root.statusError = "kiba status returned unreadable JSON."
         } else {
           root.availability = "ready"
           root.providers = next
@@ -219,7 +219,7 @@ Item {
         messageTimer.restart()
       } else {
         root.message = ""
-        root.actionError = root.elide(stderr || stdout, "switcher failed.")
+        root.actionError = root.elide(stderr || stdout, "kiba failed.")
       }
       root.refresh()
     }

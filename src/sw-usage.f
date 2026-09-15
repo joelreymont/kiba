@@ -246,9 +246,9 @@ create BEARER-BUF HDR-CAP allot
    s" Accept" s" application/json" HDR ;
 
 : EXEC-CURL ( ptr u8 ptr ptr u8 -- ) {: pathz argv :}
-   OUT-FD @ 1 dup2 0 < if s" switcher: dup2 failed" 127 die then
+   OUT-FD @ 1 dup2 0 < if s" kiba: dup2 failed" 127 die then
    pathz argv ENVP-BASE execve drop
-   s" switcher: could not start curl" 127 die ;
+   s" kiba: could not start curl" 127 die ;
 
 \ run the staged curl; the parsed status code, or -1 when curl itself failed
 : CURL-RUN ( ptr u8 n -- n ) {: url uu :}

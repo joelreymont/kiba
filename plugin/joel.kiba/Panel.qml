@@ -4,11 +4,11 @@ import qs.Commons
 import qs.Ui
 
 // Bar widget: the live account per provider, every saved login with how much
-// room it has left, and one-click switching through the switcher CLI.
+// room it has left, and one-click switching through the kiba CLI.
 Panel {
   id: root
-  moduleName: "joel.switcher"
-  ipcTarget: "joel.switcher"
+  moduleName: "joel.kiba"
+  ipcTarget: "joel.kiba"
 
   property bool cursorActive: false
   property int cursor: 0

@@ -1,4 +1,4 @@
-\ sw-base.f - errors, providers, and byte helpers shared by every switcher module.
+\ sw-base.f - errors, providers, and byte helpers shared by every kiba module.
 require lib/errors.f
 require lib/string.f
 require lib/prelude.f
@@ -8,13 +8,13 @@ package SW
 
 public
 
-\ switcher error block: -9900..-9999, outside every lib/errors.f range
+\ kiba error block: -9900..-9999, outside every lib/errors.f range
 -9900 constant E-SW-USAGE       \ bad command line
 -9901 constant E-SW-PROVIDER    \ unknown provider name
 -9902 constant E-SW-NO-LIVE     \ the provider has no live login to save
 -9903 constant E-SW-NO-ACCOUNT  \ the named account is not saved
 -9904 constant E-SW-NAME        \ an account name carries unsafe bytes
--9905 constant E-SW-LOCKED      \ another switcher holds the store lock
+-9905 constant E-SW-LOCKED      \ another kiba holds the store lock
 -9906 constant E-SW-JSON        \ a provider file lacks an expected field
 -9907 constant E-SW-LOGIN       \ the provider login command failed
 -9908 constant E-SW-CAPACITY    \ a fixed buffer is too small

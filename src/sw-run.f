@@ -30,7 +30,7 @@ variable EXE-U
 \ group, and a login that then reads the terminal is stopped by SIGTTIN
 : EXEC-STAGED ( ptr u8 ptr ptr u8 -- ) {: pathz argv :}
    pathz argv ENVP-BASE execve drop
-   s" switcher: could not start the provider command" 127 die ;
+   s" kiba: could not start the provider command" 127 die ;
 
 : RUN-INHERIT ( -- n )
    EXE$ >LEN PROC-ARGV-PREPARE {: pathz argv :}
