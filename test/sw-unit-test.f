@@ -7,6 +7,7 @@ package SW-TEST
 using SW
 
 create UT-BUF 256 allot
+create UT-PID 32 allot
 
 : SPAN-COPY ( ptr u8 n ptr u8 n -- ptr u8 n ) {: a u dst cap :}
    u cap > if E-SW-CAPACITY throw then
@@ -346,11 +347,14 @@ create UT-BUF 256 allot
 \ given, writes the body to the -o file, prints the status, and logs the call
 : UT-FAKE-CURL ( -- )
    s" curl"
-   s\" #!/bin/sh\nout=; auth=; url=; grant=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) case \"$2\" in @*) auth=$(/usr/bin/grep ^Authorization: \"${2#@}\"); echo \"hdrmode $(/usr/bin/stat -c %a \"${2#@}\")\" >> \"$KIBA_TEST_LOG\";; *) echo \"argvheader $2\" >> \"$KIBA_TEST_LOG\";; esac; shift;; --data-binary) echo \"data $2\" >> \"$KIBA_TEST_LOG\"; grant=$(/usr/bin/cat \"${2#@}\"); shift;; -X|-m|-w) shift;; *) url=$1;; esac; shift; done\necho \"$url $auth\" >> \"$KIBA_TEST_LOG\"\ncode=200; body='{}'\ncase \"$url\" in\n*api.anthropic.com/api/oauth/usage) case \"$auth\" in *sk-a) body='{\"five_hour\":{\"utilization\":56.25,\"resets_at\":\"2026-09-15T14:00:00+00:00\"},\"seven_day\":{\"utilization\":100,\"resets_at\":\"2026-09-21T11:00:00+00:00\"}}';; *sk-b-new) body='{\"five_hour\":{\"utilization\":12.4,\"resets_at\":\"2026-09-15T15:00:00+00:00\"},\"seven_day_oauth_apps\":{\"utilization\":0.5,\"resets_at\":\"\"}}';; *) code=401; body='{\"error\":\"expired\"}';; esac;;\n*platform.claude.com/v1/oauth/token) body='{\"access_token\":\"sk-b-new\",\"refresh_token\":\"r-b-new\",\"expires_in\":3600}';;\n*chatgpt.com/backend-api/wham/usage) case \"$auth\" in *at-c) body='{\"plan_type\":\"pro\",\"rate_limit\":{\"allowed\":false,\"limit_reached\":true,\"primary_window\":{\"used_percent\":100,\"limit_window_seconds\":604800,\"reset_after_seconds\":433078,\"reset_at\":1789904220},\"secondary_window\":null}}';; *at-d2) body='{\"rate_limit\":{\"primary_window\":{\"used_percent\":12,\"limit_window_seconds\":18000,\"reset_at\":1789489142},\"secondary_window\":{\"used_percent\":40,\"limit_window_seconds\":604800,\"reset_at\":1790075942}}}';; *at-z) code=401; body='{\"error\":{\"code\":\"token_revoked\"}}';; *) code=401; body='{\"error\":{\"code\":\"token_expired\"}}';; esac;;\n*auth.openai.com/oauth/token) case \"$grant\" in *rt-z*) code=401; body='{\"error\":\"invalid_grant\"}';; *) body='{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d2\",\"refresh_token\":\"rt-d2\"}';; esac;;\n*) code=404;;\nesac\nprintf '%s' \"$body\" > \"$out\"\nprintf '%s' \"$code\"\n"
+   s\" #!/bin/sh\nout=; auth=; url=; grant=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) case \"$2\" in @*) auth=$(/usr/bin/grep ^Authorization: \"${2#@}\"); echo \"hdrmode $(/usr/bin/stat -c %a \"${2#@}\")\" >> \"$KIBA_TEST_LOG\";; *) echo \"argvheader $2\" >> \"$KIBA_TEST_LOG\";; esac; shift;; --data-binary) echo \"data $2\" >> \"$KIBA_TEST_LOG\"; grant=$(/usr/bin/cat \"${2#@}\"); shift;; -X|-m|-w) shift;; *) url=$1;; esac; shift; done\necho \"$url $auth\" >> \"$KIBA_TEST_LOG\"\ncode=200; body='{}'\ncase \"$url\" in\n*api.anthropic.com/api/oauth/usage) case \"$auth\" in *sk-a) body='{\"five_hour\":{\"utilization\":56.25,\"resets_at\":\"2026-09-15T14:00:00+00:00\"},\"seven_day\":{\"utilization\":100,\"resets_at\":\"2026-09-21T11:00:00+00:00\"}}';; *sk-b-new) body='{\"five_hour\":{\"utilization\":12.4,\"resets_at\":\"2026-09-15T15:00:00+00:00\"},\"seven_day_oauth_apps\":{\"utilization\":0.5,\"resets_at\":\"\"}}';; *) code=401; body='{\"error\":\"expired\"}';; esac;;\n*platform.claude.com/v1/oauth/token) body='{\"access_token\":\"sk-b-new\",\"refresh_token\":\"r-b-new\",\"expires_in\":3600}';;\n*chatgpt.com/backend-api/wham/usage) case \"$auth\" in *at-c) body='{\"plan_type\":\"pro\",\"rate_limit\":{\"allowed\":false,\"limit_reached\":true,\"primary_window\":{\"used_percent\":100,\"limit_window_seconds\":604800,\"reset_after_seconds\":433078,\"reset_at\":1789904220},\"secondary_window\":null}}';; *at-d2) body='{\"rate_limit\":{\"primary_window\":{\"used_percent\":12,\"limit_window_seconds\":18000,\"reset_at\":1789489142},\"secondary_window\":{\"used_percent\":40,\"limit_window_seconds\":604800,\"reset_at\":1790075942}}}';; *at-z|*at-y) code=401; body='{\"error\":{\"code\":\"token_revoked\"}}';; *) code=401; body='{\"error\":{\"code\":\"token_expired\"}}';; esac;;\n*auth.openai.com/oauth/token) case \"$grant\" in *rt-z*) code=401; body='{\"error\":\"invalid_grant\"}';; *rt-y*) code=503; body='';; *) body='{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d2\",\"refresh_token\":\"rt-d2\"}';; esac;;\n*) code=404;;\nesac\nprintf '%s' \"$body\" > \"$out\"\nprintf '%s' \"$code\"\n"
    UT-WRITE-SCRIPT ;
 
 : AUTH-D2$ ( -- ptr u8 n )
    s\" {\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d2\",\"refresh_token\":\"rt-d2\",\"account_id\":\"acct\"}}" ;
+
+: AUTH-Y$ ( -- ptr u8 n )
+   s\" {\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-y\",\"refresh_token\":\"rt-y\",\"account_id\":\"acct\"}}" ;
 
 : AUTH-Z$ ( -- ptr u8 n )
    s\" {\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-z\",\"refresh_token\":\"rt-z\",\"account_id\":\"acct\"}}" ;
@@ -381,6 +385,8 @@ create UT-BUF 256 allot
    P-CLAUDE s" b@x.test" s" oauth-account.json" SLOT-FILE$ s\" {\"emailAddress\":\"b@x.test\"}" WRITE-PRIVATE
    P-CODEX s" z@x.test" SLOT-DIR$ ENSURE-PRIVATE
    P-CODEX s" z@x.test" s" auth.json" SLOT-FILE$ AUTH-Z$ WRITE-PRIVATE
+   P-CODEX s" y@x.test" SLOT-DIR$ ENSURE-PRIVATE
+   P-CODEX s" y@x.test" s" auth.json" SLOT-FILE$ AUTH-Y$ WRITE-PRIVATE
    -1 CMD-USAGE
    P-CLAUDE s" a@x.test" LOAD-USAGE TTRUE
    LIM#@ 2 T=
@@ -417,6 +423,10 @@ create UT-BUF 256 allot
    d du s\" \"account_id\":\"acct\"" CONTAINS? TTRUE
    d du CODEX-IDENTITY TTRUE EMAIL$ s" d@x.test" T$=
    P-CODEX s" z@x.test" SLOT-DIR$ DIR? TFALSE
+   P-CODEX s" y@x.test" SLOT-DIR$ DIR? TTRUE
+   P-CODEX s" y@x.test" LOAD-USAGE TTRUE STATE$ s" error" T$=
+   P-CODEX s" y@x.test" s" auth.json" SLOT-FILE$ READ-FILE$ AUTH-Y$ T$=
+   P-CODEX s" y@x.test" CMD-FORGET
    LOG$ READ-FILE$ s" argvheader Authorization" CONTAINS? TFALSE
    LOG$ READ-FILE$ s" hdrmode 600" CONTAINS? TTRUE
    s" /headers.txt" PSUB-PUBLIC$ FILE? TFALSE
@@ -502,6 +512,20 @@ create UT-BUF 256 allot
    P-CODEX CMD-SAVE
    P-CODEX s" c@x.test" s" auth.json" SLOT-FILE$ READ-FILE$ AUTH-C$ T$= ;
 
+\ a damaged bare slot is not claimed by a login whose organization another
+\ slot already holds: that slot keeps the name, the damaged one stays put
+: UT-DAMAGED-NOT-CLAIMED ( -- )
+   P-CLAUDE s" a@x.test #2" SLOT-DIR$ ENSURE-PRIVATE
+   P-CLAUDE s" a@x.test #2" s" credentials.json" SLOT-FILE$ CREDS-A$ WRITE-PRIVATE
+   P-CLAUDE s" a@x.test #2" s" oauth-account.json" SLOT-FILE$ OAUTH-A$ WRITE-PRIVATE
+   P-CLAUDE s" a@x.test" s" oauth-account.json" SLOT-FILE$ s" garbage" WRITE-PRIVATE
+   P-CLAUDE LIVE-IDENTITY TTRUE
+   P-CLAUDE LIVE-NAME s" a@x.test #2" T$=
+   P-CLAUDE s" a@x.test" s" oauth-account.json" SLOT-FILE$ OAUTH-A$ WRITE-PRIVATE
+   P-CLAUDE s" a@x.test #2" CMD-FORGET
+   P-CLAUDE LIVE-IDENTITY TTRUE
+   P-CLAUDE LIVE-NAME s" a@x.test" T$= ;
+
 \ a lock left by a dead process is taken over; a live holder is respected
 : UT-STALE-LOCK ( -- )
    LOCK$ ENSURE-PRIVATE
@@ -511,7 +535,9 @@ create UT-BUF 256 allot
    P-CODEX CMD-SAVE
    LOCK$ DIR? TFALSE
    LOCK$ ENSURE-PRIVATE
-   SB-RESET getpid FMT:SB-U f fu SB$ WRITE-PRIVATE
+   SB-RESET getpid FMT:SB-U SB$ UT-PID 32 SPAN-COPY {: pt ptu :}
+   f fu pt ptu WRITE-PRIVATE
+   f fu READ-FILE$ pt ptu T$=
    [: P-CODEX CMD-SAVE ;] E-SW-LOCKED TTHROWSQ
    f fu REMOVE-FILE
    LOCK$ REMOVE-DIR ;
@@ -580,6 +606,7 @@ create UT-BUF 256 allot
    UT-LIVE-EXPIRED
    UT-USAGE-ISOLATION
    UT-DAMAGED-LIVE-SLOT
+   UT-DAMAGED-NOT-CLAIMED
    UT-STALE-LOCK
    UT-MIXED-PAIR
    UT-NAMES

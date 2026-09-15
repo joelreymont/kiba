@@ -106,13 +106,24 @@ public
 : WRITE-TMP-KEEP ( ptr u8 n -- ptr u8 n ) {: src su :}
    src su WRITE-TMP src su ;
 
-\ a failed write must not leave a partial secret behind as <file>.tmp
+: RENAME-TMP-KEEP ( ptr u8 n -- ptr u8 n ) {: da du :}
+   TMP$ da du RENAME-FILE da du ;
+
+: DROP-TMP ( -- )
+   TMP$ FILE? if TMP$ REMOVE-FILE then ;
+
+\ a failed write or rename must not leave a secret behind as <file>.tmp
 : WRITE-PRIVATE ( ptr u8 n ptr u8 n -- ) {: pa pu src su :}
    pa pu WRITE-TARGET {: da du :}
    da du TMP-FOR
    src su [: WRITE-TMP-KEEP ;] catch {: rc :} 2drop
-   rc 0<> if TMP$ FILE? if TMP$ REMOVE-FILE then rc throw then
-   TMP$ da du RENAME-FILE ;
+   rc 0<> if DROP-TMP rc throw then
+   da du [: RENAME-TMP-KEEP ;] catch {: rc2 :} 2drop
+   rc2 0<> if DROP-TMP rc2 throw then ;
+
+\ the temp twin of any file, for sweeping a crashed write
+: ASIDE-TMP ( ptr u8 n -- ptr u8 n )
+   TMP-FOR TMP$ ;
 
 \ directories the store creates are private at every level; an existing
 \ directory, whoever made it, is left as it is
@@ -127,6 +138,7 @@ public
 \ mkdir is the mutex; the holder's pid inside it lets a later run tell a
 \ crashed holder from a live one, since nothing releases the lock on death.
 create LOCKPID-BUF FS-PATH-CAP allot   variable LOCKPID-U
+create PIDTXT-BUF 32 allot             variable PIDTXT-U
 60 constant LOCK-GRACE-SEC              \ a pid-less lock older than this is dead
 
 : LOCKPID$ ( -- ptr u8 n )
@@ -161,7 +173,15 @@ create LOCKPID-BUF FS-PATH-CAP allot   variable LOCKPID-U
 
 : BREAK-LOCK ( -- )
    LOCKPID$ FILE? if LOCKPID$ REMOVE-FILE then
+   LOCKPID$ ASIDE-TMP FILE? if LOCKPID$ ASIDE-TMP REMOVE-FILE then
    LOCK$ REMOVE-DIR ;
+
+: PIDTXT$ ( -- ptr u8 n )
+   SB-RESET getpid FMT:SB-U SB$ PIDTXT-BUF PIDTXT-U 32 SPAN!
+   PIDTXT-BUF PIDTXT-U @ ;
+
+: WRITE-PID-KEEP ( ptr u8 n -- ptr u8 n ) {: l lu :}
+   l lu PIDTXT$ WRITE-PRIVATE l lu ;
 
 variable LOCK-DEPTH                     \ nested WITH-LOCK in one process
 
@@ -173,9 +193,8 @@ variable LOCK-DEPTH                     \ nested WITH-LOCK in one process
       BREAK-LOCK
       TRY-LOCK 0= if E-SW-LOCKED throw then
    then
-   LOCKPID$ {: l lu :}
-   SB-RESET getpid FMT:SB-U
-   l lu SB$ WRITE-PRIVATE
+   LOCKPID$ [: WRITE-PID-KEEP ;] catch {: rc :} 2drop
+   rc 0<> if BREAK-LOCK rc throw then
    1 LOCK-DEPTH ! ;
 
 : UNLOCK-STORE ( -- )

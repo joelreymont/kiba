@@ -16,6 +16,7 @@ Item {
   property bool statusPending: false
   property bool actionPending: false
   property bool refreshQueued: false
+  property bool refreshQueuedForce: false
   property string statusOutput: ""
   property string statusProcessError: ""
   property string lastStatusText: ""
@@ -86,8 +87,11 @@ Item {
   }
 
   function refresh(force) {
-    if (refreshing) { refreshQueued = true; return }
+    if (refreshing) { refreshQueued = true; refreshQueuedForce = refreshQueuedForce || !!force; return }
+    var queuedForce = refreshQueuedForce
     refreshQueued = false
+    refreshQueuedForce = false
+    force = !!force || queuedForce
     if (!force && lastStatusAtMs > 0 && Date.now() - lastStatusAtMs < 5000) return
     statusOutput = ""
     statusProcessError = ""

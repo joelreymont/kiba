@@ -255,8 +255,7 @@ private
 : USAGE-PREPARE-LOCKED ( -- )
    CMD-P @ [: SAVE-BACK-KEEP ;] catch {: rc :} drop
    rc 0<> if
-      SB-RESET CMD-P @ PROVIDER$ SB-APPEND s" : live login not saved: " SB-APPEND rc REASON$ SB-APPEND
-      SB$ ERR-NOTE
+      CMD-P @ PROVIDER$ ERR-PART s" : live login not saved: " ERR-PART rc REASON$ ERR-NOTE
    then
    CMD-P @ SCAN-PROVIDER ;
 

@@ -125,27 +125,38 @@ private
    n 1 = if ID-EMAIL$ exit then
    SB-RESET ID-EMAIL$ SB-APPEND s"  #" SB-APPEND n FMT:SB-U SB$ ;
 
-\ does the slot named by NAME-OUT hold the organization in ID-*? A login
-\ without an organization can only claim the bare email; a readable slot
-\ whose organization is unknown is never overwritten by one that names
-\ another; a damaged slot is repaired by whichever login claims its name.
-: SLOT-MATCHES-ID? ( n -- bool ) {: p :}
-   ID-ORG-U @ 0= if true exit then
+variable NAME-FREE                  \ first candidate that is free or damaged; 0 when none
+
+\ does the slot named by NAME-OUT hold exactly the organization in ID-*?
+: SLOT-HOLDS-ID? ( n -- bool ) {: p :}
    p NAME-OUT NAME-OUT-U @ SLOT-ORG-READ
-   SLOT-DAMAGED @ if true exit then
-   SLOT-ORG-U @ 0= if false exit then
+   SLOT-DAMAGED @ if false exit then
+   SLOT-ORG-U @ 0= if ID-ORG-U @ 0= exit then
+   ID-ORG-U @ 0= if false exit then
    SLOT-ORG SLOT-ORG-U @ ID-ORG$ STR= ;
 
-\ the slot name for the identity in ID-*: the first candidate that either
-\ does not exist yet or already holds this organization
+: NAME-CANDIDATE! ( n -- )
+   NAME-CANDIDATE NAME-OUT NAME-OUT-U NAME-CAP 1- SPAN! ;
+
+\ the slot name for the identity in ID-*: the candidate that already holds
+\ this organization wins over every other; otherwise the first free or
+\ damaged candidate, so a damaged slot is repaired only by a login no other
+\ slot claims
 : RESOLVE-NAME ( n -- ptr u8 n ) {: p :}
+   0 NAME-FREE !
    1 begin dup NAME-TRIES <= while
-      dup NAME-CANDIDATE NAME-OUT NAME-OUT-U NAME-CAP 1- SPAN!
-      p NAME-OUT NAME-OUT-U @ SLOT-DIR$ DIR? 0= if drop NAME-OUT NAME-OUT-U @ exit then
-      p SLOT-MATCHES-ID? if drop NAME-OUT NAME-OUT-U @ exit then
+      dup NAME-CANDIDATE!
+      p NAME-OUT NAME-OUT-U @ SLOT-DIR$ DIR? 0= if
+         NAME-FREE @ 0= if dup NAME-FREE ! then
+      else
+         p SLOT-HOLDS-ID? if drop NAME-OUT NAME-OUT-U @ exit then
+         SLOT-DAMAGED @ NAME-FREE @ 0= and if dup NAME-FREE ! then
+      then
       1+
    repeat drop
-   E-SW-CAPACITY throw ;
+   NAME-FREE @ 0= if E-SW-CAPACITY throw then
+   NAME-FREE @ NAME-CANDIDATE!
+   NAME-OUT NAME-OUT-U @ ;
 
 : SLOT-PLAN-RAW ( n ptr u8 n -- ) {: p a u :}
    p case

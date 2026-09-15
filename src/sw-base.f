@@ -54,9 +54,11 @@ $3D constant EQUALS
    ERR-TYPE s\" \n" ERR-TYPE ;
 
 \ a diagnostic that must not turn a degraded result into a failure
-: ERR-NOTE ( ptr u8 n -- ) {: a u :}
-   2 a u write drop
-   2 s\" \n" write drop ;
+: ERR-PART ( ptr u8 n -- ) {: a u :}
+   2 a u write drop ;
+
+: ERR-NOTE ( ptr u8 n -- )
+   ERR-PART s\" \n" ERR-PART ;
 
 \ copy a span into caller storage with an explicit capacity and length cell
 : SPAN! ( ptr u8 n ptr u8 ptr n n -- ) {: a u dst up cap :}

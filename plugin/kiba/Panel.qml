@@ -315,6 +315,7 @@ Panel {
     panelFlick.contentY = 0
     nowMs = Date.now()
     status.refresh()
+    maybeAutoProbe()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -325,17 +326,20 @@ Panel {
 
   // Stale numbers cannot say which account to switch to, so an open panel
   // asks for fresh ones once, when the newest probe is old enough to matter.
-  // Once per open: a probe that yields nothing must not start another.
+  // Checked on open against the cached model and again whenever the model
+  // changes; once per open, so a probe that yields nothing starts no other.
+  function maybeAutoProbe() {
+    if (autoProbed || !opened || status.busy || providers.length === 0) return
+    var any = false
+    for (var i = 0; i < providers.length; i += 1) if (providers[i].accounts.length > 0) any = true
+    if (!any || !usageIsStale()) return
+    autoProbed = true
+    status.probeUsage()
+  }
+
   Connections {
     target: status
-    function onProvidersChanged() {
-      if (root.autoProbed || !root.opened || status.busy || root.providers.length === 0) return
-      var any = false
-      for (var i = 0; i < root.providers.length; i += 1) if (root.providers[i].accounts.length > 0) any = true
-      if (!any || !root.usageIsStale()) return
-      root.autoProbed = true
-      status.probeUsage()
-    }
+    function onProvidersChanged() { root.maybeAutoProbe() }
   }
 
   Timer {

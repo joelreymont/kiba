@@ -254,7 +254,6 @@ create KEY-BUF 64 allot
    s" -sS" ARG+
    s" -m" ARG+
    SB-RESET HTTP-TIMEOUT-SEC FMT:SB-U SB$ ARG+
-   s" --create-file-mode" ARG+ s" 0600" ARG+
    s" -o" ARG+ BODY$ ARG+
    s" -w" ARG+ s" %{http_code}" ARG+
    s" Accept" s" application/json" HDR ;
@@ -271,9 +270,11 @@ create KEY-BUF 64 allot
    pathz argv ENVP-BASE execve drop
    s" kiba: could not start curl" 127 die ;
 
-\ run the staged curl; the parsed status code, or -1 when curl itself failed
+\ run the staged curl; the parsed status code, or -1 when curl itself failed.
+\ curl truncates the body file rather than creating it, so it is born 0600
 : CURL-RUN ( ptr u8 n -- n ) {: url uu :}
    HEADERS-STAGE
+   BODY$ OPEN-PRIVATE close
    url uu ARG+
    EXE$ >LEN PROC-ARGV-PREPARE {: pathz argv :}
    CODE$ OPEN-PRIVATE OUT-FD !
@@ -345,15 +346,17 @@ create KEY-BUF 64 allot
    SB-RESET FMT:SB-INT SB$ ;
 
 \ ---- slot writes under the lock -------------------------------------------------------
-\ Network calls run unlocked; each write of a slot file takes the lock for
-\ its own duration. The quotations read the account from PROBE-P/PROBE-NAME.
+\ Usage reads run unlocked. A token refresh spends a grant that cannot be
+\ replayed, so the lock is taken before the refresh request and held until
+\ the new pair is in the slot. The quotations read the account from
+\ PROBE-P/PROBE-NAME and report through REFRESH-OK and REFRESH-CODE.
+variable REFRESH-OK
+variable REFRESH-CODE               \ HTTP status of the last refresh request, -1 when none
+
 : PROBE-NAME$ ( -- ptr u8 n ) PROBE-NAME PROBE-NAME-U @ ;
 
 : LOGIN-WRITE-LOCKED ( -- )
    PROBE-P @ PROBE-NAME$ PROBE-P @ MARKER$ SLOT-FILE$ CFG$ WRITE-PRIVATE ;
-
-: WRITE-LOGIN ( -- )
-   [: LOGIN-WRITE-LOCKED ;] WITH-LOCK ;
 
 \ ---- Anthropic -----------------------------------------------------------------------
 : CLAUDE-USAGE-URL$ ( -- ptr u8 n ) s" https://api.anthropic.com/api/oauth/usage" ;
@@ -406,7 +409,7 @@ create WEEKLY-RESET LIM-RESET-CAP allot    variable WEEKLY-RESET-U
    ms 1000 / TIME:EPOCH-SECONDS 60 + < ;
 
 \ a fresh token pair from the refresh grant, written into CFG
-: CLAUDE-REFRESH ( -- bool )
+: CLAUDE-REFRESH-RAW ( -- bool )
    CFG$ CREDS-KEY$ s" refreshToken" VAL-BUF 4096 DOC-STR2 dup 0 < if drop false exit then VAL-U !
    JSON-WRITE:RESET
    JSON-WRITE:OBJECT-START
@@ -416,6 +419,7 @@ create WEEKLY-RESET LIM-RESET-CAP allot    variable WEEKLY-RESET-U
    JSON-WRITE:OBJECT-END
    CURL-BEGIN
    CLAUDE-TOKEN-URL$ POST-JSON {: code :}
+   code REFRESH-CODE !
    REQ$ REMOVE-FILE
    code 200 <> if false exit then
    BODY-READ {: b bu :}
@@ -427,6 +431,16 @@ create WEEKLY-RESET LIM-RESET-CAP allot    variable WEEKLY-RESET-U
    b bu s" expires_in" DOC-INT1 {: secs :}
    secs 0 > if CREDS-KEY$ s" expiresAt" TIME:EPOCH-SECONDS secs + 1000 * NUMBER$ CFG-REPLACE2 then
    true ;
+
+: CLAUDE-REFRESH-LOCKED ( -- )
+   CLAUDE-REFRESH-RAW dup REFRESH-OK !
+   if LOGIN-WRITE-LOCKED then ;
+
+\ refresh the slot's token pair and store it, all under the lock
+: CLAUDE-REFRESH ( -- bool )
+   false REFRESH-OK ! -1 REFRESH-CODE !
+   [: CLAUDE-REFRESH-LOCKED ;] WITH-LOCK
+   REFRESH-OK @ ;
 
 : CLAUDE-GET ( -- n )
    CFG$ CREDS-KEY$ s" accessToken" VAL-BUF 4096 DOC-STR2 dup 0 < if drop -2 exit then VAL-U !
@@ -443,7 +457,6 @@ create WEEKLY-RESET LIM-RESET-CAP allot    variable WEEKLY-RESET-U
    CLAUDE-EXPIRED? if
       PROBE-LIVE? @ if s" access token expired; Claude Code refreshes it on its next run" EXPIRED-NOTE! exit then
       CLAUDE-REFRESH 0= if s" access token expired and could not be refreshed; log in again" EXPIRED-NOTE! exit then
-      WRITE-LOGIN
    then
    CLAUDE-GET {: code :}
    code -2 = if s" no access token saved" FAIL-NOTE! exit then
@@ -504,7 +517,7 @@ create WEEKLY-RESET LIM-RESET-CAP allot    variable WEEKLY-RESET-U
    BODY-READ s" error" s" code" VAL-BUF 4096 DOC-STR2 dup 0 < if drop false exit then
    VAL-BUF swap s" token_revoked" STR= ;
 
-: CODEX-REFRESH ( -- bool )
+: CODEX-REFRESH-RAW ( -- bool )
    CFG$ TOKENS-KEY$ s" refresh_token" VAL-BUF 4096 DOC-STR2 dup 0 < if drop false exit then VAL-U !
    JSON-WRITE:RESET
    JSON-WRITE:OBJECT-START
@@ -514,6 +527,7 @@ create WEEKLY-RESET LIM-RESET-CAP allot    variable WEEKLY-RESET-U
    JSON-WRITE:OBJECT-END
    CURL-BEGIN
    CODEX-TOKEN-URL$ POST-JSON {: code :}
+   code REFRESH-CODE !
    REQ$ REMOVE-FILE
    code 200 <> if false exit then
    BODY-READ {: b bu :}
@@ -527,6 +541,19 @@ create WEEKLY-RESET LIM-RESET-CAP allot    variable WEEKLY-RESET-U
    else drop then
    TIME:EPOCH-SECONDS RESET-BUF LIM-RESET-CAP DATE:FORMAT-EPOCH-UTC LITERAL$ s" last_refresh" 2swap CFG-REPLACE
    true ;
+
+: CODEX-REFRESH-LOCKED ( -- )
+   CODEX-REFRESH-RAW dup REFRESH-OK !
+   if LOGIN-WRITE-LOCKED then ;
+
+: CODEX-REFRESH ( -- bool )
+   false REFRESH-OK ! -1 REFRESH-CODE !
+   [: CODEX-REFRESH-LOCKED ;] WITH-LOCK
+   REFRESH-OK @ ;
+
+\ only the token endpoint's own refusal proves the grant is gone
+: GRANT-REFUSED? ( -- bool )
+   REFRESH-CODE @ 400 = REFRESH-CODE @ 401 = or ;
 
 : CODEX-GET ( -- n )
    CFG$ TOKENS-KEY$ s" access_token" VAL-BUF 4096 DOC-STR2 dup 0 < if drop -2 exit then VAL-U !
@@ -547,13 +574,13 @@ create WEEKLY-RESET LIM-RESET-CAP allot    variable WEEKLY-RESET-U
 \ itself is gone. The live account's token belongs to the running codex.
 : CODEX-RETRY ( bool -- ) {: revoked :}
    CODEX-REFRESH 0= if
-      revoked if
+      revoked GRANT-REFUSED? and if
          true PROBE-REVOKED !
          s" login revoked by a later `codex login`" NOTE! s" revoked" STATE! exit
       then
-      s" access token rejected and could not be refreshed; log in again" EXPIRED-NOTE! exit
+      GRANT-REFUSED? if s" access token rejected and the refresh was refused; log in again" EXPIRED-NOTE! exit then
+      s" OpenAI's token endpoint" REFRESH-CODE @ HTTP-NOTE s" error" STATE! exit
    then
-   WRITE-LOGIN
    CODEX-GET {: again :}
    again 200 = if BODY-READ CODEX-LIMITS s" ok" STATE! exit then
    again CODEX-NOTE ;
@@ -659,14 +686,22 @@ EXPORT HUNDREDTHS
    PROBE-REMOVED? if PROBE-P @ PROBE-NAME$ SLOT-DIR$ REMOVE-TREE exit then
    PROBE-P @ PROBE-NAME$ WRITE-USAGE ;
 
+: USAGE-WRITE ( -- )
+   [: USAGE-WRITE-LOCKED ;] WITH-LOCK ;
+
 \ probe one saved account and record the outcome in its usage file; a failure
 \ becomes that account's note and the run moves on to the next account. A
 \ saved login the provider has revoked is useless, so its slot is removed;
 \ the live account keeps its slot, because the live files are what to fix.
+\ A write refused by a busy lock is reported and the run still moves on.
 : PROBE-SLOT ( n ptr u8 n bool -- ) {: p a u live :}
    p a u live [: PROBE-KEEP ;] catch {: rc :} 2drop 2drop
    rc 0<> if LIM-RESET rc PROBE-FAILED-NOTE then
-   [: USAGE-WRITE-LOCKED ;] WITH-LOCK
+   [: USAGE-WRITE ;] catch {: wrc :}
+   wrc 0<> if
+      SB-RESET s" kiba: " SB-APPEND PROBE-NAME$ SB-APPEND s" : usage not recorded (error " SB-APPEND
+      wrc FMT:SB-INT s" )" SB-APPEND SB$ ERR-NOTE
+   then
    PROBE-CLEANUP ;
 
 ;package
