@@ -2,6 +2,8 @@
 require ../src/sw-paths.f
 require lib/memory.f
 require lib/fs-mutate.f
+require lib/time.f
+require lib/fmt.f
 
 package SW
 
@@ -98,14 +100,22 @@ public
 : READ-FILE$ ( ptr u8 n -- ptr u8 n )
    FILE-BUF FILE-U READ-INTO ;
 
+: WRITE-TMP ( ptr u8 n -- )
+   TMP$ OPEN-PRIVATE -rot WRITE-FD-ALL ;
+
+: WRITE-TMP-KEEP ( ptr u8 n -- ptr u8 n ) {: src su :}
+   src su WRITE-TMP src su ;
+
+\ a failed write must not leave a partial secret behind as <file>.tmp
 : WRITE-PRIVATE ( ptr u8 n ptr u8 n -- ) {: pa pu src su :}
    pa pu WRITE-TARGET {: da du :}
    da du TMP-FOR
-   TMP$ OPEN-PRIVATE src su WRITE-FD-ALL
+   src su [: WRITE-TMP-KEEP ;] catch {: rc :} 2drop
+   rc 0<> if TMP$ FILE? if TMP$ REMOVE-FILE then rc throw then
    TMP$ da du RENAME-FILE ;
 
-\ store directories are private at every level the store creates; a
-\ sibling process may win the same mkdir, which is not a failure
+\ directories the store creates are private at every level; an existing
+\ directory, whoever made it, is left as it is
 : ENSURE-PRIVATE ( ptr u8 n -- ) {: a u :}
    a u DIR? if exit then
    a u DIRNAME dup 0 > if RECURSE else 2drop then
@@ -113,21 +123,65 @@ public
       a u DIR? 0= if E-FS-IO throw then
    then ;
 
-\ a provider's own directory keeps whatever mode the provider gave it
-: ENSURE-DIR ( ptr u8 n -- ) {: a u :}
-   a u DIR? if exit then
-   a u ENSURE-PRIVATE ;
+\ ---- the store lock -----------------------------------------------------------
+\ mkdir is the mutex; the holder's pid inside it lets a later run tell a
+\ crashed holder from a live one, since nothing releases the lock on death.
+create LOCKPID-BUF FS-PATH-CAP allot   variable LOCKPID-U
+60 constant LOCK-GRACE-SEC              \ a pid-less lock older than this is dead
 
-\ the primitive reports only failure, so an existing lock is told apart by stat
+: LOCKPID$ ( -- ptr u8 n )
+   LOCK$ {: l lu :}
+   SB-RESET l lu SB-APPEND s" /pid" SB-APPEND
+   SB$ LOCKPID-BUF LOCKPID-U PATH!
+   LOCKPID-BUF LOCKPID-U @ ;
+
+: PID-ALIVE? ( n -- bool )
+   0 kill-errno 0= ;
+
+: LOCK-HOLDER ( -- n )
+   LOCKPID$ FILE? 0= if -1 exit then
+   LOCKPID$ READ-FILE$ STR>NUMBER? MATCH option
+     none OF -1 ENDOF
+     some OF ENDOF
+   ;MATCH ;
+
+: LOCK-AGE ( -- n )
+   LOCK$ FS-TRY-STAT 0= if 0 exit then
+   TIME:EPOCH-SECONDS FS-STAT-MTIME-SEC@ - ;
+
+: LOCK-STALE? ( -- bool )
+   LOCK-HOLDER {: pid :}
+   pid 0 > if pid PID-ALIVE? 0= exit then
+   LOCK-AGE LOCK-GRACE-SEC > ;
+
+: TRY-LOCK ( -- bool )
+   LOCK$ FS-PATHZ MODE-PRIVATE-DIR mkdir 0 >= if true exit then
+   LOCK$ DIR? 0= if E-FS-IO throw then
+   false ;
+
+: BREAK-LOCK ( -- )
+   LOCKPID$ FILE? if LOCKPID$ REMOVE-FILE then
+   LOCK$ REMOVE-DIR ;
+
+variable LOCK-DEPTH                     \ nested WITH-LOCK in one process
+
 : LOCK-STORE ( -- )
+   LOCK-DEPTH @ 0 > if 1 LOCK-DEPTH +! exit then
    STORE$ ENSURE-PRIVATE
-   LOCK$ FS-PATHZ MODE-PRIVATE-DIR mkdir 0 < if
-      LOCK$ DIR? if E-SW-LOCKED throw then
-      E-FS-IO throw
-   then ;
+   TRY-LOCK 0= if
+      LOCK-STALE? 0= if E-SW-LOCKED throw then
+      BREAK-LOCK
+      TRY-LOCK 0= if E-SW-LOCKED throw then
+   then
+   LOCKPID$ {: l lu :}
+   SB-RESET getpid FMT:SB-U
+   l lu SB$ WRITE-PRIVATE
+   1 LOCK-DEPTH ! ;
 
 : UNLOCK-STORE ( -- )
-   LOCK$ REMOVE-DIR ;
+   LOCK-DEPTH @ 1 > if -1 LOCK-DEPTH +! exit then
+   0 LOCK-DEPTH !
+   BREAK-LOCK ;
 
 : RUN-LOCKED ( [ -- ] -- ) {: body :}
    body execute ;
@@ -135,6 +189,27 @@ public
 : WITH-LOCK ( [ -- ] -- )
    LOCK-STORE
    [: RUN-LOCKED ;] [: UNLOCK-STORE ;] finally ;
+
+\ ---- what kiba installed last ------------------------------------------------
+\ <provider dir>/.installed names the slot whose files are live
+create INST-BUF FS-PATH-CAP allot   variable INST-U
+create INSTNAME NAME-CAP allot      variable INSTNAME-U
+
+: INSTALLED-FILE$ ( n -- ptr u8 n )
+   PROVIDER-DIR$ {: d du :}
+   SB-RESET d du SB-APPEND s" /.installed" SB-APPEND
+   SB$ INST-BUF INST-U PATH!
+   INST-BUF INST-U @ ;
+
+: NOTE-INSTALLED ( n ptr u8 n -- ) {: p a u :}
+   p PROVIDER-DIR$ ENSURE-PRIVATE
+   p INSTALLED-FILE$ a u WRITE-PRIVATE ;
+
+: INSTALLED$ ( n -- ptr u8 n ) {: p :}
+   0 INSTNAME-U !
+   p INSTALLED-FILE$ FILE? 0= if INSTNAME 0 exit then
+   p INSTALLED-FILE$ READ-FILE$ INSTNAME INSTNAME-U NAME-CAP 1- SPAN!
+   INSTNAME INSTNAME-U @ ;
 
 \ ---- install marker ---------------------------------------------------------
 \ A two-file install that stops between its writes leaves a live email and live

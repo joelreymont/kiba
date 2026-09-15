@@ -24,6 +24,7 @@ public
 -9912 constant E-SW-INTERRUPTED \ an earlier switch stopped between its two file writes
 -9913 constant E-SW-MISMATCH    \ a saved file names a different account than its slot
 -9914 constant E-SW-ASIDE       \ a login file set aside for a login is still there
+-9915 constant E-SW-MIXED       \ the live Claude files name different accounts
 
 0 constant P-CLAUDE
 1 constant P-CODEX
@@ -86,12 +87,28 @@ $3D constant EQUALS
 : CHECK-NAME ( ptr u8 n -- )
    NAME-OK? 0= if E-SW-NAME throw then ;
 
+\ the number after "email #", or -1 when the name is not of that form
+: NAME-SUFFIX# ( ptr u8 n ptr u8 n -- n ) {: a u e eu :}
+   u eu 2 + <= if -1 exit then
+   a eu e eu STR= 0= if -1 exit then
+   a eu + 2 s"  #" STR= 0= if -1 exit then
+   a eu + 2 + u eu - 2 - STR-DIGITS? 0= if -1 exit then
+   a eu + 2 + u eu - 2 - STR>NUMBER? MATCH option
+     none OF -1 ENDOF
+     some OF ENDOF
+   ;MATCH ;
+
 \ a slot name belongs to an email when it is the email or "email #n"
 : NAME-FOR-EMAIL? ( ptr u8 n ptr u8 n -- bool ) {: a u e eu :}
    a u e eu STR= if true exit then
-   u eu 2 + <= if false exit then
-   a eu e eu STR= 0= if false exit then
-   a eu + 2 s"  #" STR= ;
+   a u e eu NAME-SUFFIX# 0 > ;
+
+\ the email part of a slot name
+: NAME-EMAIL ( ptr u8 n -- ptr u8 n ) {: a u :}
+   a u s"  #" FIND-SUB MATCH option
+     none OF a u ENDOF
+     some OF IDX>N {: i :} a i ENDOF
+   ;MATCH ;
 
 : STR< ( ptr u8 n ptr u8 n -- bool ) {: a u b v :}
    0 begin

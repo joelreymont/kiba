@@ -61,7 +61,8 @@ Omarchy agents widget when it is on PATH.
 provider whose files cannot be read carries an `"error"` string and keeps its
 `accounts` list, so the other provider and every saved login stay usable.
 `usage` is `null` until the account has been probed; `percent` is the whole
-number used, and `note` explains an empty `limits` list.
+number used, `state` is one of `ok`, `expired`, `revoked`, `error`, or
+`unknown`, and `note` explains anything but `ok`.
 
 ## How switching works
 
@@ -81,15 +82,19 @@ number used, and `note` explains an empty `limits` list.
   a login to its slot by organization, never by position.
 - **Store**: `$XDG_DATA_HOME/kiba/<provider>/<name>/` (default
   `~/.local/share/kiba`), directories `0700`, files `0600`, every write
-  through a same-directory temp file and rename. A `lock` directory serializes
-  concurrent runs; `status` never takes it.
+  through a same-directory temp file and rename. A `lock` directory holding
+  the owner's pid serializes concurrent runs; a lock whose owner is dead is
+  taken over, and `status` never takes it.
 - **Save-back**: both CLIs rotate tokens while they run, so before installing
   another account `use` first saves the currently live login into its own slot.
   A saved copy is therefore never staler than the last switch away from it.
   The Claude install writes two files; a marker in the store brackets the pair
   so that a switch interrupted between them can never save one account's
   tokens under another account's name. `save` refuses while the marker is
-  present and the next `use` clears it.
+  present and the next `use` clears it. kiba also records which slot it
+  installed last: if `.claude.json` later names another account while the
+  credentials are still byte-for-byte the installed slot's, the pair is
+  mixed, save-back leaves it alone, and `save` says so.
 - **Live files that are symlinks** stay symlinks on `use` and `save`: the
   write replaces the file the link points at. `add` is the exception: the
   provider's own login creates a fresh regular file, so after an `add` the
@@ -120,11 +125,15 @@ A saved (non-live) account is refreshed once through the provider's token
 endpoint when its token has expired (Claude) or is rejected (Codex), and the
 new tokens replace the slot's. The live account is never refreshed by kiba:
 its CLI owns that token, and rotating it underneath a running session would
-log the session out. A Codex login that the provider reports as revoked has no
-value left, so its slot is removed; log into the account again and add it. Any
-other failure is recorded as that account's `note` and the run continues with
-the next account. Scratch files live under `<store>/probe/` and are removed
-after each request.
+log the session out, so an expired live token is reported as `expired` and
+not sent. A Codex login whose refresh grant is refused after the provider
+called it revoked has no value left, so its slot is removed; log into the
+account again and add it. Any other failure is recorded as that account's
+`state` and `note` and the run continues with the next account and the next
+provider. Network calls run without the store lock; only the saved-back live
+login and each slot write take it. Headers, which carry the token, reach
+`curl` through a 0600 file, never through argv; scratch files live under
+`<store>/probe/` and are removed after each request.
 
 ## Bar widget
 
@@ -138,8 +147,11 @@ Each row carries a dot and what is left of the session and the week: green
 with at least half of the session left, yellow below that, red once a window
 is used up (the figures then read `limit` and the label carries the reset
 time, as in `(pro, 5d)`), grey with no data. A red row whose login no longer
-works says "log in again" and starts a fresh login when clicked. Hovering a
-row shows every window with what is left and when it resets.
+works says "log in again" and starts a fresh login when clicked; the live
+account's expired token is not a dead login, its CLI refreshes it. Hovering a
+row shows every window with what is left and when it resets. The widget
+refreshes status while the panel is open and after each action, not while
+it sits closed.
 
 `build.sh` copies the widget into `~/.config/omarchy/plugins/kiba`. The
 enable is needed once. After a QML change run `omarchy-restart-shell`: the

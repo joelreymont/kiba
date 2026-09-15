@@ -46,9 +46,11 @@ Panel {
     return out
   }
 
+  // the CLI marks the live login's own slot active; no active row means the
+  // live login is not saved, whatever its email
   function liveSaved(p) {
     for (var j = 0; j < p.accounts.length; j += 1)
-      if (p.accounts[j].email === p.live.email) return true
+      if (p.accounts[j].active) return true
     return false
   }
 
@@ -62,9 +64,8 @@ Panel {
 
   // ---------------------------------------------------------------- usage
   //
-  // The labels come from the Omarchy collectors: "Session (5-hour)" and
-  // "Weekly (7-day)" for Claude, "5h window" / "Weekly" style for Codex. A
-  // short window is the session; anything weekly or monthly is the long one.
+  // The CLI names windows "Session (5-hour)" and "Weekly (7-day)"; a short
+  // window is the session, anything weekly or monthly is the long one.
   function windowIsLong(label) {
     var t = String(label || "").toLowerCase()
     return t.indexOf("week") >= 0 || t.indexOf("7-day") >= 0 || t.indexOf("month") >= 0 || t.indexOf("30-day") >= 0
@@ -98,11 +99,12 @@ Panel {
     return worst
   }
 
-  // A probe note that says the saved login itself no longer works.
-  function loginDead(usage) {
-    if (!usage || usage.limits.length > 0) return false
-    var n = String(usage.note || "").toLowerCase()
-    return n.indexOf("revoked") >= 0 || n.indexOf("expired") >= 0
+  // A saved login that no longer works: the CLI says so through the usage
+  // state. An expired token on the live account is the CLI's to refresh.
+  function loginDead(usage, active) {
+    if (!usage) return false
+    if (usage.state === "revoked") return true
+    return usage.state === "expired" && !active
   }
 
   // The window that decides the color: the session when there is one, else
@@ -114,8 +116,8 @@ Panel {
 
   // blocked: a window is used up; dead: the login no longer works; tight:
   // under half of the session left; ok: at least half left; unknown: no data
-  function usageState(usage) {
-    if (loginDead(usage)) return "dead"
+  function usageState(usage, active) {
+    if (loginDead(usage, active)) return "dead"
     if (!usage || usage.limits.length === 0) return "unknown"
     for (var i = 0; i < usage.limits.length; i += 1)
       if (usage.limits[i].percent >= 100) return "blocked"
@@ -159,14 +161,14 @@ Panel {
     if (account.plan !== "") parts.push(account.plan)
     var b = blockingLimit(account.usage)
     if (b && b.resetsAt !== "") parts.push(resetShort(b.resetsAt))
-    if (loginDead(account.usage)) parts.push("log in again")
+    if (loginDead(account.usage, account.active)) parts.push("log in again")
     return parts.length > 0 ? "(" + parts.join(", ") + ")" : ""
   }
 
   // right-hand figures: what is left of the session and of the week; a
   // used-up account just says so
   function figuresText(usage) {
-    if (usageState(usage) === "blocked") return "limit"
+    if (usageState(usage, false) === "blocked") return "limit"
     var s = sessionLimit(usage), w = weeklyLimit(usage)
     var parts = []
     if (s) parts.push((100 - s.percent) + "%")
@@ -185,7 +187,7 @@ Panel {
       lines.push(l.label + ": " + left + when)
     }
     if (a.usage && a.usage.fetchedAt > 0) lines.push("Probed " + ageText(a.usage.fetchedAt))
-    if (usageState(a.usage) === "dead") lines.push("Click to log in to this account again")
+    if (usageState(a.usage, a.active) === "dead") lines.push("Click to log in to this account again")
     else if (!a.active) lines.push("Click to switch " + p.title + " to this account")
     return lines.join("\n")
   }
@@ -252,11 +254,17 @@ Panel {
     })
   }
 
-  function setCursor(index) {
+  // hover only moves the highlight; keyboard movement also scrolls, so a
+  // wheel scroll never has rows re-scrolling the view under a still pointer
+  function pointCursor(index) {
     if (actions.length === 0) return
     cursorActive = true
     cursor = Math.max(0, Math.min(actions.length - 1, index))
     cursorKey = actionKey(actions[cursor])
+  }
+
+  function setCursor(index) {
+    pointCursor(index)
     scrollIntoView(actionItem(cursor))
   }
 
@@ -281,7 +289,7 @@ Panel {
       for (var j = 0; j < providers[i].accounts.length; j += 1) {
         var a = providers[i].accounts[j]
         if (a.email !== email) continue
-        if (usageState(a.usage) === "dead") { root.close(); status.add(provider); return }
+        if (usageState(a.usage, a.active) === "dead") { root.close(); status.add(provider); return }
       }
     }
     status.use(provider, email)
@@ -299,6 +307,7 @@ Panel {
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
   onOpenedChanged: {
+    status.panelOpen = opened
     if (!opened) { status.actionError = ""; return }
     cursorActive = false
     cursorKey = ""
@@ -321,7 +330,9 @@ Panel {
     target: status
     function onProvidersChanged() {
       if (root.autoProbed || !root.opened || status.busy || root.providers.length === 0) return
-      if (!root.usageIsStale()) return
+      var any = false
+      for (var i = 0; i < root.providers.length; i += 1) if (root.providers[i].accounts.length > 0) any = true
+      if (!any || !root.usageIsStale()) return
       root.autoProbed = true
       status.probeUsage()
     }
@@ -501,7 +512,7 @@ Panel {
     property var provider: null
     property var account: null
     property int actionIndex: -1
-    readonly property string state: root.usageState(account ? account.usage : null)
+    readonly property string state: root.usageState(account ? account.usage : null, active)
     readonly property bool active: !!account && account.active
     readonly property bool highlighted: (root.cursorActive && root.cursor === actionIndex) || rowMouse.containsMouse
     readonly property bool enabled: !status.busy && !active
@@ -570,7 +581,7 @@ Panel {
       anchors.fill: parent
       hoverEnabled: true
       cursorShape: row.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-      onContainsMouseChanged: if (containsMouse) root.setCursor(row.actionIndex)
+      onContainsMouseChanged: if (containsMouse) root.pointCursor(row.actionIndex)
       onClicked: if (row.enabled) root.useOrReadd(row.provider.id, row.account.email)
     }
 
@@ -628,7 +639,7 @@ Panel {
       anchors.fill: parent
       hoverEnabled: true
       cursorShape: status.busy ? Qt.ArrowCursor : Qt.PointingHandCursor
-      onContainsMouseChanged: if (containsMouse && action.actionIndex >= 0) root.setCursor(action.actionIndex)
+      onContainsMouseChanged: if (containsMouse && action.actionIndex >= 0) root.pointCursor(action.actionIndex)
       onClicked: if (!status.busy) action.activated()
     }
   }

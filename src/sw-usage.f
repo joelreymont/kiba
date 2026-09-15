@@ -1,14 +1,6 @@
-\ sw-usage.f - per-account rate limits, read straight from each provider's
-\ usage endpoint with curl.
-\
-\ Anthropic: GET https://api.anthropic.com/api/oauth/usage with the account's
-\ OAuth access token. OpenAI: GET https://chatgpt.com/backend-api/wham/usage
-\ with the account's access token and account id. A saved (non-live) account
-\ is refreshed once through the provider's token endpoint when its token has
-\ expired (Claude) or is rejected (Codex), and the new tokens replace the
-\ slot's. The live account is
-\ never refreshed here: its CLI owns that token, and rotating it underneath a
-\ running session would log the session out.
+\ sw-usage.f - per-account rate limits, read from each provider's usage
+\ endpoint with curl. README "Usage per account" is the contract. Network
+\ calls run without the store lock; every slot write takes it briefly.
 require ../src/sw-store.f
 require ../src/sw-run.f
 require lib/time.f
@@ -17,6 +9,7 @@ require lib/json-write.f
 
 package SW
 
+$0A constant LF
 8 constant LIM-MAX
 64 constant LIM-LABEL-CAP
 40 constant LIM-RESET-CAP
@@ -40,9 +33,11 @@ create ACCT-ID-BUF 128 allot        variable ACCT-ID-U
 create VAL-BUF 4096 allot           variable VAL-U     \ a decoded response string
 create RESET-BUF LIM-RESET-CAP allot
 variable OUT-FD
-variable HTTP-CODE
 variable PROBE-LIVE?                \ bool: the account being probed is the live one
 variable PROBE-REVOKED              \ bool: the provider says this login is gone for good
+variable PROBE-P                    \ the account being probed, for the locked writes
+create PROBE-NAME NAME-CAP allot    variable PROBE-NAME-U
+create STATE-BUF 16 allot           variable STATE-U   \ ok | expired | revoked | error | unknown
 
 : USAGE-NAME$ ( -- ptr u8 n ) s" usage.json" ;
 
@@ -52,11 +47,21 @@ variable PROBE-REVOKED              \ bool: the provider says this login is gone
 : LIM-RESET-U-CELL ( n -- ptr n ) cells LIM-RESET-U + ;
 : LIM-PCT-CELL ( n -- ptr n ) cells LIM-PCTS + ;
 
-: LIM-RESET ( -- )
-   0 LIM-N ! 0 NOTE-U ! -1 USAGE-AT ! ;
-
 : NOTE! ( ptr u8 n -- )
    NOTE-BUF NOTE-U 256 SPAN! ;
+
+: STATE! ( ptr u8 n -- )
+   STATE-BUF STATE-U 16 SPAN! ;
+
+\ a note always comes with the state it explains
+: FAIL-NOTE! ( ptr u8 n -- )
+   NOTE! s" error" STATE! ;
+
+: EXPIRED-NOTE! ( ptr u8 n -- )
+   NOTE! s" expired" STATE! ;
+
+: LIM-RESET ( -- )
+   0 LIM-N ! 0 NOTE-U ! -1 USAGE-AT ! s" unknown" STATE! ;
 
 : SESSION-LABEL$ ( -- ptr u8 n ) s" Session (5-hour)" ;
 : WEEKLY-LABEL$ ( -- ptr u8 n ) s" Weekly (7-day)" ;
@@ -178,6 +183,7 @@ create KEY-BUF 64 allot
    JSON-WRITE:RESET
    JSON-WRITE:OBJECT-START
    s" fetchedAt" TIME:EPOCH-SECONDS JSON-WRITE:FIELD-U JSON-WRITE:COMMA
+   s" state" STATE-BUF STATE-U @ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
    s" note" NOTE-BUF NOTE-U @ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
    s" limits" JSON-WRITE:KEY JSON-WRITE:ARRAY-START
    0 0 begin over LIM-N @ < while
@@ -204,46 +210,61 @@ create KEY-BUF 64 allot
 : BODY$ ( -- ptr u8 n ) s" /body.json" PSUB$ ;
 : CODE$ ( -- ptr u8 n ) s" /code.txt" PSUB$ ;
 : REQ$ ( -- ptr u8 n ) s" /request.json" PSUB$ ;
+: HEADERS$ ( -- ptr u8 n ) s" /headers.txt" PSUB$ ;
 
 : PROBE-CLEANUP ( -- )
    BODY$ FILE? if BODY$ REMOVE-FILE then
    CODE$ FILE? if CODE$ REMOVE-FILE then
-   REQ$ FILE? if REQ$ REMOVE-FILE then ;
+   REQ$ FILE? if REQ$ REMOVE-FILE then
+   HEADERS$ FILE? if HEADERS$ REMOVE-FILE then ;
 
 : PROBE-PREPARE ( -- )
    PROBE$ ENSURE-PRIVATE
    PROBE-CLEANUP ;
 
 \ ---- curl --------------------------------------------------------------------------
-\ Every request is one curl process: the body lands in a file, the HTTP status
-\ on stdout, which is redirected into a second file before exec.
+\ Every request is one curl process. Headers, which carry the bearer token,
+\ go through a 0600 file (`-H @file`) rather than argv, which every local
+\ user can read from /proc; the body lands in a file and the HTTP status on
+\ stdout, redirected into a second file before exec.
+: HDR-LINE+ ( ptr u8 n -- ) {: a u :}
+   HDR-U @ u + 1+ HDR-CAP > if E-SW-CAPACITY throw then
+   a HDR-BUF HDR-U @ + u BYTE-COPY
+   LF HDR-BUF HDR-U @ + u + c!
+   HDR-U @ u + 1+ HDR-U ! ;
+
 : HDR ( ptr u8 n ptr u8 n -- ) {: name nu val vu :}
-   nu 2 + vu + HDR-CAP > if E-SW-CAPACITY throw then
-   name HDR-BUF nu BYTE-COPY
-   $3A HDR-BUF nu + c!
-   $20 HDR-BUF nu + 1+ c!
-   val HDR-BUF nu + 2 + vu BYTE-COPY
-   s" -H" ARG+
-   HDR-BUF nu 2 + vu + ARG+ ;
+   HDR-U @ nu + 2 + vu + 1+ HDR-CAP > if E-SW-CAPACITY throw then
+   name HDR-BUF HDR-U @ + nu BYTE-COPY
+   $3A HDR-BUF HDR-U @ + nu + c!
+   $20 HDR-BUF HDR-U @ + nu + 1+ c!
+   HDR-U @ nu + 2 + HDR-U !
+   val vu HDR-LINE+ ;
 
-create BEARER-BUF HDR-CAP allot
-
-\ the token usually sits in VAL-BUF, so the header value is built elsewhere
 : BEARER ( ptr u8 n -- ) {: t tu :}
-   tu 7 + HDR-CAP > if E-SW-CAPACITY throw then
-   s" Bearer " BEARER-BUF swap BYTE-COPY
-   t BEARER-BUF 7 + tu BYTE-COPY
-   s" Authorization" BEARER-BUF tu 7 + HDR ;
+   HDR-U @ 22 + tu + 1+ HDR-CAP > if E-SW-CAPACITY throw then
+   s" Authorization: Bearer " HDR-BUF HDR-U @ + swap BYTE-COPY
+   HDR-U @ 22 + HDR-U !
+   t tu HDR-LINE+ ;
 
 : CURL-BEGIN ( -- )
    s" curl" RESOLVE
    PROC-ARGV-RESET
+   0 HDR-U !
    s" -sS" ARG+
    s" -m" ARG+
    SB-RESET HTTP-TIMEOUT-SEC FMT:SB-U SB$ ARG+
+   s" --create-file-mode" ARG+ s" 0600" ARG+
    s" -o" ARG+ BODY$ ARG+
    s" -w" ARG+ s" %{http_code}" ARG+
    s" Accept" s" application/json" HDR ;
+
+\ the header file is written and named just before the run
+: HEADERS-STAGE ( -- )
+   HEADERS$ {: h hu :}
+   h hu HDR-BUF HDR-U @ WRITE-PRIVATE
+   s" -H" ARG+
+   SB-RESET $40 SB-APPEND-C h hu SB-APPEND SB$ ARG+ ;
 
 : EXEC-CURL ( ptr u8 ptr ptr u8 -- ) {: pathz argv :}
    OUT-FD @ 1 dup2 0 < if s" kiba: dup2 failed" 127 die then
@@ -252,6 +273,7 @@ create BEARER-BUF HDR-CAP allot
 
 \ run the staged curl; the parsed status code, or -1 when curl itself failed
 : CURL-RUN ( ptr u8 n -- n ) {: url uu :}
+   HEADERS-STAGE
    url uu ARG+
    EXE$ >LEN PROC-ARGV-PREPARE {: pathz argv :}
    CODE$ OPEN-PRIVATE OUT-FD !
@@ -321,6 +343,17 @@ create BEARER-BUF HDR-CAP allot
 
 : NUMBER$ ( n -- ptr u8 n )
    SB-RESET FMT:SB-INT SB$ ;
+
+\ ---- slot writes under the lock -------------------------------------------------------
+\ Network calls run unlocked; each write of a slot file takes the lock for
+\ its own duration. The quotations read the account from PROBE-P/PROBE-NAME.
+: PROBE-NAME$ ( -- ptr u8 n ) PROBE-NAME PROBE-NAME-U @ ;
+
+: LOGIN-WRITE-LOCKED ( -- )
+   PROBE-P @ PROBE-NAME$ PROBE-P @ MARKER$ SLOT-FILE$ CFG$ WRITE-PRIVATE ;
+
+: WRITE-LOGIN ( -- )
+   [: LOGIN-WRITE-LOCKED ;] WITH-LOCK ;
 
 \ ---- Anthropic -----------------------------------------------------------------------
 : CLAUDE-USAGE-URL$ ( -- ptr u8 n ) s" https://api.anthropic.com/api/oauth/usage" ;
@@ -402,18 +435,23 @@ create WEEKLY-RESET LIM-RESET-CAP allot    variable WEEKLY-RESET-U
    s" anthropic-beta" s" oauth-2025-04-20" HDR
    CLAUDE-USAGE-URL$ CURL-RUN ;
 
-\ the slot's credentials are in CFG; a refreshed pair is written back when live? is false
+\ the slot's credentials are in CFG. A saved account refreshes an expired
+\ token; the live account's token belongs to Claude Code, which refreshes
+\ it on its next run, so an expired live token is reported, not sent.
 : CLAUDE-PROBE ( n ptr u8 n -- ) {: p a u :}
    LIM-RESET
-   PROBE-LIVE? @ 0= CLAUDE-EXPIRED? and if
-      CLAUDE-REFRESH if p a u CREDS-NAME$ SLOT-FILE$ CFG$ WRITE-PRIVATE then
+   CLAUDE-EXPIRED? if
+      PROBE-LIVE? @ if s" access token expired; Claude Code refreshes it on its next run" EXPIRED-NOTE! exit then
+      CLAUDE-REFRESH 0= if s" access token expired and could not be refreshed; log in again" EXPIRED-NOTE! exit then
+      WRITE-LOGIN
    then
    CLAUDE-GET {: code :}
-   code -2 = if s" no access token saved" NOTE! exit then
-   code 200 = if BODY-READ CLAUDE-LIMITS exit then
-   code 401 = if s" login expired or revoked: switch to it once, or add it again" NOTE! exit then
-   code 429 = if s" Anthropic is rate limiting usage checks; try again later" NOTE! exit then
-   s" Anthropic's usage endpoint" code HTTP-NOTE ;
+   code -2 = if s" no access token saved" FAIL-NOTE! exit then
+   code 200 = if BODY-READ CLAUDE-LIMITS s" ok" STATE! exit then
+   code 401 = if s" login rejected by Anthropic; log in again" EXPIRED-NOTE! exit then
+   code 429 = if s" Anthropic is rate limiting usage checks; try again later" FAIL-NOTE! exit then
+   s" Anthropic's usage endpoint" code HTTP-NOTE
+   s" error" STATE! ;
 
 \ ---- OpenAI ------------------------------------------------------------------------------
 : CODEX-USAGE-URL$ ( -- ptr u8 n ) s" https://chatgpt.com/backend-api/wham/usage" ;
@@ -500,30 +538,35 @@ create WEEKLY-RESET LIM-RESET-CAP allot    variable WEEKLY-RESET-U
    CODEX-USAGE-URL$ CURL-RUN ;
 
 : CODEX-NOTE ( n -- ) {: code :}
-   code 401 = if s" login expired or revoked: switch to it once, or add it again" NOTE! exit then
-   code 429 = if s" OpenAI is rate limiting usage checks; try again later" NOTE! exit then
-   s" OpenAI's usage endpoint" code HTTP-NOTE ;
+   code 401 = if s" login rejected by OpenAI; log in again" EXPIRED-NOTE! exit then
+   code 429 = if s" OpenAI is rate limiting usage checks; try again later" FAIL-NOTE! exit then
+   s" OpenAI's usage endpoint" code HTTP-NOTE s" error" STATE! ;
 
-\ the slot's auth.json is in CFG; a 401 on a saved account earns one refresh
+\ a 401 on a saved account earns one refresh, even when the provider calls
+\ the access token revoked: only a refused refresh grant proves the login
+\ itself is gone. The live account's token belongs to the running codex.
+: CODEX-RETRY ( bool -- ) {: revoked :}
+   CODEX-REFRESH 0= if
+      revoked if
+         true PROBE-REVOKED !
+         s" login revoked by a later `codex login`" NOTE! s" revoked" STATE! exit
+      then
+      s" access token rejected and could not be refreshed; log in again" EXPIRED-NOTE! exit
+   then
+   WRITE-LOGIN
+   CODEX-GET {: again :}
+   again 200 = if BODY-READ CODEX-LIMITS s" ok" STATE! exit then
+   again CODEX-NOTE ;
+
 : CODEX-PROBE ( n ptr u8 n -- ) {: p a u :}
    LIM-RESET
-   CFG$ CODEX-API-KEY? if s" API-key login: no usage windows to read" NOTE! exit then
+   CFG$ CODEX-API-KEY? if s" API-key login: no usage windows to read" NOTE! s" unknown" STATE! exit then
    CODEX-GET {: code :}
-   code -2 = if s" no access token saved" NOTE! exit then
-   code 200 = if BODY-READ CODEX-LIMITS exit then
+   code -2 = if s" no access token saved" FAIL-NOTE! exit then
+   code 200 = if BODY-READ CODEX-LIMITS s" ok" STATE! exit then
    code 401 = if
-      CODEX-REVOKED? if
-         true PROBE-REVOKED !
-         s" login revoked by a later `codex login`" NOTE! exit
-      then
-      PROBE-LIVE? @ 0= if
-         CODEX-REFRESH if
-            p a u AUTH-NAME$ SLOT-FILE$ CFG$ WRITE-PRIVATE
-            CODEX-GET {: again :}
-            again 200 = if BODY-READ CODEX-LIMITS exit then
-            again CODEX-NOTE exit
-         then
-      then
+      PROBE-LIVE? @ if s" access token rejected; run codex once to refresh it" EXPIRED-NOTE! exit then
+      CODEX-REVOKED? CODEX-RETRY exit
    then
    code CODEX-NOTE ;
 
@@ -546,6 +589,7 @@ EXPORT HUNDREDTHS
    p a u USAGE-FILE$ OBJ-BUF OBJ-U READ-INTO {: d du :}
    d du PARSE-USAGE-FILE
    d du s" note" NOTE-BUF 256 DOC-STR1 dup 0 < if drop 0 then NOTE-U !
+   d du s" state" STATE-BUF 16 DOC-STR1 dup 0 < if drop s" unknown" STATE! else STATE-U ! then
    d du s" fetchedAt" DOC-INT1 USAGE-AT !
    true ;
 
@@ -566,6 +610,7 @@ EXPORT HUNDREDTHS
    true ;
 
 : USAGE-AT@ ( -- n ) USAGE-AT @ ;
+: STATE$ ( -- ptr u8 n ) STATE-BUF STATE-U @ ;
 : NOTE$ ( -- ptr u8 n ) NOTE-BUF NOTE-U @ ;
 : LIM#@ ( -- n ) LIM-N @ ;
 : LIM-LABEL$ ( n -- ptr u8 n ) dup LIM-LABEL-SLOT swap LIM-LABEL-U-CELL @ ;
@@ -581,13 +626,16 @@ EXPORT HUNDREDTHS
    OBJ-BUF off + c@ $5B <> if s" []" exit then
    OBJ-BUF off + len ;
 
-\ a scratch path, for tests that check the scratch is cleaned up
+\ scratch and slot paths, for tests that check what is left on disk
 : PSUB-PUBLIC$ ( ptr u8 n -- ptr u8 n ) PSUB$ ;
+: USAGE-FILE-PUBLIC$ ( n ptr u8 n -- ptr u8 n ) USAGE-FILE$ ;
 
 \ probe one saved account and fill the limit table
 : PROBE-RAW ( n ptr u8 n bool -- ) {: p a u live :}
    live PROBE-LIVE? !
    false PROBE-REVOKED !
+   p PROBE-P !
+   a u PROBE-NAME PROBE-NAME-U NAME-CAP 1- SPAN!
    PROBE-PREPARE
    p a u p MARKER$ SLOT-FILE$ CFG-BUF CFG-U READ-INTO 2drop
    p case
@@ -600,7 +648,16 @@ EXPORT HUNDREDTHS
    p a u live PROBE-RAW p a u live ;
 
 : PROBE-FAILED-NOTE ( n -- )
-   SB-RESET s" probe failed (error " SB-APPEND FMT:SB-INT s" )" SB-APPEND SB$ NOTE! ;
+   SB-RESET s" probe failed (error " SB-APPEND FMT:SB-INT s" )" SB-APPEND SB$ FAIL-NOTE! ;
+
+: PROBE-REMOVED? ( -- bool )
+   PROBE-REVOKED @ PROBE-LIVE? @ 0= and ;
+
+\ the outcome of a probe, written under the lock: the usage file, or the
+\ removal of a slot whose login the provider has revoked
+: USAGE-WRITE-LOCKED ( -- )
+   PROBE-REMOVED? if PROBE-P @ PROBE-NAME$ SLOT-DIR$ REMOVE-TREE exit then
+   PROBE-P @ PROBE-NAME$ WRITE-USAGE ;
 
 \ probe one saved account and record the outcome in its usage file; a failure
 \ becomes that account's note and the run moves on to the next account. A
@@ -609,11 +666,7 @@ EXPORT HUNDREDTHS
 : PROBE-SLOT ( n ptr u8 n bool -- ) {: p a u live :}
    p a u live [: PROBE-KEEP ;] catch {: rc :} 2drop 2drop
    rc 0<> if LIM-RESET rc PROBE-FAILED-NOTE then
-   PROBE-REVOKED @ live 0= and if p a u SLOT-DIR$ REMOVE-TREE PROBE-CLEANUP exit then
-   p a u WRITE-USAGE
+   [: USAGE-WRITE-LOCKED ;] WITH-LOCK
    PROBE-CLEANUP ;
-
-: PROBE-REMOVED? ( -- bool )
-   PROBE-REVOKED @ PROBE-LIVE? @ 0= and ;
 
 ;package

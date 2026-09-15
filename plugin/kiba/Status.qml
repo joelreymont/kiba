@@ -18,6 +18,8 @@ Item {
   property bool refreshQueued: false
   property string statusOutput: ""
   property string statusProcessError: ""
+  property string lastStatusText: ""
+  property double lastStatusAtMs: 0
   property string actionOutput: ""
   property string actionProcessError: ""
   readonly property string error: statusError !== "" ? statusError : actionError
@@ -53,7 +55,8 @@ Item {
       if (!l || typeof l.label !== "string") return undefined
       limits.push({ label: l.label, percent: Number(l.percent), resetsAt: String(l.resetsAt || "") })
     }
-    return { fetchedAt: Number(usage.fetchedAt || 0), note: String(usage.note || ""), limits: limits }
+    return { fetchedAt: Number(usage.fetchedAt || 0), state: String(usage.state || "unknown"),
+      note: String(usage.note || ""), limits: limits }
   }
 
   function normalize(content) {
@@ -82,9 +85,10 @@ Item {
     return out
   }
 
-  function refresh() {
+  function refresh(force) {
     if (refreshing) { refreshQueued = true; return }
     refreshQueued = false
+    if (!force && lastStatusAtMs > 0 && Date.now() - lastStatusAtMs < 5000) return
     statusOutput = ""
     statusProcessError = ""
     statusProcess.command = ["kiba", "status", "--json"]
@@ -183,7 +187,11 @@ Item {
           root.statusError = "kiba status returned unreadable JSON."
         } else {
           root.availability = "ready"
-          root.providers = next
+          root.lastStatusAtMs = Date.now()
+          if (stdout !== root.lastStatusText) {
+            root.lastStatusText = stdout
+            root.providers = next
+          }
           root.statusError = ""
         }
       }
@@ -221,7 +229,7 @@ Item {
         root.message = ""
         root.actionError = root.elide(stderr || stdout, "kiba failed.")
       }
-      root.refresh()
+      root.refresh(true)
     }
     onRunningChanged: if (!running && root.actionPending) {
       Qt.callLater(function() { root.actionStoppedWithoutExit() })
@@ -235,9 +243,13 @@ Item {
     onTriggered: root.message = ""
   }
 
+  // Every status call pays the CLI's start-up cost, so the periodic refresh
+  // runs only while the panel is open; opening it refreshes anyway.
+  property bool panelOpen: false
+
   Timer {
     interval: Math.max(15, root.refreshIntervalSec) * 1000
-    running: true
+    running: root.panelOpen
     repeat: true
     onTriggered: root.refresh()
   }

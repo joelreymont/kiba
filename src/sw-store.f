@@ -17,6 +17,7 @@ create ID-EMAIL 256 allot           variable ID-EMAIL-U    \ the identity being 
 create ID-ORG 128 allot             variable ID-ORG-U
 create ID-ORGNAME 128 allot         variable ID-ORGNAME-U
 create SLOT-ORG 128 allot           variable SLOT-ORG-U    \ a slot's organization
+variable SLOT-DAMAGED               \ bool: the slot's identity file is missing or unreadable
 create SAVED-NAME NAME-CAP allot    variable SAVED-NAME-U  \ the slot the last save went to
 
 : ACCT-SLOT ( n -- ptr u8 )
@@ -53,8 +54,13 @@ public
 
 private
 
+\ "email #2" sorts before "email #10": same-email names order by number
 : ACCT< ( n n -- bool ) {: i j :}
-   i ACCT-NAME j ACCT-NAME STR< ;
+   i ACCT-NAME NAME-EMAIL j ACCT-NAME NAME-EMAIL STR= 0= if
+      i ACCT-NAME j ACCT-NAME STR< exit
+   then
+   i ACCT-NAME 2dup NAME-EMAIL NAME-SUFFIX# 1 max
+   j ACCT-NAME 2dup NAME-EMAIL NAME-SUFFIX# 1 max < ;
 
 : OUT-OF-ORDER? ( n -- bool ) {: j :}
    j 0 <= if false exit then
@@ -82,17 +88,35 @@ private
    ORG$ ID-ORG ID-ORG-U 128 SPAN!
    ORGNAME$ ID-ORGNAME ID-ORGNAME-U 128 SPAN! ;
 
-\ the organization recorded in a slot; empty when the slot cannot say
+\ the file that names a slot's account
+: IDENTITY-FILE$ ( n -- ptr u8 n )
+   case
+     P-CLAUDE of OAUTH-NAME$ endof
+     P-CODEX of AUTH-NAME$ endof
+     E-SW-PROVIDER throw
+   endcase ;
+
+: SLOT-IDENTITY ( n ptr u8 n -- bool ) {: p a u :}
+   p a u p IDENTITY-FILE$ SLOT-FILE$ FILE? 0= if false exit then
+   p a u p IDENTITY-FILE$ SLOT-FILE$ READ-FILE$
+   p P-CLAUDE = if CLAUDE-OAUTH-IDENTITY exit then
+   CODEX-IDENTITY ;
+
+: SLOT-ORG-READ-RAW ( n ptr u8 n -- ) {: p a u :}
+   p a u SLOT-IDENTITY 0= if true SLOT-DAMAGED ! exit then
+   ORG$ SLOT-ORG SLOT-ORG-U 128 SPAN! ;
+
+: SLOT-ORG-KEEP ( n ptr u8 n -- n ptr u8 n ) {: p a u :}
+   p a u SLOT-ORG-READ-RAW p a u ;
+
+\ the organization recorded in a slot; empty when the slot cannot say. A
+\ slot whose identity file is missing or unreadable is damaged: it must not
+\ hide the live login, and it may be overwritten by a good one.
 : SLOT-ORG-READ ( n ptr u8 n -- ) {: p a u :}
    0 SLOT-ORG-U !
-   p P-CLAUDE = if
-      p a u s" oauth-account.json" SLOT-FILE$ FILE? 0= if exit then
-      p a u s" oauth-account.json" SLOT-FILE$ READ-FILE$ CLAUDE-OAUTH-IDENTITY 0= if exit then
-   else
-      p a u s" auth.json" SLOT-FILE$ FILE? 0= if exit then
-      p a u s" auth.json" SLOT-FILE$ READ-FILE$ CODEX-IDENTITY 0= if exit then
-   then
-   ORG$ SLOT-ORG SLOT-ORG-U 128 SPAN! ;
+   false SLOT-DAMAGED !
+   p a u [: SLOT-ORG-KEEP ;] catch {: rc :} 2drop drop
+   rc 0<> if true SLOT-DAMAGED ! then ;
 
 9 constant NAME-TRIES
 
@@ -101,11 +125,15 @@ private
    n 1 = if ID-EMAIL$ exit then
    SB-RESET ID-EMAIL$ SB-APPEND s"  #" SB-APPEND n FMT:SB-U SB$ ;
 
-\ does the slot named by NAME-OUT hold the organization in ID-*?
+\ does the slot named by NAME-OUT hold the organization in ID-*? A login
+\ without an organization can only claim the bare email; a readable slot
+\ whose organization is unknown is never overwritten by one that names
+\ another; a damaged slot is repaired by whichever login claims its name.
 : SLOT-MATCHES-ID? ( n -- bool ) {: p :}
-   p NAME-OUT NAME-OUT-U @ SLOT-ORG-READ
-   SLOT-ORG-U @ 0= if true exit then
    ID-ORG-U @ 0= if true exit then
+   p NAME-OUT NAME-OUT-U @ SLOT-ORG-READ
+   SLOT-DAMAGED @ if true exit then
+   SLOT-ORG-U @ 0= if false exit then
    SLOT-ORG SLOT-ORG-U @ ID-ORG$ STR= ;
 
 \ the slot name for the identity in ID-*: the first candidate that either
@@ -135,6 +163,33 @@ private
    SB$ ERR-NOTE ;
 
 public
+
+\ The live pair is only trusted to belong together while it is what kiba
+\ installed, or while both files have changed since. A config naming another
+\ account over credentials still byte-identical to the installed slot's is
+\ a mix, and saving it would file one account's tokens under another's name.
+\ does the live config name the installed slot's account? By email first;
+\ two organizations under one email are told apart when both are known.
+: CONFIG-NAMES-INSTALLED? ( ptr u8 n -- bool ) {: a u :}
+   ID-EMAIL$ a u NAME-EMAIL STR= 0= if false exit then
+   ID-ORG-U @ 0= if true exit then
+   P-CLAUDE a u SLOT-ORG-READ
+   SLOT-ORG-U @ 0= if true exit then
+   SLOT-ORG SLOT-ORG-U @ ID-ORG$ STR= ;
+
+: CLAUDE-MIXED? ( -- bool )
+   P-CLAUDE INSTALLED$ {: a u :}
+   u 0= if false exit then
+   P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ FILE? 0= if false exit then
+   CLAUDE-CONFIG$ FILE? 0= if false exit then
+   CLAUDE-CREDS$ FILE? 0= if false exit then
+   CLAUDE-CONFIG$ CFG-BUF CFG-U READ-INTO 2dup CLAUDE-ORG
+   s" oauthAccount" s" emailAddress" EMAIL-BUF EMAIL-CAP DOC-STR2 dup 0 < if drop false exit then EMAIL-U !
+   ID-TAKE
+   a u CONFIG-NAMES-INSTALLED? if false exit then
+   P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ OBJ-BUF OBJ-U READ-INTO
+   CLAUDE-CREDS$ READ-FILE$ STR= ;
+
 
 \ the slot name the live identity saves to; callers reload the live
 \ documents afterwards because slot reads share their buffers

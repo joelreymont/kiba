@@ -23,6 +23,9 @@ checked Habu program; a thin Omarchy bar widget runs it.
 - Errors are named `E-SW-*` constants in `src/sw-base.f`; fallible words throw
   them. `MAIN` maps them to one-line reasons; `status` and `usage` catch per
   provider or per account so one bad file never hides the others.
+- The store lock is re-entrant within a process and records its owner's pid;
+  network calls in `sw-usage.f` run outside it and every slot write takes it
+  through a `WITH-LOCK` quotation that reads its account from module cells.
 
 ## Layout
 

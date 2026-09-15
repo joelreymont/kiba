@@ -39,10 +39,9 @@ variable ADD-MARKED                  \ bool: a marker already existed before the
 \ everything that can fail for one provider happens here, before any output
 : SCAN-PROVIDER ( n -- ) {: p :}
    false SCAN-LIVE !
-   0 LEMAIL-U ! 0 LPLAN-U !
    0 ACCT-RESET
    p [: SCAN-PROVIDER-RAW ;] catch SCAN-RC ! drop
-   SCAN-RC @ 0<> if false SCAN-LIVE ! 0 LEMAIL-U ! 0 LPLAN-U ! then ;
+   SCAN-RC @ 0<> if false SCAN-LIVE ! 0 LEMAIL-U ! 0 LPLAN-U ! 0 LNAME-U ! then ;
 
 : ACTIVE? ( n -- bool ) {: i :}
    SCAN-LIVE @ 0= if false exit then
@@ -72,12 +71,17 @@ public
    rc E-SW-INTERRUPTED = if s" kiba: an earlier switch was interrupted; run `kiba use` to finish it" exit then
    rc E-SW-MISMATCH = if s" kiba: the saved file belongs to a different account than its folder name" exit then
    rc E-SW-ASIDE = if s" kiba: an earlier `add` left a .kiba-aside login file; move it back or remove it" exit then
+   rc E-SW-MIXED = if s" kiba: the live Claude files name different accounts; switch to an account to repair them" exit then
+   rc E-JR-STATE = if s" kiba: a login field is longer than kiba can hold" exit then
+   rc E-STR-CAPACITY = if s" kiba: a path or name is too long" exit then
    rc E-FS-OPEN = if s" kiba: cannot open a login file" exit then
    rc E-FS-IO = if s" kiba: a file read, write, or rename failed" exit then
-   rc E-FS-CAPACITY = if s" kiba: a login file is larger than 4 MiB" exit then
+   rc E-FS-CAPACITY = if s" kiba: a login file or path is too large" exit then
    rc E-FS-PATH-UNSAFE = if s" kiba: refusing to write through a symlink chain" exit then
    rc E-PROC-SPAWN = if s" kiba: could not start the provider command" exit then
    rc E-JR-LAST >= rc E-JR-FIRST <= and if s" kiba: a login file is not valid JSON" exit then
+   rc E-FS-LAST >= rc E-FS-FIRST <= and if s" kiba: a file operation failed" exit then
+   rc E-PROC-LAST >= rc E-PROC-FIRST <= and if s" kiba: could not run a command" exit then
    SB-RESET s" kiba: error code " SB-APPEND rc FMT:SB-INT SB$ ;
 
 private
@@ -131,6 +135,7 @@ private
    p i ACCT-NAME LOAD-USAGE 0= if JSON-WRITE:NULL exit then
    JSON-WRITE:OBJECT-START
    s" fetchedAt" USAGE-AT@ 0 max JSON-WRITE:FIELD-U JSON-WRITE:COMMA
+   s" state" STATE$ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
    s" note" NOTE$ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
    s" limits" USAGE-LIMITS-RAW$ JSON-WRITE:FIELD-RAW
    JSON-WRITE:OBJECT-END ;
@@ -175,10 +180,23 @@ private
 
 \ ---- save / use / add / forget ----------------------------------------------
 : .SAVED ( n -- ) {: p :}
-   p PROVIDER$ type s" : saved " type EMAIL$ type cr ;
+   p PROVIDER$ type s" : saved " type SAVED-NAME$ type cr ;
+
+: MIXED-KEEP ( n -- n ) {: p :}
+   CLAUDE-MIXED? if 1 exit then
+   0 ;
+
+\ a live file that cannot be read is not a mixed pair; the reader that
+\ needs it will say what is wrong
+: MIXED? ( n -- bool ) {: p :}
+   p P-CLAUDE <> if false exit then
+   p [: MIXED-KEEP ;] catch {: rc :}
+   rc 0<> if drop false exit then
+   0 > ;
 
 : SAVE-ONE ( n -- ) {: p :}
    p INSTALLING? if E-SW-INTERRUPTED throw then
+   p MIXED? if E-SW-MIXED throw then
    p LIVE-IDENTITY 0= if p PROVIDER$ type s" : no live login" type cr exit then
    p SAVE-LIVE p .SAVED ;
 
@@ -189,9 +207,11 @@ private
    CMD-P @ SAVE-ONE ;
 
 \ the live login is saved back first so refreshed tokens are never lost;
-\ after an interrupted install the live pair is mixed, so it is left alone
+\ after an interrupted install, or when the live files disagree about the
+\ account, the pair is left alone: the next install repairs it
 : SAVE-BACK ( n -- ) {: p :}
    p INSTALLING? if exit then
+   p MIXED? if s" kiba: the live Claude files name different accounts; not saving them" ERR-NOTE exit then
    p LIVE-IDENTITY if p SAVE-LIVE then ;
 
 \ the account just installed is probed at once so its figures are current
@@ -213,7 +233,7 @@ private
 \ kiba's interrupted install and the live pair cannot be trusted
 : ADD-SAVE-LOCKED ( -- )
    CMD-P @ INSTALLING? ADD-MARKED @ 0= and if E-SW-INTERRUPTED throw then
-   CMD-P @ LIVE-IDENTITY 0= if CMD-P @ RESTORE-ASIDE E-SW-NO-LIVE throw then
+   CMD-P @ LIVE-IDENTITY 0= if E-SW-NO-LIVE throw then
    CMD-P @ CLEAR-MARK
    CMD-P @ SAVE-LIVE
    CMD-P @ DROP-ASIDE
@@ -226,12 +246,26 @@ private
    LIM#@ 0= if NOTE$ type cr exit then
    .LIMITS cr ;
 
-\ every saved account of one provider; the live login is saved first so its
-\ slot is fresh and so a login saved by this very run is probed by it
+: SAVE-BACK-KEEP ( n -- n ) {: p :}
+   p SAVE-BACK p ;
+
+\ the live login is saved first, under the lock, so its slot is fresh and
+\ so a login saved by this very run is probed by it; a live login that
+\ cannot be read is reported and the saved accounts are still probed
+: USAGE-PREPARE-LOCKED ( -- )
+   CMD-P @ [: SAVE-BACK-KEEP ;] catch {: rc :} drop
+   rc 0<> if
+      SB-RESET CMD-P @ PROVIDER$ SB-APPEND s" : live login not saved: " SB-APPEND rc REASON$ SB-APPEND
+      SB$ ERR-NOTE
+   then
+   CMD-P @ SCAN-PROVIDER ;
+
+\ every saved account of one provider, probed without the lock; a provider
+\ that cannot be read is reported and the others still run
 : USAGE-PROVIDER ( n -- ) {: p :}
-   p SAVE-BACK
-   p SCAN-PROVIDER
-   SCAN-RC @ 0<> if SCAN-RC @ throw then
+   p CMD-P !
+   [: USAGE-PREPARE-LOCKED ;] WITH-LOCK
+   SCAN-RC @ 0<> if p PROVIDER$ type s" : " type SCAN-RC @ REASON$ type cr exit then
    0 begin dup ACCT# < while
       {: i :}
       p i ACCT-NAME i ACTIVE? PROBE-SLOT
@@ -239,11 +273,9 @@ private
       i 1+
    repeat drop ;
 
-: USAGE-LOCKED ( -- )
-   CMD-P @ 0 < if
-      0 begin dup P-COUNT < while dup USAGE-PROVIDER 1+ repeat drop exit
-   then
-   CMD-P @ USAGE-PROVIDER ;
+: USAGE-RUN ( n -- )
+   dup 0 < if drop 0 begin dup P-COUNT < while dup USAGE-PROVIDER 1+ repeat drop exit then
+   USAGE-PROVIDER ;
 
 : FORGET-LOCKED ( -- )
    CMD-P @ NAME$ SLOT-DIR$ DIR? 0= if E-SW-NO-ACCOUNT throw then
@@ -251,14 +283,15 @@ private
 
 public
 
+: MIXED-PUBLIC? ( n -- bool ) MIXED? ;
+
 : CMD-STATUS ( bool -- )
    if STATUS-JSON exit then
    STATUS-TEXT ;
 
 \ p < 0 probes every provider
 : CMD-USAGE ( n -- )
-   CMD-P !
-   [: USAGE-LOCKED ;] WITH-LOCK ;
+   USAGE-RUN ;
 
 \ p < 0 saves every provider
 : CMD-SAVE ( n -- )
