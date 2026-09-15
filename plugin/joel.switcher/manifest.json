@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "joel.switcher",
+  "name": "AI accounts",
+  "version": "0.1.0",
+  "author": "Joel",
+  "license": "MIT",
+  "description": "Shows the active Claude Code and Codex accounts and switches between saved logins.",
+  "kinds": ["bar-widget"],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "AI accounts",
+    "description": "Active Claude Code and Codex accounts with one-click switching through the switcher CLI.",
+    "category": "AI",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "refreshIntervalSec": 120
+    },
+    "schema": [
+      { "key": "refreshIntervalSec", "type": "integer", "label": "Refresh interval (seconds)", "min": 15, "max": 3600, "step": 15, "defaultValue": 120 }
+    ]
+  }
+}
