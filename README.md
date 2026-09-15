@@ -21,7 +21,7 @@ provider how much of every saved account's allowance is left.
 
 ```sh
 ./build.sh                                            # builds and installs ~/.local/bin/kiba and the widget
-omarchy plugin enable joel.kiba --section right --before omarchy.agents
+omarchy plugin enable kiba --section right --before omarchy.agents
 kiba save                                             # keep the logins you have now
 ```
 
@@ -128,7 +128,7 @@ after each request.
 
 ## Bar widget
 
-`plugin/joel.kiba` renders `kiba status --json` and only ever runs the CLI:
+`plugin/kiba` renders `kiba status --json` and only ever runs the CLI:
 an account row runs `use`, "Save the current login" runs `save`, "Add
 account…" opens a terminal running `add` (the login needs a browser and a
 prompt), and "Refresh usage" runs `usage`. The panel probes once per open when
@@ -141,7 +141,7 @@ time, as in `(pro, 5d)`), grey with no data. A red row whose login no longer
 works says "log in again" and starts a fresh login when clicked. Hovering a
 row shows every window with what is left and when it resets.
 
-`build.sh` copies the widget into `~/.config/omarchy/plugins/joel.kiba`. The
+`build.sh` copies the widget into `~/.config/omarchy/plugins/kiba`. The
 enable is needed once. After a QML change run `omarchy-restart-shell`: the
 shell's plugin reload keeps the old compiled component in this Qt build.
 

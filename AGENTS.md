@@ -29,19 +29,19 @@ checked Habu program; a thin Omarchy bar widget runs it.
 - `src/` checked Habu sources; `test/sw-unit-test.f` the checked test suite,
   which writes fake `curl`, `codex`, and collector scripts into the scratch
   PATH (`KIBA_TEST_LOG` collects what they were called with).
-- `plugin/joel.kiba/` Omarchy bar widget (QML). It only runs the CLI and
+- `plugin/kiba/` Omarchy bar widget (QML). It only runs the CLI and
   renders `kiba status --json`; no account logic lives in QML.
 - `build.sh` builds the native binary with `tools/hb-build.f --repl`,
   installs it to `~/.local/bin/kiba`, and copies the widget into
-  `~/.config/omarchy/plugins/joel.kiba`. QML edits show up only after
+  `~/.config/omarchy/plugins/kiba`. QML edits show up only after
   `omarchy-restart-shell`; verify with a `grim` screenshot of the bar.
 
 ## Verify
 
 - Tests: `HABU=<checkout> ./test.sh` runs the suite inside a scratch `HOME`;
   it never touches real credentials.
-- Widget: `omarchy plugin validate plugin/joel.kiba`, then
-  `omarchy-shell joel.kiba open` and check `journalctl --user` for QML
+- Widget: `omarchy plugin validate plugin/kiba`, then
+  `omarchy-shell kiba open` and check `journalctl --user` for QML
   errors.
 - Read-only checks against the real store are fine (`kiba status`,
   `kiba status --json`). Do not run `use`, `add`, `save`, `forget`, or

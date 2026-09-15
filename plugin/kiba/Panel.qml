@@ -7,8 +7,8 @@ import qs.Ui
 // room it has left, and one-click switching through the kiba CLI.
 Panel {
   id: root
-  moduleName: "joel.kiba"
-  ipcTarget: "joel.kiba"
+  moduleName: "kiba"
+  ipcTarget: "kiba"
 
   property bool cursorActive: false
   property int cursor: 0
