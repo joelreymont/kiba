@@ -27,9 +27,11 @@ kiba save                                             # keep the logins you have
 
 To add another account, sign into it at claude.ai or chatgpt.com in your
 browser, then use "Add account…" in the widget or run `kiba add claude` /
-`kiba add codex`. The provider's login page authorizes whichever account the
-browser is signed into; kiba saves what comes back under that account's name
-and, when you named an account, tells you if a different one came back.
+`kiba add codex`. The terminal first reminds you to sign into the account in
+the browser and waits for Enter, because the provider's login page authorizes
+whichever account the browser is signed into; kiba saves what comes back
+under that account's name and, when you named an account, tells you if a
+different one came back.
 Adding never touches the live login; switch with `use` or a click. Never run
 the providers' logout commands: both revoke the tokens server-side and the
 saved copy dies with them.

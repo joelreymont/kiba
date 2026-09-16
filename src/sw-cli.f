@@ -298,10 +298,11 @@ create LINE-BUF 256 allot
 variable LOGIN-RC
 
 \ the browser decides the account, so the user is told which one to be
-\ signed into and given the moment to arrange it
+\ signed into, or reminded to pick one, and given the moment to arrange it
 : ADD-PAUSE ( n ptr u8 n -- ) {: p e eu :}
-   eu 0= if exit then
-   s" Sign in to " type e eu NAME-EMAIL type s"  at " type p SITE$ type
+   s" Sign in to " type
+   eu 0 > if e eu NAME-EMAIL type else s" the account to add" type then
+   s"  at " type p SITE$ type
    s"  in your browser, then press Enter to continue: " type
    0 LINE-BUF 256 read drop ;
 
