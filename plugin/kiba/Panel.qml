@@ -582,30 +582,32 @@ Panel {
       opacity: row.state === "unknown" ? 0.6 : 1
     }
 
+    // The plan label and the figures always fit; a long email gives way
+    // first, shortened in the middle so both ends still name the account.
     Text {
       id: emailText
       anchors.left: dot.right
       anchors.leftMargin: Style.space(8)
-      anchors.right: figures.left
-      anchors.rightMargin: Style.space(8)
       anchors.verticalCenter: parent.verticalCenter
-      text: row.account ? row.account.email + "  " : ""
+      width: Math.max(0, Math.min(implicitWidth,
+        figures.x - x - Style.space(8) - (planText.text !== "" ? planText.implicitWidth + planText.anchors.leftMargin : 0)))
+      text: row.account ? row.account.email : ""
       color: row.active ? Color.accent : (row.state === "blocked" || row.state === "dead" ? root.dim : root.foreground)
       font.family: root.fontFamily
       font.pixelSize: Style.font.body
       font.bold: row.active
       elide: Text.ElideMiddle
+    }
 
-      Text {
-        anchors.left: parent.left
-        anchors.leftMargin: parent.contentWidth
-        anchors.verticalCenter: parent.verticalCenter
-        text: row.account ? root.planText(row.account) : ""
-        color: row.state === "blocked" || row.state === "dead" ? root.urgent : root.dim
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.bodySmall
-        visible: parent.contentWidth + implicitWidth <= parent.width
-      }
+    Text {
+      id: planText
+      anchors.left: emailText.right
+      anchors.leftMargin: Style.space(8)
+      anchors.verticalCenter: parent.verticalCenter
+      text: row.account ? root.planText(row.account) : ""
+      color: row.state === "blocked" || row.state === "dead" ? root.urgent : root.dim
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
     }
 
     Text {

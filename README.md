@@ -159,7 +159,9 @@ and what is left of the session, the week, and each model window, as three
 percentages in that order (the hover text names them): green with at least
 half of the session and of every weekly window left, yellow below that, red
 once any window is used up (the figures then read `limit` and the label
-carries the reset time, as in `(pro, 5d)`), grey with no data. A red row whose login no longer works says
+carries the reset time, as in `(pro, 5d)`), grey with no data. The label
+and the figures always fit: a long email is shortened in the middle to make
+room. A red row whose login no longer works says
 "log in again" and starts a login for that account when clicked: the
 terminal first asks you to sign into it in the browser; the live account's
 expired token is not a dead login, its CLI refreshes it. Hovering a row
