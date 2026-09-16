@@ -151,9 +151,10 @@ account…" opens a terminal running `add` (the login needs a browser and a
 prompt), and "Refresh usage" runs `usage`. The panel probes once per open when
 the newest record is older than ten minutes.
 
-Each row carries a dot and what is left of the session, the week, and each
-model window, as three percentages in that order (the hover text names
-them): green with at least half of the session and of
+Rows are ordered by color, green first, then yellow, red, and grey, and by
+name within a color. Each row carries a dot and what is left of the session,
+the week, and each model window, as three percentages in that order (the
+hover text names them): green with at least half of the session and of
 every weekly window left, yellow below that, red once any window is used up
 (the figures then read `limit` and the label carries the reset time, as in
 `(pro, 5d)`), grey with no data. A red row whose login no longer works says

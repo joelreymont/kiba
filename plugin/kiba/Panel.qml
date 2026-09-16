@@ -32,11 +32,35 @@ Panel {
 
   function alpha(c, a) { return Qt.rgba(c.r, c.g, c.b, a) }
 
+  // Rows are ordered by what they tell you: accounts with room first, then
+  // the ones running low, then the used-up or dead ones, then the unknown.
+  // Within a color the CLI's order (by name) is kept.
+  function stateRank(state) {
+    if (state === "ok") return 0
+    if (state === "tight") return 1
+    if (state === "blocked" || state === "dead") return 2
+    return 3
+  }
+
+  function sortedAccounts(p) {
+    var out = p.accounts.slice()
+    out.sort(function(a, b) {
+      var d = stateRank(usageState(a.usage, a.active)) - stateRank(usageState(b.usage, b.active))
+      return d !== 0 ? d : p.accounts.indexOf(a) - p.accounts.indexOf(b)
+    })
+    return out
+  }
+
+  // the providers as the panel shows them
+  readonly property var view: providers.map(function(p) {
+    return { id: p.id, title: p.title, live: p.live, error: p.error, accounts: sortedAccounts(p) }
+  })
+
   // One flat cursor over every row that can be activated, in panel order.
   readonly property var actions: {
     var out = []
-    for (var i = 0; i < providers.length; i += 1) {
-      var p = providers[i]
+    for (var i = 0; i < view.length; i += 1) {
+      var p = view[i]
       for (var j = 0; j < p.accounts.length; j += 1)
         out.push({ kind: "use", provider: p.id, email: p.accounts[j].email, active: p.accounts[j].active })
       if (p.live && p.error === "" && !liveSaved(p)) out.push({ kind: "save", provider: p.id })
@@ -233,13 +257,13 @@ Panel {
     var a = actions[index]
     if (!a) return null
     if (a.kind === "usage") return usageRow
-    for (var i = 0; i < providers.length; i += 1) {
-      if (providers[i].id !== a.provider) continue
+    for (var i = 0; i < view.length; i += 1) {
+      if (view[i].id !== a.provider) continue
       var block = providerRepeater.itemAt(i)
       if (!block) return null
       if (a.kind === "use") {
-        for (var j = 0; j < providers[i].accounts.length; j += 1)
-          if (providers[i].accounts[j].email === a.email) return block.accountRows.itemAt(j)
+        for (var j = 0; j < view[i].accounts.length; j += 1)
+          if (view[i].accounts[j].email === a.email) return block.accountRows.itemAt(j)
         return null
       }
       return a.kind === "save" ? block.saveRow : block.addRow
@@ -442,7 +466,7 @@ Panel {
 
           Repeater {
             id: providerRepeater
-            model: root.providers
+            model: root.view
 
             delegate: Column {
               id: providerBlock
