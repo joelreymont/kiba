@@ -23,7 +23,6 @@ public
 -9911 constant E-SW-ENV         \ HOME is not set
 -9912 constant E-SW-INTERRUPTED \ an earlier switch stopped between its two file writes
 -9913 constant E-SW-MISMATCH    \ a saved file names a different account than its slot
--9914 constant E-SW-ASIDE       \ a login file set aside for a login is still there
 -9915 constant E-SW-MIXED       \ the live Claude files name different accounts
 
 0 constant P-CLAUDE

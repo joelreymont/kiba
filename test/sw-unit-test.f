@@ -480,6 +480,21 @@ create UT-PID 32 allot
    LOG$ READ-FILE$ s\" absent\nabsent\n" ENDS-WITH? TTRUE
    P-CODEX s" c@x.test" CMD-USE ;
 
+\ an aside left by a dead `add`: with no live file it is the login and comes
+\ back before the new login runs; with a live file it is dropped by the next
+\ use, its account having been saved back before it stepped aside
+: UT-ASIDE-RECOVERY ( -- )
+   CODEX-AUTH$ CODEX-AUTH$ ASIDE-FOR RENAME-FILE
+   CODEX-AUTH$ FILE? TFALSE
+   P-CODEX CMD-ADD
+   CODEX-AUTH$ READ-FILE$ AUTH-D$ T$=
+   CODEX-AUTH$ ASIDE-FOR FILE? TFALSE
+   P-CODEX s" c@x.test" s" auth.json" SLOT-FILE$ READ-FILE$ AUTH-C$ T$=
+   CODEX-AUTH$ ASIDE-FOR AUTH-C$ WRITE-PRIVATE
+   P-CODEX s" c@x.test" CMD-USE
+   CODEX-AUTH$ ASIDE-FOR FILE? TFALSE
+   CODEX-AUTH$ READ-FILE$ AUTH-C$ T$= ;
+
 \ the live account's expired token is reported, never sent
 : CREDS-A-OLD$ ( -- ptr u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-a-old\",\"refreshToken\":\"r-a\",\"expiresAt\":1,\"subscriptionType\":\"max\"}}" ;
@@ -601,6 +616,7 @@ create UT-PID 32 allot
    UT-SYMLINK
    UT-STRAY-MARKERS
    UT-ADD
+   UT-ASIDE-RECOVERY
    UT-PCT
    UT-USAGE
    UT-LIVE-EXPIRED

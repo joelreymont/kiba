@@ -251,9 +251,9 @@ public
 
 \ A provider's login command revokes whatever login it finds before it starts
 \ (codex does; claude is not trusted either), which would kill the saved copy
-\ of the account being left. The live file therefore steps aside first.
+\ of the account being left. The live file therefore steps aside first; the
+\ caller has saved it back and dropped any older aside.
 : SET-ASIDE ( n -- ) {: p :}
-   p LIVE-FILE$ ASIDE-FOR FILE? if E-SW-ASIDE throw then
    p LIVE-FILE$ FILE? 0= if exit then
    p LIVE-FILE$ p LIVE-FILE$ ASIDE-FOR RENAME-FILE ;
 
@@ -265,6 +265,16 @@ public
 : DROP-ASIDE ( n -- ) {: p :}
    p LIVE-FILE$ ASIDE-FOR FILE? 0= if exit then
    p LIVE-FILE$ ASIDE-FOR REMOVE-FILE ;
+
+\ An aside left by an interrupted `add` (the terminal closed, Ctrl-C). With
+\ no live file the login never produced one, so the aside is the user's
+\ login and comes back. With a live file the login did complete: the aside's
+\ account was saved back before it stepped aside, so the caller may drop
+\ the aside once the live login is saved too.
+: RECOVER-ASIDE ( n -- ) {: p :}
+   p LIVE-FILE$ ASIDE-FOR FILE? 0= if exit then
+   p LIVE-FILE$ FILE? if exit then
+   p RESTORE-ASIDE ;
 
 : INSTALL ( n ptr u8 n -- ) {: p a u :}
    p case

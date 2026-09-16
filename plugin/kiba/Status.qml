@@ -136,11 +136,13 @@ Item {
       ["kiba", "save", provider])
   }
 
-  // Login needs a browser hand-off and a terminal prompt, so it runs in its own terminal.
+  // Login needs a browser hand-off and a terminal prompt, so it runs in its
+  // own terminal. foot ignores --hold, so a failure keeps the window open
+  // until Enter; a success closes it as the login always did.
   function add(provider) {
     Quickshell.execDetached([
-      "xdg-terminal-exec", "--title=Kiba: add " + provider, "--hold", "--",
-      "kiba", "add", provider
+      "xdg-terminal-exec", "--title=Kiba: add " + provider, "--",
+      "sh", "-c", 'kiba add "$1" || { printf "\nPress Enter to close\n"; read -r _; }', "kiba-add", provider
     ])
   }
 

@@ -70,7 +70,6 @@ public
    rc E-SW-ENV = if s" kiba: HOME is not set" exit then
    rc E-SW-INTERRUPTED = if s" kiba: an earlier switch was interrupted; run `kiba use` to finish it" exit then
    rc E-SW-MISMATCH = if s" kiba: the saved file belongs to a different account than its folder name" exit then
-   rc E-SW-ASIDE = if s" kiba: an earlier `add` left a .kiba-aside login file; move it back or remove it" exit then
    rc E-SW-MIXED = if s" kiba: the live Claude files name different accounts; switch to an account to repair them" exit then
    rc E-JR-STATE = if s" kiba: a login field is longer than kiba can hold" exit then
    rc E-STR-CAPACITY = if s" kiba: a path or name is too long" exit then
@@ -214,15 +213,20 @@ private
    p MIXED? if s" kiba: the live Claude files name different accounts; not saving them" ERR-NOTE exit then
    p LIVE-IDENTITY if p SAVE-LIVE then ;
 
-\ the account just installed is probed at once so its figures are current
+\ the account just installed is probed at once so its figures are current;
+\ an aside a dead `add` left behind is redundant once a login is installed
 : USE-LOCKED ( -- )
+   CMD-P @ RECOVER-ASIDE
    CMD-P @ SAVE-BACK
    CMD-P @ NAME$ INSTALL
+   CMD-P @ DROP-ASIDE
    CMD-P @ NAME$ true PROBE-SLOT ;
 
 : ADD-LOCKED ( -- )
    CMD-P @ INSTALLING? ADD-MARKED !
+   CMD-P @ RECOVER-ASIDE
    CMD-P @ SAVE-BACK
+   CMD-P @ DROP-ASIDE
    CMD-P @ SET-ASIDE ;
 
 : ADD-RESTORE-LOCKED ( -- )

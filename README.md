@@ -106,7 +106,10 @@ number used, `state` is one of `ok`, `expired`, `revoked`, `error`, or
   login it finds before it starts, which would kill the saved copy of the
   account being left. `add` therefore saves the live login back, moves the
   live file to `<file>.kiba-aside`, runs the login, and moves the file back
-  if the login fails.
+  if the login fails. An aside left behind by an `add` that died mid-login
+  (closed terminal, Ctrl-C) is recovered by the next `add` or `use`: it is
+  moved back when no live login exists, and dropped when a newer login has
+  taken its place, its account having been saved before it stepped aside.
 
 ## Usage per account
 
