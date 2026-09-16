@@ -123,6 +123,8 @@ Panel {
       if (usage.limits[i].percent >= 100) return "blocked"
     var h = headlineLimit(usage)
     if (h && 100 - h.percent < 50) return "tight"
+    for (var j = 0; j < usage.limits.length; j += 1)
+      if (windowIsLong(usage.limits[j].label) && usage.limits[j] !== weeklyLimit(usage) && 100 - usage.limits[j].percent < 50) return "tight"
     return "ok"
   }
 
@@ -165,14 +167,20 @@ Panel {
     return parts.length > 0 ? "(" + parts.join(", ") + ")" : ""
   }
 
-  // right-hand figures: what is left of the session and of the week; a
-  // used-up account just says so
+  // right-hand figures: what is left of the session, of the week, and of
+  // each model window ("Fable 52%"); a used-up account just says so
   function figuresText(usage) {
     if (usageState(usage, false) === "blocked") return "limit"
     var s = sessionLimit(usage), w = weeklyLimit(usage)
     var parts = []
     if (s) parts.push((100 - s.percent) + "%")
     if (w) parts.push((100 - w.percent) + "%")
+    if (!usage) return parts.join(" · ")
+    for (var i = 0; i < usage.limits.length; i += 1) {
+      var l = usage.limits[i]
+      if (l === s || l === w || l.percent < 0) continue
+      parts.push(String(l.label).split(" ")[0] + " " + (100 - l.percent) + "%")
+    }
     return parts.join(" · ")
   }
 
@@ -289,7 +297,7 @@ Panel {
       for (var j = 0; j < providers[i].accounts.length; j += 1) {
         var a = providers[i].accounts[j]
         if (a.email !== email) continue
-        if (usageState(a.usage, a.active) === "dead") { root.close(); status.add(provider); return }
+        if (usageState(a.usage, a.active) === "dead") { root.close(); status.add(provider, email); return }
       }
     }
     status.use(provider, email)

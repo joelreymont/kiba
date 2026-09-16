@@ -25,10 +25,14 @@ omarchy plugin enable kiba --section right --before omarchy.agents
 kiba save                                             # keep the logins you have now
 ```
 
-To add another account, log into it in the browser, then use "Add account…"
-in the widget or run `kiba add claude` / `kiba add codex`. Never run the
-providers' logout commands: both revoke the tokens server-side and the saved
-copy dies with them.
+To add another account, sign into it at claude.ai or chatgpt.com in your
+browser, then use "Add account…" in the widget or run `kiba add claude` /
+`kiba add codex`. The provider's login page authorizes whichever account the
+browser is signed into; kiba saves what comes back under that account's name
+and, when you named an account, tells you if a different one came back.
+Adding never touches the live login; switch with `use` or a click. Never run
+the providers' logout commands: both revoke the tokens server-side and the
+saved copy dies with them.
 
 ## Commands
 
@@ -36,7 +40,7 @@ copy dies with them.
 kiba status [--json]          live account, saved accounts, and their usage
 kiba save [claude|codex]      copy the live login(s) into the store
 kiba use <provider> <name>    save back the live login, install <name>
-kiba add <provider>           run the provider login, then save the result
+kiba add <provider> [name]    log in to a new (or the named) account, save it
 kiba forget <provider> <name>
 kiba usage [claude|codex]     probe the rate limits of every saved account
 ```
@@ -99,17 +103,15 @@ number used, `state` is one of `ok`, `expired`, `revoked`, `error`, or
   provider's own login creates a fresh regular file, so after an `add` the
   live file is a plain file and the old link target keeps the previous
   account's tokens until you remove it.
-- **Login runs in the foreground**: `add` forks and execs the provider's
-  login so it stays in the terminal's process group; a child in its own
-  group is stopped by SIGTTIN the moment it reads the terminal.
-- **The live login steps aside for a login**: `codex login` revokes whatever
-  login it finds before it starts, which would kill the saved copy of the
-  account being left. `add` therefore saves the live login back, moves the
-  live file to `<file>.kiba-aside`, runs the login, and moves the file back
-  if the login fails. An aside left behind by an `add` that died mid-login
-  (closed terminal, Ctrl-C) is recovered by the next `add` or `use`: it is
-  moved back when no live login exists, and dropped when a newer login has
-  taken its place, its account having been saved before it stepped aside.
+- **Login runs in the foreground, in a throwaway home**: `add` forks and
+  execs the provider's login with `CLAUDE_CONFIG_DIR` or `CODEX_HOME`
+  pointing at a private directory under `<store>/probe/`, so the login never
+  sees the live login: nothing is read, revoked (`codex login` revokes
+  whatever login it finds), or replaced while your sessions are working. The
+  new login is read from that directory, saved under its name, probed, and
+  the directory is removed. The child stays in the terminal's process group;
+  a child in its own group is stopped by SIGTTIN the moment it reads the
+  terminal.
 
 ## Usage per account
 
@@ -118,7 +120,9 @@ it asks the provider's own usage endpoint with that account's saved token,
 through `curl`, and keeps the reported windows in `<slot>/usage.json`:
 
 - Claude: `GET https://api.anthropic.com/api/oauth/usage` with the OAuth
-  access token. Windows: `Session (5-hour)` and `Weekly (7-day)`.
+  access token. Windows: `Session (5-hour)`, `Weekly (7-day)`, and every
+  model-scoped window the payload lists, named after the model, such as
+  `Fable Weekly`.
 - Codex: `GET https://chatgpt.com/backend-api/wham/usage` with the access
   token and account id. Windows are named from their length: five hours is
   the session, seven days the week.
@@ -145,13 +149,15 @@ account…" opens a terminal running `add` (the login needs a browser and a
 prompt), and "Refresh usage" runs `usage`. The panel probes once per open when
 the newest record is older than ten minutes.
 
-Each row carries a dot and what is left of the session and the week: green
-with at least half of the session left, yellow below that, red once a window
-is used up (the figures then read `limit` and the label carries the reset
-time, as in `(pro, 5d)`), grey with no data. A red row whose login no longer
-works says "log in again" and starts a fresh login when clicked; the live
-account's expired token is not a dead login, its CLI refreshes it. Hovering a
-row shows every window with what is left and when it resets. The widget
+Each row carries a dot and what is left of the session, the week, and each
+model window (`Fable 52%`): green with at least half of the session and of
+every weekly window left, yellow below that, red once any window is used up
+(the figures then read `limit` and the label carries the reset time, as in
+`(pro, 5d)`), grey with no data. A red row whose login no longer works says
+"log in again" and starts a login for that account when clicked: the
+terminal first asks you to sign into it in the browser; the live account's
+expired token is not a dead login, its CLI refreshes it. Hovering a row
+shows every window with what is left and when it resets. The widget
 refreshes status while the panel is open and after each action, not while
 it sits closed.
 

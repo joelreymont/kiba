@@ -394,6 +394,86 @@ variable REFRESH-CODE               \ HTTP status of the last refresh request, -
 create SESSION-RESET LIM-RESET-CAP allot   variable SESSION-RESET-U
 create WEEKLY-RESET LIM-RESET-CAP allot    variable WEEKLY-RESET-U
 
+\ ---- model-scoped windows -------------------------------------------------------
+\ the payload's `limits` list also carries per-model windows such as Fable's
+\ weekly allowance: {kind: weekly_scoped, scope: {model: {display_name}}}
+create SC-NAME 64 allot            variable SC-NAME-U
+create SC-KIND 32 allot            variable SC-KIND-U
+create SC-RESET LIM-RESET-CAP allot variable SC-RESET-U
+variable SC-PCT
+
+: SC-ENTRY-RESET ( -- )
+   0 SC-NAME-U ! 0 SC-KIND-U ! 0 SC-RESET-U ! -1 SC-PCT ! ;
+
+\ on the model object's opening brace: its display name
+: SC-MODEL ( JR:reader -- JR:reader )
+   begin JR:NEXT JR:T-OBJ-END <> while
+      JR:TOKEN JR:T-KEY <> if E-SW-JSON throw then
+      KEY-BUF 64 JR:STR {: ku :}
+      JR:NEXT drop
+      KEY-BUF ku s" display_name" STR= {: named :}
+      JR:TOKEN JR:T-STR = named and if
+         SC-NAME 64 JR:STR SC-NAME-U !
+      else JR:SKIP-VALUE then
+   repeat ;
+
+\ on the scope value: an object with a model, or null
+: SC-SCOPE ( JR:reader -- JR:reader )
+   JR:TOKEN JR:T-OBJ <> if JR:SKIP-VALUE exit then
+   begin JR:NEXT JR:T-OBJ-END <> while
+      JR:TOKEN JR:T-KEY <> if E-SW-JSON throw then
+      KEY-BUF 64 JR:STR {: ku :}
+      JR:NEXT drop
+      KEY-BUF ku s" model" STR= {: modelkey :}
+      JR:TOKEN JR:T-OBJ = modelkey and if SC-MODEL else JR:SKIP-VALUE then
+   repeat ;
+
+: SC-FIELD ( JR:reader ptr u8 n -- JR:reader ) {: k ku :}
+   JR:TOKEN {: t :}
+   k ku s" kind" STR= t JR:T-STR = and if SC-KIND 32 JR:STR SC-KIND-U ! exit then
+   k ku s" resets_at" STR= t JR:T-STR = and if SC-RESET LIM-RESET-CAP JR:STR SC-RESET-U ! exit then
+   k ku s" percent" STR= t JR:T-INT = t JR:T-FLOAT = or and if BUCKET-PCT SC-PCT ! exit then
+   k ku s" scope" STR= if SC-SCOPE exit then
+   JR:SKIP-VALUE ;
+
+: SC-WINDOW$ ( -- ptr u8 n )
+   SC-KIND SC-KIND-U @ s" weekly" STARTS-WITH? if s" Weekly" exit then
+   SC-KIND SC-KIND-U @ s" five_hour" STARTS-WITH? if s" Session" exit then
+   SC-KIND SC-KIND-U @ s" session" STARTS-WITH? if s" Session" exit then
+   s" " ;
+
+\ a window with a model becomes "<Model> Weekly"; unscoped ones are the
+\ session and weekly buckets already taken
+: SC-ENTRY+ ( -- )
+   SC-NAME-U @ 0= if exit then
+   SC-PCT @ 0 < if exit then
+   SB-RESET SC-NAME SC-NAME-U @ SB-APPEND
+   SC-WINDOW$ dup 0 > if $20 SB-APPEND-C SB-APPEND else 2drop then
+   SB$ SC-PCT @ SCALED SC-RESET SC-RESET-U @ LIM+ ;
+
+: SC-OBJECT ( JR:reader -- JR:reader )
+   SC-ENTRY-RESET
+   begin JR:NEXT JR:T-OBJ-END <> while
+      JR:TOKEN JR:T-KEY <> if E-SW-JSON throw then
+      KEY-BUF 64 JR:STR {: ku :}
+      JR:NEXT drop
+      KEY-BUF ku SC-FIELD
+   repeat
+   SC-ENTRY+ ;
+
+: SC-ARRAY ( JR:reader -- JR:reader )
+   begin JR:NEXT JR:T-ARR-END <> while
+      JR:TOKEN JR:T-OBJ <> if E-SW-JSON throw then
+      SC-OBJECT
+   repeat ;
+
+: CLAUDE-SCOPED ( ptr u8 n -- ) {: d du :}
+   d du OPEN-DOC ENTER-OBJECT
+   s" limits" JR:FIND-KEY 0= if JR:CLOSE exit then
+   JR:TOKEN JR:T-ARR <> if JR:CLOSE exit then
+   SC-ARRAY
+   JR:CLOSE ;
+
 : CLAUDE-LIMITS ( ptr u8 n -- ) {: d du :}
    0 LIM-N !
    d du s" five_hour" CLAUDE-BUCKET SESSION-RESET SESSION-RESET-U LIM-RESET-CAP SPAN! {: sh :}
@@ -401,7 +481,8 @@ create WEEKLY-RESET LIM-RESET-CAP allot    variable WEEKLY-RESET-U
    wh0 0 < if d du s" seven_day" CLAUDE-BUCKET else wh0 r0 r0u then
    WEEKLY-RESET WEEKLY-RESET-U LIM-RESET-CAP SPAN! {: wh :}
    sh 0 >= if SESSION-LABEL$ sh SCALED SESSION-RESET SESSION-RESET-U @ LIM+ then
-   wh 0 >= if WEEKLY-LABEL$ wh SCALED WEEKLY-RESET WEEKLY-RESET-U @ LIM+ then ;
+   wh 0 >= if WEEKLY-LABEL$ wh SCALED WEEKLY-RESET WEEKLY-RESET-U @ LIM+ then
+   d du CLAUDE-SCOPED ;
 
 : CLAUDE-EXPIRED? ( -- bool )
    CFG$ CREDS-KEY$ s" expiresAt" DOC-INT2 {: ms :}

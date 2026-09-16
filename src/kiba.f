@@ -7,7 +7,7 @@ package SW
    s\" usage: kiba status [--json]\n" ERR-TYPE
    s\"        kiba save [claude|codex]\n" ERR-TYPE
    s\"        kiba use <claude|codex> <email>\n" ERR-TYPE
-   s\"        kiba add <claude|codex>\n" ERR-TYPE
+   s\"        kiba add <claude|codex> [name]\n" ERR-TYPE
    s\"        kiba forget <claude|codex> <email>\n" ERR-TYPE
    s\"        kiba usage [claude|codex]\n" ERR-TYPE ;
 
@@ -34,6 +34,11 @@ package SW
    2 ARG-COUNT
    1 ARG$ PROVIDER# CMD-USAGE ;
 
+: DISPATCH-ADD ( -- )
+   SCRIPT-ARGC 2 = if 1 ARG$ PROVIDER# s" " CMD-ADD exit then
+   3 ARG-COUNT
+   1 ARG$ PROVIDER# 2 ARG$ CMD-ADD ;
+
 : DISPATCH ( -- )
    SCRIPT-ARGC 0= if E-SW-USAGE throw then
    0 ARG$ {: c cu :}
@@ -41,7 +46,7 @@ package SW
    c cu s" save" STR= if DISPATCH-SAVE exit then
    c cu s" usage" STR= if DISPATCH-USAGE exit then
    c cu s" use" STR= if 3 ARG-COUNT 1 ARG$ PROVIDER# 2 ARG$ CMD-USE exit then
-   c cu s" add" STR= if 2 ARG-COUNT 1 ARG$ PROVIDER# CMD-ADD exit then
+   c cu s" add" STR= if DISPATCH-ADD exit then
    c cu s" forget" STR= if 3 ARG-COUNT 1 ARG$ PROVIDER# 2 ARG$ CMD-FORGET exit then
    E-SW-USAGE throw ;
 

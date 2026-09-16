@@ -14,7 +14,6 @@ create NAME-BUF 256 allot     variable NAME-U
 variable CMD-P
 variable SCAN-RC                     \ 0, or why the provider could not be read
 variable SCAN-LIVE                   \ bool: the provider has a live login
-variable ADD-MARKED                  \ bool: a marker already existed before the login
 
 : LEMAIL$ ( -- ptr u8 n ) LEMAIL-BUF LEMAIL-U @ ;
 : LNAME$ ( -- ptr u8 n ) LNAME-BUF LNAME-U @ ;
@@ -213,35 +212,11 @@ private
    p MIXED? if s" kiba: the live Claude files name different accounts; not saving them" ERR-NOTE exit then
    p LIVE-IDENTITY if p SAVE-LIVE then ;
 
-\ the account just installed is probed at once so its figures are current;
-\ an aside a dead `add` left behind is redundant once a login is installed
+\ the account just installed is probed at once so its figures are current
 : USE-LOCKED ( -- )
-   CMD-P @ RECOVER-ASIDE
    CMD-P @ SAVE-BACK
    CMD-P @ NAME$ INSTALL
-   CMD-P @ DROP-ASIDE
    CMD-P @ NAME$ true PROBE-SLOT ;
-
-: ADD-LOCKED ( -- )
-   CMD-P @ INSTALLING? ADD-MARKED !
-   CMD-P @ RECOVER-ASIDE
-   CMD-P @ SAVE-BACK
-   CMD-P @ DROP-ASIDE
-   CMD-P @ SET-ASIDE ;
-
-: ADD-RESTORE-LOCKED ( -- )
-   CMD-P @ RESTORE-ASIDE ;
-
-\ a completed login rewrote every live file, so a marker from before it is
-\ stale; one that appeared while the lock was released belongs to another
-\ kiba's interrupted install and the live pair cannot be trusted
-: ADD-SAVE-LOCKED ( -- )
-   CMD-P @ INSTALLING? ADD-MARKED @ 0= and if E-SW-INTERRUPTED throw then
-   CMD-P @ LIVE-IDENTITY 0= if E-SW-NO-LIVE throw then
-   CMD-P @ CLEAR-MARK
-   CMD-P @ SAVE-LIVE
-   CMD-P @ DROP-ASIDE
-   CMD-P @ SAVED-NAME$ true PROBE-SLOT ;
 
 : .PROBED ( n n -- ) {: p i :}
    p PROVIDER$ type s" : " type i ACCT-NAME type s"   " type
@@ -307,15 +282,75 @@ public
    [: USE-LOCKED ;] WITH-LOCK
    p PROVIDER$ type s" : now " type a u type cr ;
 
-: CMD-ADD ( n -- ) {: p :}
+\ ---- add: the provider login inside a throwaway home ------------------------------
+\ The login command never sees the live login: it runs with its home
+\ variable pointing at a private directory under the store, so nothing is
+\ read, revoked, or replaced while a session is working. The new login is
+\ then saved under its own name; switching to it is a separate `use`.
+: LOGIN-HOME$ ( n -- ptr u8 n )
+   P-CLAUDE = if s" /login-claude" else s" /login-codex" then PSUB$ ;
+
+: SITE$ ( n -- ptr u8 n )
+   P-CLAUDE = if s" claude.ai" exit then
+   s" chatgpt.com" ;
+
+create LINE-BUF 256 allot
+variable LOGIN-RC
+
+\ the browser decides the account, so the user is told which one to be
+\ signed into and given the moment to arrange it
+: ADD-PAUSE ( n ptr u8 n -- ) {: p e eu :}
+   eu 0= if exit then
+   s" Sign in to " type e eu NAME-EMAIL type s"  at " type p SITE$ type
+   s"  in your browser, then press Enter to continue: " type
+   0 LINE-BUF 256 read drop ;
+
+: ADD-BEGIN ( n -- ) {: p :}
+   p LOGIN-HOME$ DIR? if p LOGIN-HOME$ REMOVE-TREE then
+   p LOGIN-HOME$ ENSURE-PRIVATE
+   p LOGIN-HOME$ LOGIN-ROOT!
+   p LOGIN-DIR$ ENSURE-PRIVATE ;
+
+\ the throwaway home holds a login's tokens until they are saved; it never
+\ outlives the command
+: ADD-END ( n -- ) {: p :}
+   LOGIN-ROOT-CLEAR
+   p LOGIN-HOME$ DIR? if p LOGIN-HOME$ REMOVE-TREE then ;
+
+: LOGIN-KEEP ( n ptr u8 n -- n ptr u8 n ) {: p e eu :}
+   p e eu NAME-EMAIL LOGIN LOGIN-RC !
+   p e eu ;
+
+\ the new login is read from the throwaway home and saved under its name
+: ADD-SAVE-LOCKED ( -- )
+   CMD-P @ LIVE-IDENTITY 0= if E-SW-NO-LIVE throw then
+   CMD-P @ SAVE-LIVE ;
+
+: ADD-SAVE ( -- )
+   [: ADD-SAVE-LOCKED ;] WITH-LOCK ;
+
+: .ADDED ( n ptr u8 n -- ) {: p e eu :}
+   p PROVIDER$ type s" : saved " type SAVED-NAME$ type
+   eu 0 > SAVED-NAME$ e eu STR= 0= and if
+      s"  (you signed in to a different account than " type e eu type s" )" type
+   then
+   cr ;
+
+: CMD-ADD ( n ptr u8 n -- ) {: p e eu :}
    p CHECK-LOGIN-CLI
    p CMD-P !
-   [: ADD-LOCKED ;] WITH-LOCK
-   p [: LOGIN ;] catch {: rc :}
-   rc 0<> if drop [: ADD-RESTORE-LOCKED ;] WITH-LOCK rc throw then
-   0 <> if [: ADD-RESTORE-LOCKED ;] WITH-LOCK E-SW-LOGIN throw then
-   [: ADD-SAVE-LOCKED ;] WITH-LOCK
-   p PROVIDER$ type s" : added " type SAVED-NAME$ type cr ;
+   p ADD-BEGIN
+   p e eu ADD-PAUSE
+   p e eu [: LOGIN-KEEP ;] catch {: rc :} drop 2drop
+   rc 0<> if p ADD-END rc throw then
+   LOGIN-RC @ 0<> if p ADD-END E-SW-LOGIN throw then
+   [: ADD-SAVE ;] catch {: src :}
+   src 0<> if p ADD-END src throw then
+   p ADD-END
+   p e eu .ADDED
+   p SAVED-NAME$ false PROBE-SLOT ;
+
+: LOGIN-HOME-PUBLIC$ ( n -- ptr u8 n ) LOGIN-HOME$ ;
 
 : CMD-FORGET ( n ptr u8 n -- ) {: p a u :}
    a u CHECK-NAME

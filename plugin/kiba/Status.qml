@@ -139,11 +139,15 @@ Item {
   // Login needs a browser hand-off and a terminal prompt, so it runs in its
   // own terminal. foot ignores --hold, so a failure keeps the window open
   // until Enter; a success closes it as the login always did.
-  function add(provider) {
+  // With a name, kiba first asks for that account to be signed in at the
+  // provider's site and says afterwards if another one came back.
+  function add(provider, name) {
+    var args = ["kiba-add", provider]
+    if (name) args.push(name)
     Quickshell.execDetached([
       "xdg-terminal-exec", "--title=Kiba: add " + provider, "--",
-      "sh", "-c", 'kiba add "$1" || { printf "\nPress Enter to close\n"; read -r _; }', "kiba-add", provider
-    ])
+      "sh", "-c", 'kiba add "$@" || { printf "\nPress Enter to close\n"; read -r _; }'
+    ].concat(args))
   }
 
   function statusStoppedWithoutExit() {

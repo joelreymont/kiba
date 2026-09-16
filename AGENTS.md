@@ -55,8 +55,8 @@ checked Habu program; a thin Omarchy bar widget runs it.
 
 - Never run `codex logout` or `claude auth logout` from code or tests: both
   revoke tokens server-side and kill every saved copy of that account.
-  `codex login` revokes the existing login too, so `add` moves the live file
-  aside before running it.
+  `codex login` revokes the existing login too, so `add` runs every login
+  inside a throwaway home (`LOGIN-ROOT!`) and never touches the live files.
 - Never refresh the live account's token, and never probe a saved account
   through `codex app-server` in a copied home: both rotate tokens the running
   CLI still holds.

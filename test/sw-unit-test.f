@@ -347,7 +347,7 @@ create UT-PID 32 allot
 \ given, writes the body to the -o file, prints the status, and logs the call
 : UT-FAKE-CURL ( -- )
    s" curl"
-   s\" #!/bin/sh\nout=; auth=; url=; grant=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) case \"$2\" in @*) auth=$(/usr/bin/grep ^Authorization: \"${2#@}\"); echo \"hdrmode $(/usr/bin/stat -c %a \"${2#@}\")\" >> \"$KIBA_TEST_LOG\";; *) echo \"argvheader $2\" >> \"$KIBA_TEST_LOG\";; esac; shift;; --data-binary) echo \"data $2\" >> \"$KIBA_TEST_LOG\"; grant=$(/usr/bin/cat \"${2#@}\"); shift;; -X|-m|-w) shift;; *) url=$1;; esac; shift; done\necho \"$url $auth\" >> \"$KIBA_TEST_LOG\"\ncode=200; body='{}'\ncase \"$url\" in\n*api.anthropic.com/api/oauth/usage) case \"$auth\" in *sk-a) body='{\"five_hour\":{\"utilization\":56.25,\"resets_at\":\"2026-09-15T14:00:00+00:00\"},\"seven_day\":{\"utilization\":100,\"resets_at\":\"2026-09-21T11:00:00+00:00\"}}';; *sk-b-new) body='{\"five_hour\":{\"utilization\":12.4,\"resets_at\":\"2026-09-15T15:00:00+00:00\"},\"seven_day_oauth_apps\":{\"utilization\":0.5,\"resets_at\":\"\"}}';; *) code=401; body='{\"error\":\"expired\"}';; esac;;\n*platform.claude.com/v1/oauth/token) body='{\"access_token\":\"sk-b-new\",\"refresh_token\":\"r-b-new\",\"expires_in\":3600}';;\n*chatgpt.com/backend-api/wham/usage) case \"$auth\" in *at-c) body='{\"plan_type\":\"pro\",\"rate_limit\":{\"allowed\":false,\"limit_reached\":true,\"primary_window\":{\"used_percent\":100,\"limit_window_seconds\":604800,\"reset_after_seconds\":433078,\"reset_at\":1789904220},\"secondary_window\":null}}';; *at-d2) body='{\"rate_limit\":{\"primary_window\":{\"used_percent\":12,\"limit_window_seconds\":18000,\"reset_at\":1789489142},\"secondary_window\":{\"used_percent\":40,\"limit_window_seconds\":604800,\"reset_at\":1790075942}}}';; *at-z|*at-y) code=401; body='{\"error\":{\"code\":\"token_revoked\"}}';; *) code=401; body='{\"error\":{\"code\":\"token_expired\"}}';; esac;;\n*auth.openai.com/oauth/token) case \"$grant\" in *rt-z*) code=401; body='{\"error\":\"invalid_grant\"}';; *rt-y*) code=503; body='';; *) body='{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d2\",\"refresh_token\":\"rt-d2\"}';; esac;;\n*) code=404;;\nesac\nprintf '%s' \"$body\" > \"$out\"\nprintf '%s' \"$code\"\n"
+   s\" #!/bin/sh\nout=; auth=; url=; grant=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) case \"$2\" in @*) auth=$(/usr/bin/grep ^Authorization: \"${2#@}\"); echo \"hdrmode $(/usr/bin/stat -c %a \"${2#@}\")\" >> \"$KIBA_TEST_LOG\";; *) echo \"argvheader $2\" >> \"$KIBA_TEST_LOG\";; esac; shift;; --data-binary) echo \"data $2\" >> \"$KIBA_TEST_LOG\"; grant=$(/usr/bin/cat \"${2#@}\"); shift;; -X|-m|-w) shift;; *) url=$1;; esac; shift; done\necho \"$url $auth\" >> \"$KIBA_TEST_LOG\"\ncode=200; body='{}'\ncase \"$url\" in\n*api.anthropic.com/api/oauth/usage) case \"$auth\" in *sk-a) body='{\"five_hour\":{\"utilization\":56.25,\"resets_at\":\"2026-09-15T14:00:00+00:00\"},\"seven_day\":{\"utilization\":100,\"resets_at\":\"2026-09-21T11:00:00+00:00\"},\"limits\":[{\"kind\":\"session\",\"group\":\"session\",\"scope\":null,\"percent\":56},{\"kind\":\"weekly_scoped\",\"group\":\"weekly\",\"scope\":{\"model\":{\"id\":null,\"display_name\":\"Fable\"},\"surface\":null},\"percent\":48,\"resets_at\":\"2026-09-22T13:00:00+00:00\"}]}';; *sk-b-new) body='{\"five_hour\":{\"utilization\":12.4,\"resets_at\":\"2026-09-15T15:00:00+00:00\"},\"seven_day_oauth_apps\":{\"utilization\":0.5,\"resets_at\":\"\"}}';; *) code=401; body='{\"error\":\"expired\"}';; esac;;\n*platform.claude.com/v1/oauth/token) body='{\"access_token\":\"sk-b-new\",\"refresh_token\":\"r-b-new\",\"expires_in\":3600}';;\n*chatgpt.com/backend-api/wham/usage) case \"$auth\" in *at-c) body='{\"plan_type\":\"pro\",\"rate_limit\":{\"allowed\":false,\"limit_reached\":true,\"primary_window\":{\"used_percent\":100,\"limit_window_seconds\":604800,\"reset_after_seconds\":433078,\"reset_at\":1789904220},\"secondary_window\":null}}';; *at-d2) body='{\"rate_limit\":{\"primary_window\":{\"used_percent\":12,\"limit_window_seconds\":18000,\"reset_at\":1789489142},\"secondary_window\":{\"used_percent\":40,\"limit_window_seconds\":604800,\"reset_at\":1790075942}}}';; *at-z|*at-y) code=401; body='{\"error\":{\"code\":\"token_revoked\"}}';; *) code=401; body='{\"error\":{\"code\":\"token_expired\"}}';; esac;;\n*auth.openai.com/oauth/token) case \"$grant\" in *rt-z*) code=401; body='{\"error\":\"invalid_grant\"}';; *rt-y*) code=503; body='';; *) body='{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d2\",\"refresh_token\":\"rt-d2\"}';; esac;;\n*) code=404;;\nesac\nprintf '%s' \"$body\" > \"$out\"\nprintf '%s' \"$code\"\n"
    UT-WRITE-SCRIPT ;
 
 : AUTH-D2$ ( -- ptr u8 n )
@@ -389,11 +389,14 @@ create UT-PID 32 allot
    P-CODEX s" y@x.test" s" auth.json" SLOT-FILE$ AUTH-Y$ WRITE-PRIVATE
    -1 CMD-USAGE
    P-CLAUDE s" a@x.test" LOAD-USAGE TTRUE
-   LIM#@ 2 T=
+   LIM#@ 3 T=
    0 LIM-LABEL$ s" Session (5-hour)" T$=
    0 LIM-PCT@ 56 T=
    1 LIM-PCT@ 100 T=
    1 LIM-RESET$ s" 2026-09-21T11:00:00+00:00" T$=
+   2 LIM-LABEL$ s" Fable Weekly" T$=
+   2 LIM-PCT@ 48 T=
+   2 LIM-RESET$ s" 2026-09-22T13:00:00+00:00" T$=
    USAGE-AT@ 0 > TTRUE
    CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
    P-CLAUDE s" b@x.test" LOAD-USAGE TTRUE
@@ -448,11 +451,18 @@ create UT-PID 32 allot
    P-CODEX s" c@x.test" CMD-USE
    P-CLAUDE s" b@x.test" CMD-FORGET ;
 
-\ `add` runs the login with the live file out of the way and restores it on
-\ failure; the fake `codex` records what it saw and writes AUTH-D on success
+\ the fake `claude` logs its argv and writes account B into CLAUDE_CONFIG_DIR
+: UT-FAKE-CLAUDE ( -- )
+   s" claude"
+   s\" #!/bin/sh\necho \"claude $* cfg=$CLAUDE_CONFIG_DIR\" >> \"$KIBA_TEST_LOG\"\nprintf '%s' '{\"oauthAccount\":{\"accountUuid\":\"u2\",\"emailAddress\":\"b@x.test\",\"organizationUuid\":\"org-b\"}}' > \"$CLAUDE_CONFIG_DIR/.claude.json\"\nprintf '%s' '{\"claudeAiOauth\":{\"accessToken\":\"sk-b\",\"refreshToken\":\"r-b\",\"expiresAt\":2,\"scopes\":[\"user:inference\"],\"subscriptionType\":\"pro\"}}' > \"$CLAUDE_CONFIG_DIR/.credentials.json\"\n"
+   UT-WRITE-SCRIPT ;
+
+\ `add` logs in inside a throwaway home: the live login stays where it is,
+\ the new login is saved under its name, and the home is gone afterwards.
+\ the fake `codex` records where it ran and writes AUTH-D on success
 : UT-FAKE-CODEX ( -- )
    s" codex"
-   s\" #!/bin/sh\nif [ -e \"$HOME/.codex/auth.json\" ]; then echo present >> \"$KIBA_TEST_LOG\"; else echo absent >> \"$KIBA_TEST_LOG\"; fi\nif [ -e \"$HOME/fail-login\" ]; then exit 3; fi\nprintf '%s' '{\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d\",\"refresh_token\":\"rt-d\",\"account_id\":\"acct\"}}' > \"$HOME/.codex/auth.json\"\n"
+   s\" #!/bin/sh\necho \"codexhome $CODEX_HOME\" >> \"$KIBA_TEST_LOG\"\nif [ -e \"$HOME/.codex/auth.json\" ]; then echo present >> \"$KIBA_TEST_LOG\"; else echo absent >> \"$KIBA_TEST_LOG\"; fi\nif [ -e \"$HOME/fail-login\" ]; then exit 3; fi\nprintf '%s' '{\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d\",\"refresh_token\":\"rt-d\",\"account_id\":\"acct\"}}' > \"$CODEX_HOME/auth.json\"\n"
    UT-WRITE-SCRIPT ;
 
 : UT-ADD ( -- )
@@ -461,39 +471,44 @@ create UT-PID 32 allot
    SB-RESET h hu SB-APPEND s" /fail-login" SB-APPEND SB$ UT-BUF 256 SPAN-COPY {: f fu :}
    f fu s" x" WRITE-ALL
    P-CODEX s" c@x.test" CMD-USE
-   [: P-CODEX CMD-ADD ;] E-SW-LOGIN TTHROWSQ
+   [: P-CODEX s" " CMD-ADD ;] E-SW-LOGIN TTHROWSQ
    CODEX-AUTH$ READ-FILE$ AUTH-C$ T$=
-   CODEX-AUTH$ ASIDE-FOR FILE? TFALSE
+   P-CODEX LOGIN-HOME-PUBLIC$ DIR? TFALSE
    f fu REMOVE-FILE
    HOME$ {: h2 h2u :}
    SB-RESET h2 h2u SB-APPEND s" /bin/codex" SB-APPEND SB$ UT-BUF 256 SPAN-COPY {: cx cxu :}
    SB-RESET h2 h2u SB-APPEND s" /bin/codex.off" SB-APPEND SB$ UT-BUF 256 SPAN-COPY {: cxo cxou :}
    cx cxu cxo cxou RENAME-FILE
-   [: P-CODEX CMD-ADD ;] E-SW-NO-CLI TTHROWSQ
+   [: P-CODEX s" " CMD-ADD ;] E-SW-NO-CLI TTHROWSQ
    CODEX-AUTH$ FILE? TTRUE
-   CODEX-AUTH$ ASIDE-FOR FILE? TFALSE
    cxo cxou cx cxu RENAME-FILE
-   P-CODEX CMD-ADD
-   CODEX-AUTH$ READ-FILE$ AUTH-D$ T$=
-   CODEX-AUTH$ ASIDE-FOR FILE? TFALSE
+   P-CODEX s" " CMD-ADD
+   CODEX-AUTH$ READ-FILE$ AUTH-C$ T$=
+   P-CODEX s" d@x.test" s" auth.json" SLOT-FILE$ READ-FILE$ AUTH-D$ T$=
    P-CODEX s" c@x.test" s" auth.json" SLOT-FILE$ READ-FILE$ AUTH-C$ T$=
-   LOG$ READ-FILE$ s\" absent\nabsent\n" ENDS-WITH? TTRUE
-   P-CODEX s" c@x.test" CMD-USE ;
+   P-CODEX LOGIN-HOME-PUBLIC$ DIR? TFALSE
+   LOG$ READ-FILE$ {: l lu :}
+   l lu s\" present\n" ENDS-WITH? TTRUE
+   l lu s" /probe/login-codex/.codex" CONTAINS? TTRUE
+   l lu s" absent" CONTAINS? TFALSE
+   P-CODEX s" c@x.test" LOAD-USAGE TTRUE ;
 
-\ an aside left by a dead `add`: with no live file it is the login and comes
-\ back before the new login runs; with a live file it is dropped by the next
-\ use, its account having been saved back before it stepped aside
-: UT-ASIDE-RECOVERY ( -- )
-   CODEX-AUTH$ CODEX-AUTH$ ASIDE-FOR RENAME-FILE
-   CODEX-AUTH$ FILE? TFALSE
-   P-CODEX CMD-ADD
-   CODEX-AUTH$ READ-FILE$ AUTH-D$ T$=
-   CODEX-AUTH$ ASIDE-FOR FILE? TFALSE
-   P-CODEX s" c@x.test" s" auth.json" SLOT-FILE$ READ-FILE$ AUTH-C$ T$=
-   CODEX-AUTH$ ASIDE-FOR AUTH-C$ WRITE-PRIVATE
-   P-CODEX s" c@x.test" CMD-USE
-   CODEX-AUTH$ ASIDE-FOR FILE? TFALSE
-   CODEX-AUTH$ READ-FILE$ AUTH-C$ T$= ;
+\ a Claude add with an expected account prefills the email and saves under
+\ the name that actually came back, saying so when it differs
+: UT-ADD-CLAUDE ( -- )
+   UT-FAKE-CLAUDE
+   P-CLAUDE s" b@x.test" CMD-ADD
+   LOG$ READ-FILE$ s" auth login --email b@x.test cfg=" CONTAINS? TTRUE
+   LOG$ READ-FILE$ s" /probe/login-claude/.claude" CONTAINS? TTRUE
+   P-CLAUDE s" b@x.test" s" credentials.json" SLOT-FILE$ READ-FILE$ s\" \"accessToken\":\"sk-b" CONTAINS? TTRUE
+   P-CLAUDE s" b@x.test" s" oauth-account.json" SLOT-FILE$ READ-FILE$ s\" \"organizationUuid\":\"org-b\"" CONTAINS? TTRUE
+   CLAUDE-CONFIG$ READ-FILE$ CFG-BA$ T$=
+   CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
+   P-CLAUDE LOGIN-HOME-PUBLIC$ DIR? TFALSE
+   P-CLAUDE LIVE-IDENTITY TTRUE EMAIL$ s" a@x.test" T$=
+   P-CLAUDE s" zz@x.test" CMD-ADD
+   SAVED-NAME$ s" b@x.test" T$=
+   P-CLAUDE s" b@x.test" CMD-FORGET ;
 
 \ the live account's expired token is reported, never sent
 : CREDS-A-OLD$ ( -- ptr u8 n )
@@ -616,7 +631,7 @@ create UT-PID 32 allot
    UT-SYMLINK
    UT-STRAY-MARKERS
    UT-ADD
-   UT-ASIDE-RECOVERY
+   UT-ADD-CLAUDE
    UT-PCT
    UT-USAGE
    UT-LIVE-EXPIRED
