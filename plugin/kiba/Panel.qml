@@ -33,7 +33,8 @@ Panel {
 
   // Rows are ordered by what they tell you: accounts with room first, then
   // the ones running low, then the used-up or dead ones, then the unknown.
-  // Within a color the CLI's order (by name) is kept.
+  // Red rows come back in the order they reset, soonest first, with the
+  // dead ones (no reset) last; elsewhere the CLI's order (by name) is kept.
   function stateRank(state) {
     if (state === "ok") return 0
     if (state === "tight") return 1
@@ -41,11 +42,23 @@ Panel {
     return 3
   }
 
+  // when a used-up account opens again, as a time; Infinity without one
+  function resetKey(account) {
+    var b = blockingLimit(account.usage)
+    var t = b ? Date.parse(b.resetsAt) : NaN
+    return isFinite(t) ? t : Infinity
+  }
+
   function sortedAccounts(p) {
     var out = p.accounts.slice()
     out.sort(function(a, b) {
-      var d = stateRank(usageState(a.usage, a.active)) - stateRank(usageState(b.usage, b.active))
-      return d !== 0 ? d : p.accounts.indexOf(a) - p.accounts.indexOf(b)
+      var ra = stateRank(usageState(a.usage, a.active)), rb = stateRank(usageState(b.usage, b.active))
+      if (ra !== rb) return ra - rb
+      if (ra === 2) {
+        var ka = resetKey(a), kb = resetKey(b)
+        if (ka !== kb) return ka < kb ? -1 : 1
+      }
+      return p.accounts.indexOf(a) - p.accounts.indexOf(b)
     })
     return out
   }

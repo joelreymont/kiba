@@ -152,13 +152,14 @@ account…" opens a terminal running `add` (the login needs a browser and a
 prompt), and "Refresh usage" runs `usage`. The panel probes every account
 once each time it opens; the rows update as the answers arrive.
 
-Rows are ordered by color, green first, then yellow, red, and grey, and by
-name within a color. Each row carries a dot and what is left of the session,
-the week, and each model window, as three percentages in that order (the
-hover text names them): green with at least half of the session and of
-every weekly window left, yellow below that, red once any window is used up
-(the figures then read `limit` and the label carries the reset time, as in
-`(pro, 5d)`), grey with no data. A red row whose login no longer works says
+Rows are ordered by color, green first, then yellow, red, and grey. Red rows
+come in the order their limits reset, soonest first, with dead logins last;
+within any other color rows keep their name order. Each row carries a dot
+and what is left of the session, the week, and each model window, as three
+percentages in that order (the hover text names them): green with at least
+half of the session and of every weekly window left, yellow below that, red
+once any window is used up (the figures then read `limit` and the label
+carries the reset time, as in `(pro, 5d)`), grey with no data. A red row whose login no longer works says
 "log in again" and starts a login for that account when clicked: the
 terminal first asks you to sign into it in the browser; the live account's
 expired token is not a dead login, its CLI refreshes it. Hovering a row
