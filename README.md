@@ -148,8 +148,8 @@ login and each slot write take it. Headers, which carry the token, reach
 `plugin/kiba` renders `kiba status --json` and only ever runs the CLI:
 an account row runs `use`, "Save the current login" runs `save`, "Add
 account…" opens a terminal running `add` (the login needs a browser and a
-prompt), and "Refresh usage" runs `usage`. The panel probes once per open when
-the newest record is older than ten minutes.
+prompt), and "Refresh usage" runs `usage`. The panel probes every account
+once each time it opens; the rows update as the answers arrive.
 
 Rows are ordered by color, green first, then yellow, red, and grey, and by
 name within a color. Each row carries a dot and what is left of the session,

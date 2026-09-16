@@ -14,8 +14,7 @@ Panel {
   property int cursor: 0
   property string cursorKey: ""
   property double nowMs: Date.now()
-  property bool autoProbed: false
-  readonly property int usageStaleSec: 600
+  property bool autoProbed: false     // one probe per open
 
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
@@ -235,11 +234,6 @@ Panel {
     return at <= 0 ? "" : ageText(at)
   }
 
-  function usageIsStale() {
-    var at = status.newestUsageAt()
-    return at <= 0 || nowMs / 1000 - at > usageStaleSec
-  }
-
   // ---------------------------------------------------------------- cursor
   function actionKey(a) {
     return a.kind + "\n" + a.provider + "\n" + (a.kind === "use" ? a.email : "")
@@ -357,15 +351,15 @@ Panel {
     refreshIntervalSec: Number(root.setting("refreshIntervalSec", 120))
   }
 
-  // Stale numbers cannot say which account to switch to, so an open panel
-  // asks for fresh ones once, when the newest probe is old enough to matter.
-  // Checked on open against the cached model and again whenever the model
-  // changes; once per open, so a probe that yields nothing starts no other.
+  // Stale numbers cannot say which account to switch to, so every open asks
+  // for fresh ones. Checked on open against the cached model and again when
+  // the model arrives; once per open, so a probe that yields nothing starts
+  // no other.
   function maybeAutoProbe() {
     if (autoProbed || !opened || status.busy || providers.length === 0) return
     var any = false
     for (var i = 0; i < providers.length; i += 1) if (providers[i].accounts.length > 0) any = true
-    if (!any || !usageIsStale()) return
+    if (!any) return
     autoProbed = true
     status.probeUsage()
   }
