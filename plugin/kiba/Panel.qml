@@ -168,7 +168,8 @@ Panel {
   }
 
   // right-hand figures: what is left of the session, of the week, and of
-  // each model window ("Fable 52%"); a used-up account just says so
+  // each model window, in that order; the hover text names them. A used-up
+  // account just says so.
   function figuresText(usage) {
     if (usageState(usage, false) === "blocked") return "limit"
     var s = sessionLimit(usage), w = weeklyLimit(usage)
@@ -179,7 +180,7 @@ Panel {
     for (var i = 0; i < usage.limits.length; i += 1) {
       var l = usage.limits[i]
       if (l === s || l === w || l.percent < 0) continue
-      parts.push(String(l.label).split(" ")[0] + " " + (100 - l.percent) + "%")
+      parts.push((100 - l.percent) + "%")
     }
     return parts.join(" · ")
   }
