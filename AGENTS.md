@@ -6,9 +6,9 @@ checked Habu program; a thin Omarchy bar widget runs it.
 
 ## Habu code
 
-- Read [~/Work/habu/docs/forth.md](../habu/docs/forth.md) before writing or
-  changing any `.f` file. Its naming, package, factoring, stack-comment, and
-  checker rules apply here unchanged.
+- Read [Habu's Forth conventions](https://github.com/joelreymont/habu/blob/master/docs/forth.md)
+  before writing or changing any `.f` file. Its naming, package, factoring,
+  stack-comment, and checker rules apply here unchanged.
 - All Forth lives in `package SW`, split one concern per file under `src/`:
   `sw-base.f` errors and byte helpers, `sw-paths.f` file locations, `sw-io.f`
   buffers, private writes, lock and install marker, `sw-json.f` field access
@@ -17,9 +17,9 @@ checked Habu program; a thin Omarchy bar widget runs it.
   and listing, `sw-run.f` provider commands in the foreground, `sw-usage.f`
   usage probes through `curl`, `sw-cli.f` the commands, `kiba.f` the entry
   and `MAIN`.
-- Library words come from the Habu checkout named by `HABU` (default
-  `~/Work/habu`). `build.sh` and `test.sh` run `bin/hb` from that checkout,
-  so relative `require lib/...` resolves there.
+- Library words come from a checkout of [Habu](https://github.com/joelreymont/habu)
+  named by `HABU` (default `~/Work/habu`). `build.sh` and `test.sh` run
+  `bin/hb` from that checkout, so relative `require lib/...` resolves there.
 - Errors are named `E-SW-*` constants in `src/sw-base.f`; fallible words throw
   them. `MAIN` maps them to one-line reasons; `status` and `usage` catch per
   provider or per account so one bad file never hides the others.
