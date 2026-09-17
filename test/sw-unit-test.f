@@ -31,7 +31,13 @@ create UT-PID 32 allot
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-a\",\"refreshToken\":\"r-a\",\"expiresAt\":4102444800000,\"scopes\":[\"user:inference\"],\"subscriptionType\":\"max\",\"rateLimitTier\":\"default_claude_max_20x\"}}" ;
 
 : CREDS-B$ ( -- ptr u8 n )
-   s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-b\",\"refreshToken\":\"r-b\",\"expiresAt\":2,\"scopes\":[\"user:inference\"],\"subscriptionType\":\"pro\"}}" ;
+   s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-b\",\"refreshToken\":\"r-b\",\"expiresAt\":2,\"refreshTokenExpiresAt\":1,\"scopes\":[\"user:inference\"],\"subscriptionType\":\"pro\"}}" ;
+
+: CREDS-E$ ( -- ptr u8 n )
+   s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-e\",\"refreshToken\":\"r-e\",\"expiresAt\":2,\"scopes\":[\"user:inference\"],\"subscriptionType\":\"max\"}}" ;
+
+: CREDS-F$ ( -- ptr u8 n )
+   s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-f\",\"expiresAt\":2,\"scopes\":[\"user:inference\"],\"subscriptionType\":\"max\"}}" ;
 
 : AUTH-C$ ( -- ptr u8 n )
    s\" {\"OPENAI_API_KEY\":null,\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImNAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicGx1cyIsImNoYXRncHRfYWNjb3VudF9pZCI6ImFjY3QifSwiZXhwIjoxfQ.c2ln\",\"access_token\":\"at-c\",\"refresh_token\":\"rt-c\",\"account_id\":\"acct\"},\"last_refresh\":\"2026-09-14T07:11:36Z\"}" ;
@@ -347,7 +353,7 @@ create UT-PID 32 allot
 \ given, writes the body to the -o file, prints the status, and logs the call
 : UT-FAKE-CURL ( -- )
    s" curl"
-   s\" #!/bin/sh\nout=; auth=; url=; grant=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) case \"$2\" in @*) auth=$(/usr/bin/grep ^Authorization: \"${2#@}\"); echo \"hdrmode $(/usr/bin/stat -c %a \"${2#@}\")\" >> \"$KIBA_TEST_LOG\";; *) echo \"argvheader $2\" >> \"$KIBA_TEST_LOG\";; esac; shift;; --data-binary) echo \"data $2\" >> \"$KIBA_TEST_LOG\"; grant=$(/usr/bin/cat \"${2#@}\"); shift;; -X|-m|-w) shift;; *) url=$1;; esac; shift; done\necho \"$url $auth\" >> \"$KIBA_TEST_LOG\"\ncode=200; body='{}'\ncase \"$url\" in\n*api.anthropic.com/api/oauth/usage) case \"$auth\" in *sk-a) body='{\"five_hour\":{\"utilization\":56.25,\"resets_at\":\"2026-09-15T14:00:00+00:00\"},\"seven_day\":{\"utilization\":100,\"resets_at\":\"2026-09-21T11:00:00+00:00\"},\"limits\":[{\"kind\":\"session\",\"group\":\"session\",\"scope\":null,\"percent\":56},{\"kind\":\"weekly_scoped\",\"group\":\"weekly\",\"scope\":{\"model\":{\"id\":null,\"display_name\":\"Fable\"},\"surface\":null},\"percent\":48,\"resets_at\":\"2026-09-22T13:00:00+00:00\"}]}';; *sk-b-new) body='{\"five_hour\":{\"utilization\":12.4,\"resets_at\":\"2026-09-15T15:00:00+00:00\"},\"seven_day_oauth_apps\":{\"utilization\":0.5,\"resets_at\":\"\"}}';; *) code=401; body='{\"error\":\"expired\"}';; esac;;\n*platform.claude.com/v1/oauth/token) body='{\"access_token\":\"sk-b-new\",\"refresh_token\":\"r-b-new\",\"expires_in\":3600}';;\n*chatgpt.com/backend-api/wham/usage) case \"$auth\" in *at-c) body='{\"plan_type\":\"pro\",\"rate_limit\":{\"allowed\":false,\"limit_reached\":true,\"primary_window\":{\"used_percent\":100,\"limit_window_seconds\":604800,\"reset_after_seconds\":433078,\"reset_at\":1789904220},\"secondary_window\":null}}';; *at-d2) body='{\"rate_limit\":{\"primary_window\":{\"used_percent\":12,\"limit_window_seconds\":18000,\"reset_at\":1789489142},\"secondary_window\":{\"used_percent\":40,\"limit_window_seconds\":604800,\"reset_at\":1790075942}}}';; *at-z|*at-y) code=401; body='{\"error\":{\"code\":\"token_revoked\"}}';; *) code=401; body='{\"error\":{\"code\":\"token_expired\"}}';; esac;;\n*auth.openai.com/oauth/token) case \"$grant\" in *rt-z*) code=401; body='{\"error\":\"invalid_grant\"}';; *rt-y*) code=503; body='';; *) body='{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d2\",\"refresh_token\":\"rt-d2\"}';; esac;;\n*) code=404;;\nesac\nprintf '%s' \"$body\" > \"$out\"\nprintf '%s' \"$code\"\n"
+   s\" #!/bin/sh\nout=; auth=; url=; grant=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) case \"$2\" in @*) auth=$(/usr/bin/grep ^Authorization: \"${2#@}\"); echo \"hdrmode $(/usr/bin/stat -c %a \"${2#@}\")\" >> \"$KIBA_TEST_LOG\"; echo \"ua $(/usr/bin/grep ^User-Agent: \"${2#@}\")\" >> \"$KIBA_TEST_LOG\";; *) echo \"argvheader $2\" >> \"$KIBA_TEST_LOG\";; esac; shift;; --data-binary) echo \"data $2\" >> \"$KIBA_TEST_LOG\"; grant=$(/usr/bin/cat \"${2#@}\"); shift;; -X|-m|-w) shift;; *) url=$1;; esac; shift; done\necho \"$url $auth\" >> \"$KIBA_TEST_LOG\"\ncode=200; body='{}'\ncase \"$url\" in\n*api.anthropic.com/api/oauth/usage) case \"$auth\" in *sk-a) body='{\"five_hour\":{\"utilization\":56.25,\"resets_at\":\"2026-09-15T14:00:00+00:00\"},\"seven_day\":{\"utilization\":100,\"resets_at\":\"2026-09-21T11:00:00+00:00\"},\"limits\":[{\"kind\":\"session\",\"group\":\"session\",\"scope\":null,\"percent\":56},{\"kind\":\"weekly_scoped\",\"group\":\"weekly\",\"scope\":{\"model\":{\"id\":null,\"display_name\":\"Fable\"},\"surface\":null},\"percent\":48,\"resets_at\":\"2026-09-22T13:00:00+00:00\"}]}';; *sk-b-new) body='{\"five_hour\":{\"utilization\":12.4,\"resets_at\":\"2026-09-15T15:00:00+00:00\"},\"seven_day_oauth_apps\":{\"utilization\":0.5,\"resets_at\":\"\"}}';; *) code=401; body='{\"error\":\"expired\"}';; esac;;\n*platform.claude.com/v1/oauth/token) case \"$grant\" in *r-e*) code=429; body='{\"error\":{\"type\":\"rate_limit_error\"}}';; *) body='{\"access_token\":\"sk-b-new\",\"refresh_token\":\"r-b-new\",\"expires_in\":3600,\"refresh_token_expires_in\":2592000}';; esac;;\n*chatgpt.com/backend-api/wham/usage) case \"$auth\" in *at-c) body='{\"plan_type\":\"pro\",\"rate_limit\":{\"allowed\":false,\"limit_reached\":true,\"primary_window\":{\"used_percent\":100,\"limit_window_seconds\":604800,\"reset_after_seconds\":433078,\"reset_at\":1789904220},\"secondary_window\":null}}';; *at-d2) body='{\"rate_limit\":{\"primary_window\":{\"used_percent\":12,\"limit_window_seconds\":18000,\"reset_at\":1789489142},\"secondary_window\":{\"used_percent\":40,\"limit_window_seconds\":604800,\"reset_at\":1790075942}}}';; *at-z|*at-y) code=401; body='{\"error\":{\"code\":\"token_revoked\"}}';; *) code=401; body='{\"error\":{\"code\":\"token_expired\"}}';; esac;;\n*auth.openai.com/oauth/token) case \"$grant\" in *rt-z*) code=401; body='{\"error\":\"invalid_grant\"}';; *rt-y*) code=503; body='';; *) body='{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d2\",\"refresh_token\":\"rt-d2\"}';; esac;;\n*) code=404;;\nesac\nprintf '%s' \"$body\" > \"$out\"\nprintf '%s' \"$code\"\n"
    UT-WRITE-SCRIPT ;
 
 : AUTH-D2$ ( -- ptr u8 n )
@@ -376,13 +382,20 @@ create UT-PID 32 allot
    s" KIBA_TEST_LOG" GETENV ;
 
 \ live claude a@x.test (sk-a, expired but live: no refresh) and codex c@x.test;
-\ saved b@x.test refreshes its expired token, saved d@x.test refreshes after 401,
-\ saved z@x.test is revoked
+\ saved b@x.test refreshes its expired token, e@x.test's refresh is rate
+\ limited (an error, not a dead login), f@x.test has no refresh token; saved
+\ d@x.test refreshes after 401, saved z@x.test is revoked
 : UT-USAGE ( -- )
    UT-FAKE-CURL
    P-CLAUDE s" b@x.test" SLOT-DIR$ ENSURE-PRIVATE
    P-CLAUDE s" b@x.test" s" credentials.json" SLOT-FILE$ CREDS-B$ WRITE-PRIVATE
    P-CLAUDE s" b@x.test" s" oauth-account.json" SLOT-FILE$ s\" {\"emailAddress\":\"b@x.test\"}" WRITE-PRIVATE
+   P-CLAUDE s" e@x.test" SLOT-DIR$ ENSURE-PRIVATE
+   P-CLAUDE s" e@x.test" s" credentials.json" SLOT-FILE$ CREDS-E$ WRITE-PRIVATE
+   P-CLAUDE s" e@x.test" s" oauth-account.json" SLOT-FILE$ s\" {\"emailAddress\":\"e@x.test\"}" WRITE-PRIVATE
+   P-CLAUDE s" f@x.test" SLOT-DIR$ ENSURE-PRIVATE
+   P-CLAUDE s" f@x.test" s" credentials.json" SLOT-FILE$ CREDS-F$ WRITE-PRIVATE
+   P-CLAUDE s" f@x.test" s" oauth-account.json" SLOT-FILE$ s\" {\"emailAddress\":\"f@x.test\"}" WRITE-PRIVATE
    P-CODEX s" z@x.test" SLOT-DIR$ ENSURE-PRIVATE
    P-CODEX s" z@x.test" s" auth.json" SLOT-FILE$ AUTH-Z$ WRITE-PRIVATE
    P-CODEX s" y@x.test" SLOT-DIR$ ENSURE-PRIVATE
@@ -408,7 +421,13 @@ create UT-PID 32 allot
    c cu s\" \"accessToken\":\"sk-b-new\"" CONTAINS? TTRUE
    c cu s\" \"refreshToken\":\"r-b-new\"" CONTAINS? TTRUE
    c cu s\" \"expiresAt\":2," CONTAINS? TFALSE
+   c cu s\" \"refreshTokenExpiresAt\":1," CONTAINS? TFALSE
    c cu s\" \"subscriptionType\":\"pro\"" CONTAINS? TTRUE
+   P-CLAUDE s" e@x.test" LOAD-USAGE TTRUE STATE$ s" error" T$=
+   NOTE$ s" Anthropic's token endpoint answered 429" T$=
+   P-CLAUDE s" e@x.test" s" credentials.json" SLOT-FILE$ READ-FILE$ CREDS-E$ T$=
+   P-CLAUDE s" f@x.test" LOAD-USAGE TTRUE STATE$ s" expired" T$=
+   NOTE$ s" access token expired and no refresh token is saved; log in again" T$=
    P-CODEX s" c@x.test" LOAD-USAGE TTRUE
    LIM#@ 1 T=
    0 LIM-LABEL$ s" Weekly (7-day)" T$=
@@ -445,11 +464,15 @@ create UT-PID 32 allot
    l lu s" https://auth.openai.com/oauth/token" CONTAINS? TTRUE
    l lu s" Authorization: Bearer sk-a" CONTAINS? TTRUE
    l lu s" Authorization: Bearer at-z" CONTAINS? TTRUE
+   l lu s" ua User-Agent: kiba" CONTAINS? TTRUE
+   l lu s" ua User-Agent: codex-cli" CONTAINS? TTRUE
    s" /body.json" PSUB-PUBLIC$ FILE? TFALSE
    P-CODEX s" d@x.test" CMD-USE
    P-CODEX s" d@x.test" LOAD-USAGE TTRUE LIM#@ 2 T=
    P-CODEX s" c@x.test" CMD-USE
-   P-CLAUDE s" b@x.test" CMD-FORGET ;
+   P-CLAUDE s" b@x.test" CMD-FORGET
+   P-CLAUDE s" e@x.test" CMD-FORGET
+   P-CLAUDE s" f@x.test" CMD-FORGET ;
 
 \ the fake `claude` logs its argv and writes account B into CLAUDE_CONFIG_DIR
 : UT-FAKE-CLAUDE ( -- )

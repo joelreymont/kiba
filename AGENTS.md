@@ -65,4 +65,9 @@ checked Habu program; a thin Omarchy bar widget runs it.
   process group and a terminal read then stops it with SIGTTIN.
 - Credential files and account directories are written `0600`/`0700` and
   replaced atomically.
+- Every `curl` request names its client (`KIBA-UA$`, or `codex-cli` for the
+  ChatGPT usage call): Anthropic's token endpoint answers 429 to curl's own
+  User-Agent whatever the grant, which read as dead logins for a day. Only
+  a 400 or 401 from a token endpoint means a saved login is gone; any other
+  answer is an `error` state, never `expired`.
 - VCS is `jj`. One commit per feature or fix.

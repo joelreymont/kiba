@@ -247,7 +247,11 @@ create KEY-BUF 64 allot
    HDR-U @ 22 + HDR-U !
    t tu HDR-LINE+ ;
 
-: CURL-BEGIN ( -- )
+\ Anthropic's token endpoint answers 429 to curl's own User-Agent whatever
+\ the grant, so every request names its client
+: KIBA-UA$ ( -- ptr u8 n ) s" kiba" ;
+
+: CURL-BEGIN ( ptr u8 n -- ) {: ua uu :}
    s" curl" RESOLVE
    PROC-ARGV-RESET
    0 HDR-U !
@@ -256,7 +260,8 @@ create KEY-BUF 64 allot
    SB-RESET HTTP-TIMEOUT-SEC FMT:SB-U SB$ ARG+
    s" -o" ARG+ BODY$ ARG+
    s" -w" ARG+ s" %{http_code}" ARG+
-   s" Accept" s" application/json" HDR ;
+   s" Accept" s" application/json" HDR
+   s" User-Agent" ua uu HDR ;
 
 \ the header file is written and named just before the run
 : HEADERS-STAGE ( -- )
@@ -352,6 +357,10 @@ create KEY-BUF 64 allot
 \ PROBE-P/PROBE-NAME and report through REFRESH-OK and REFRESH-CODE.
 variable REFRESH-OK
 variable REFRESH-CODE               \ HTTP status of the last refresh request, -1 when none
+
+\ only the token endpoint's own refusal proves the grant is gone
+: GRANT-REFUSED? ( -- bool )
+   REFRESH-CODE @ 400 = REFRESH-CODE @ 401 = or ;
 
 : PROBE-NAME$ ( -- ptr u8 n ) PROBE-NAME PROBE-NAME-U @ ;
 
@@ -489,6 +498,9 @@ variable SC-PCT
    ms 0 <= if false exit then
    ms 1000 / TIME:EPOCH-SECONDS 60 + < ;
 
+: CLAUDE-REFRESH-TOKEN? ( -- bool )
+   CFG$ CREDS-KEY$ s" refreshToken" VAL-BUF 4096 DOC-STR2 0 >= ;
+
 \ a fresh token pair from the refresh grant, written into CFG
 : CLAUDE-REFRESH-RAW ( -- bool )
    CFG$ CREDS-KEY$ s" refreshToken" VAL-BUF 4096 DOC-STR2 dup 0 < if drop false exit then VAL-U !
@@ -498,7 +510,7 @@ variable SC-PCT
    s" refresh_token" VAL-BUF VAL-U @ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
    s" client_id" CLAUDE-CLIENT-ID$ JSON-WRITE:FIELD-S
    JSON-WRITE:OBJECT-END
-   CURL-BEGIN
+   KIBA-UA$ CURL-BEGIN
    CLAUDE-TOKEN-URL$ POST-JSON {: code :}
    code REFRESH-CODE !
    REQ$ REMOVE-FILE
@@ -511,6 +523,8 @@ variable SC-PCT
    else drop then
    b bu s" expires_in" DOC-INT1 {: secs :}
    secs 0 > if CREDS-KEY$ s" expiresAt" TIME:EPOCH-SECONDS secs + 1000 * NUMBER$ CFG-REPLACE2 then
+   b bu s" refresh_token_expires_in" DOC-INT1 {: rsecs :}
+   rsecs 0 > if CREDS-KEY$ s" refreshTokenExpiresAt" TIME:EPOCH-SECONDS rsecs + 1000 * NUMBER$ CFG-REPLACE2 then
    true ;
 
 : CLAUDE-REFRESH-LOCKED ( -- )
@@ -525,19 +539,25 @@ variable SC-PCT
 
 : CLAUDE-GET ( -- n )
    CFG$ CREDS-KEY$ s" accessToken" VAL-BUF 4096 DOC-STR2 dup 0 < if drop -2 exit then VAL-U !
-   CURL-BEGIN
+   KIBA-UA$ CURL-BEGIN
    VAL-BUF VAL-U @ BEARER
    s" anthropic-beta" s" oauth-2025-04-20" HDR
    CLAUDE-USAGE-URL$ CURL-RUN ;
 
 \ the slot's credentials are in CFG. A saved account refreshes an expired
 \ token; the live account's token belongs to Claude Code, which refreshes
-\ it on its next run, so an expired live token is reported, not sent.
+\ it on its next run, so an expired live token is reported, not sent. Only
+\ the token endpoint's own refusal means the login is gone; any other
+\ answer is a passing error and the slot stays worth keeping.
 : CLAUDE-PROBE ( n ptr u8 n -- ) {: p a u :}
    LIM-RESET
    CLAUDE-EXPIRED? if
       PROBE-LIVE? @ if s" access token expired; Claude Code refreshes it on its next run" EXPIRED-NOTE! exit then
-      CLAUDE-REFRESH 0= if s" access token expired and could not be refreshed; log in again" EXPIRED-NOTE! exit then
+      CLAUDE-REFRESH-TOKEN? 0= if s" access token expired and no refresh token is saved; log in again" EXPIRED-NOTE! exit then
+      CLAUDE-REFRESH 0= if
+         GRANT-REFUSED? if s" access token expired and the refresh was refused; log in again" EXPIRED-NOTE! exit then
+         s" Anthropic's token endpoint" REFRESH-CODE @ HTTP-NOTE s" error" STATE! exit
+      then
    then
    CLAUDE-GET {: code :}
    code -2 = if s" no access token saved" FAIL-NOTE! exit then
@@ -606,7 +626,7 @@ variable SC-PCT
    s" grant_type" s" refresh_token" JSON-WRITE:FIELD-S JSON-WRITE:COMMA
    s" refresh_token" VAL-BUF VAL-U @ JSON-WRITE:FIELD-S
    JSON-WRITE:OBJECT-END
-   CURL-BEGIN
+   KIBA-UA$ CURL-BEGIN
    CODEX-TOKEN-URL$ POST-JSON {: code :}
    code REFRESH-CODE !
    REQ$ REMOVE-FILE
@@ -632,17 +652,12 @@ variable SC-PCT
    [: CODEX-REFRESH-LOCKED ;] WITH-LOCK
    REFRESH-OK @ ;
 
-\ only the token endpoint's own refusal proves the grant is gone
-: GRANT-REFUSED? ( -- bool )
-   REFRESH-CODE @ 400 = REFRESH-CODE @ 401 = or ;
-
 : CODEX-GET ( -- n )
    CFG$ TOKENS-KEY$ s" access_token" VAL-BUF 4096 DOC-STR2 dup 0 < if drop -2 exit then VAL-U !
    CFG$ TOKENS-KEY$ s" account_id" ACCT-ID-BUF 128 DOC-STR2 dup 0 < if drop 0 then ACCT-ID-U !
-   CURL-BEGIN
+   s" codex-cli" CURL-BEGIN
    VAL-BUF VAL-U @ BEARER
    ACCT-ID-U @ 0 > if s" ChatGPT-Account-Id" ACCT-ID-BUF ACCT-ID-U @ HDR then
-   s" User-Agent" s" codex-cli" HDR
    CODEX-USAGE-URL$ CURL-RUN ;
 
 : CODEX-NOTE ( n -- ) {: code :}

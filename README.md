@@ -142,7 +142,9 @@ account again and add it. Any other failure is recorded as that account's
 provider. Network calls run without the store lock; only the saved-back live
 login and each slot write take it. Headers, which carry the token, reach
 `curl` through a 0600 file, never through argv; scratch files live under
-`<store>/probe/` and are removed after each request.
+`<store>/probe/` and are removed after each request. Every request names
+`kiba` as its User-Agent (the ChatGPT usage call keeps `codex-cli`):
+Anthropic's token endpoint answers 429 to curl's own, whatever the grant.
 
 ## Bar widget
 
