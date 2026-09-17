@@ -4,6 +4,7 @@ require lib/memory.f
 require lib/fs-mutate.f
 require lib/time.f
 require lib/fmt.f
+require lib/json-write.f
 
 package SW
 
@@ -16,6 +17,7 @@ variable OUT-A   variable OUT-U     \ the spliced .claude.json
 variable FILE-A  variable FILE-U    \ one credentials or auth document
 variable OBJ-A   variable OBJ-U     \ an oauthAccount object or a JWT payload
 variable TOK-A   variable TOK-U     \ a raw id_token string
+variable JSON-A                     \ the JSON writer's output
 create TMP-BUF FS-PATH-CAP allot   variable TMP-U
 create MARK-BUF FS-PATH-CAP allot  variable MARK-U
 create LINK-BUF FS-PATH-CAP allot  variable LINK-U
@@ -27,6 +29,7 @@ create DEST-BUF FS-PATH-CAP allot  variable DEST-U
 : FILE-A-FIELD ( -- ptr ptr u8 ) FILE-A 0 ptr-field ;
 : OBJ-A-FIELD ( -- ptr ptr u8 ) OBJ-A 0 ptr-field ;
 : TOK-A-FIELD ( -- ptr ptr u8 ) TOK-A 0 ptr-field ;
+: JSON-A-FIELD ( -- ptr ptr u8 ) JSON-A 0 ptr-field ;
 
 : ALLOC-ONE ( ptr ptr u8 -- )
    BUF-CAP MEM-ALLOC-BYTES drop swap ! ;
@@ -80,18 +83,27 @@ public
    OUT-A-FIELD ALLOC-ONE
    FILE-A-FIELD ALLOC-ONE
    OBJ-A-FIELD ALLOC-ONE
-   TOK-A-FIELD ALLOC-ONE ;
+   TOK-A-FIELD ALLOC-ONE
+   JSON-A-FIELD ALLOC-ONE ;
 
 : CFG-BUF ( -- ptr u8 ) CFG-A-FIELD @ ;
 : OUT-BUF ( -- ptr u8 ) OUT-A-FIELD @ ;
 : FILE-BUF ( -- ptr u8 ) FILE-A-FIELD @ ;
 : OBJ-BUF ( -- ptr u8 ) OBJ-A-FIELD @ ;
 : TOK-BUF ( -- ptr u8 ) TOK-A-FIELD @ ;
+: JSON-BUF ( -- ptr u8 ) JSON-A-FIELD @ ;
 
 : CFG$ ( -- ptr u8 n ) CFG-BUF CFG-U @ ;
 : OUT$ ( -- ptr u8 n ) OUT-BUF OUT-U @ ;
 : FILE$ ( -- ptr u8 n ) FILE-BUF FILE-U @ ;
 : OBJ$ ( -- ptr u8 n ) OBJ-BUF OBJ-U @ ;
+
+\ every JSON document kiba emits is built in JSON-BUF through one writer:
+\ JSON-OPEN starts a document and JSON-WRITE:$ ends its chain with the bytes
+TYPED-VARIABLE JSON-W JSON-WRITE:writer
+
+: JSON-OPEN ( -- ptr JSON-WRITE:writer )
+   JSON-W JSON-BUF BUF-CAP JSON-WRITE:OPEN ;
 
 : READ-INTO ( ptr u8 n ptr u8 ptr n -- ptr u8 n ) {: pa pu buf up :}
    pa pu buf BUF-CAP READ-ALL up !

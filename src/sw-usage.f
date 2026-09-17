@@ -168,31 +168,32 @@ create KEY-BUF 64 allot
    p a u USAGE-NAME$ SLOT-FILE$ UFILE-BUF UFILE-U PATH!
    UFILE-BUF UFILE-U @ ;
 
-: LIM-JSON ( n n -- n ) {: i written :}
-   written 0 > if JSON-WRITE:COMMA then
+variable LIM-WRITTEN                \ limit objects already in the array
+
+: LIM-JSON ( ptr JSON-WRITE:writer n -- ptr JSON-WRITE:writer ) {: i :}
+   LIM-WRITTEN @ 0 > if JSON-WRITE:COMMA then
    JSON-WRITE:OBJECT-START
    s" label" i LIM-LABEL-SLOT i LIM-LABEL-U-CELL @ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
    s" percent" i LIM-PCT-CELL @ JSON-WRITE:FIELD-U JSON-WRITE:COMMA
    s" resetsAt" i LIM-RESET-SLOT i LIM-RESET-U-CELL @ JSON-WRITE:FIELD-S
    JSON-WRITE:OBJECT-END
-   written 1+ ;
+   1 LIM-WRITTEN +! ;
 
 \ the table plus a note become the slot's usage.json; a window whose figure
 \ could not be read is left out rather than written as zero
 : WRITE-USAGE ( n ptr u8 n -- ) {: p a u :}
-   JSON-WRITE:RESET
+   JSON-OPEN
    JSON-WRITE:OBJECT-START
    s" fetchedAt" TIME:EPOCH-SECONDS JSON-WRITE:FIELD-U JSON-WRITE:COMMA
    s" state" STATE-BUF STATE-U @ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
    s" note" NOTE-BUF NOTE-U @ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
    s" limits" JSON-WRITE:KEY JSON-WRITE:ARRAY-START
-   0 0 begin over LIM-N @ < while
-      over dup LIM-PCT-CELL @ 0 >= if swap LIM-JSON else drop then
-      swap 1+ swap
-   repeat 2drop
+   0 LIM-WRITTEN !
+   LIM-N @ 0 ?do i LIM-PCT-CELL @ 0 >= if i LIM-JSON then loop
    JSON-WRITE:ARRAY-END
    JSON-WRITE:OBJECT-END
-   p a u USAGE-FILE$ JSON-WRITE:$ WRITE-PRIVATE ;
+   JSON-WRITE:$ {: j ju :}
+   p a u USAGE-FILE$ j ju WRITE-PRIVATE ;
 
 \ ---- scratch files ---------------------------------------------------------------
 : PROBE$ ( -- ptr u8 n )
@@ -302,9 +303,10 @@ create KEY-BUF 64 allot
    BODY$ FILE? 0= if OBJ-BUF 0 exit then
    BODY$ OBJ-BUF OBJ-U READ-INTO ;
 
-: POST-JSON ( ptr u8 n -- n ) {: url uu :}
+\ the body bytes come from a finished JSON-OPEN chain
+: POST-JSON ( ptr u8 n ptr u8 n -- n ) {: b bu url uu :}
    REQ$ {: r ru :}
-   r ru JSON-WRITE:$ WRITE-PRIVATE
+   r ru b bu WRITE-PRIVATE
    s" -X" ARG+ s" POST" ARG+
    s" Content-Type" s" application/json" HDR
    s" --data-binary" ARG+
@@ -344,8 +346,8 @@ create KEY-BUF 64 allot
    off1 off2 + len2 v vu SPLICE-CFG ;
 
 \ a decoded string as a JSON string literal, in the writer buffer
-: LITERAL$ ( ptr u8 n -- ptr u8 n )
-   JSON-WRITE:RESET JSON-WRITE:STRING JSON-WRITE:$ ;
+: LITERAL$ ( ptr u8 n -- ptr u8 n ) {: a u :}
+   JSON-OPEN a u JSON-WRITE:STRING JSON-WRITE:$ ;
 
 : NUMBER$ ( n -- ptr u8 n )
    SB-RESET FMT:SB-INT SB$ ;
@@ -504,12 +506,12 @@ variable SC-PCT
 \ a fresh token pair from the refresh grant, written into CFG
 : CLAUDE-REFRESH-RAW ( -- bool )
    CFG$ CREDS-KEY$ s" refreshToken" VAL-BUF 4096 DOC-STR2 dup 0 < if drop false exit then VAL-U !
-   JSON-WRITE:RESET
+   JSON-OPEN
    JSON-WRITE:OBJECT-START
    s" grant_type" s" refresh_token" JSON-WRITE:FIELD-S JSON-WRITE:COMMA
    s" refresh_token" VAL-BUF VAL-U @ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
    s" client_id" CLAUDE-CLIENT-ID$ JSON-WRITE:FIELD-S
-   JSON-WRITE:OBJECT-END
+   JSON-WRITE:OBJECT-END JSON-WRITE:$
    KIBA-UA$ CURL-BEGIN
    CLAUDE-TOKEN-URL$ POST-JSON {: code :}
    code REFRESH-CODE !
@@ -620,12 +622,12 @@ variable SC-PCT
 
 : CODEX-REFRESH-RAW ( -- bool )
    CFG$ TOKENS-KEY$ s" refresh_token" VAL-BUF 4096 DOC-STR2 dup 0 < if drop false exit then VAL-U !
-   JSON-WRITE:RESET
+   JSON-OPEN
    JSON-WRITE:OBJECT-START
    s" client_id" CODEX-CLIENT-ID$ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
    s" grant_type" s" refresh_token" JSON-WRITE:FIELD-S JSON-WRITE:COMMA
    s" refresh_token" VAL-BUF VAL-U @ JSON-WRITE:FIELD-S
-   JSON-WRITE:OBJECT-END
+   JSON-WRITE:OBJECT-END JSON-WRITE:$
    KIBA-UA$ CURL-BEGIN
    CODEX-TOKEN-URL$ POST-JSON {: code :}
    code REFRESH-CODE !

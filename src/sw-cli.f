@@ -120,7 +120,7 @@ private
    0 begin dup P-COUNT < while dup .PROVIDER 1+ repeat drop ;
 
 \ ---- status: json -----------------------------------------------------------
-: JSON-LIVE ( -- )
+: JSON-LIVE ( ptr JSON-WRITE:writer -- ptr JSON-WRITE:writer )
    s" live" JSON-WRITE:KEY
    SCAN-LIVE @ 0= if JSON-WRITE:NULL exit then
    JSON-WRITE:OBJECT-START
@@ -128,7 +128,7 @@ private
    s" plan" LPLAN$ JSON-WRITE:FIELD-S
    JSON-WRITE:OBJECT-END ;
 
-: JSON-USAGE ( n n -- ) {: p i :}
+: JSON-USAGE ( ptr JSON-WRITE:writer n n -- ptr JSON-WRITE:writer ) {: p i :}
    s" usage" JSON-WRITE:KEY
    p i ACCT-NAME LOAD-USAGE 0= if JSON-WRITE:NULL exit then
    JSON-WRITE:OBJECT-START
@@ -138,7 +138,7 @@ private
    s" limits" USAGE-LIMITS-RAW$ JSON-WRITE:FIELD-RAW
    JSON-WRITE:OBJECT-END ;
 
-: JSON-ACCOUNT ( n n -- ) {: p i :}
+: JSON-ACCOUNT ( ptr JSON-WRITE:writer n n -- ptr JSON-WRITE:writer ) {: p i :}
    i 0 > if JSON-WRITE:COMMA then
    JSON-WRITE:OBJECT-START
    s" email" i ACCT-NAME JSON-WRITE:FIELD-S JSON-WRITE:COMMA
@@ -148,14 +148,14 @@ private
    p i JSON-USAGE
    JSON-WRITE:OBJECT-END ;
 
-: JSON-PROVIDER ( n -- ) {: p :}
+: JSON-PROVIDER ( ptr JSON-WRITE:writer n -- ptr JSON-WRITE:writer ) {: p :}
    p SCAN-PROVIDER
    p 0 > if JSON-WRITE:COMMA then
    JSON-WRITE:OBJECT-START
    s" id" p PROVIDER$ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
    JSON-LIVE JSON-WRITE:COMMA
    s" accounts" JSON-WRITE:KEY JSON-WRITE:ARRAY-START
-   0 begin dup ACCT# < while p over JSON-ACCOUNT 1+ repeat drop
+   ACCT# 0 ?do p i JSON-ACCOUNT loop
    JSON-WRITE:ARRAY-END
    SCAN-RC @ 0<> if JSON-WRITE:COMMA s" error" SCAN-RC @ REASON$ JSON-WRITE:FIELD-S then
    JSON-WRITE:OBJECT-END ;
@@ -163,10 +163,10 @@ private
 public
 
 : STATUS-JSON$ ( -- ptr u8 n )
-   JSON-WRITE:RESET
+   JSON-OPEN
    JSON-WRITE:OBJECT-START
    s" providers" JSON-WRITE:KEY JSON-WRITE:ARRAY-START
-   0 begin dup P-COUNT < while dup JSON-PROVIDER 1+ repeat drop
+   P-COUNT 0 ?do i JSON-PROVIDER loop
    JSON-WRITE:ARRAY-END
    JSON-WRITE:OBJECT-END
    JSON-WRITE:$ ;
