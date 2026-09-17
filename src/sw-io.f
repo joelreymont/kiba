@@ -12,24 +12,18 @@ $400000 constant BUF-CAP         \ 4 MiB per runtime buffer
 $180 constant MODE-PRIVATE-FILE  \ 0600
 $1C0 constant MODE-PRIVATE-DIR   \ 0700
 
-variable CFG-A   variable CFG-U     \ the live .claude.json document
-variable OUT-A   variable OUT-U     \ the spliced .claude.json
-variable FILE-A  variable FILE-U    \ one credentials or auth document
-variable OBJ-A   variable OBJ-U     \ an oauthAccount object or a JWT payload
-variable TOK-A   variable TOK-U     \ a raw id_token string
-variable JSON-A                     \ the JSON writer's output
+\ each *-A cell holds one runtime buffer's base, *-U its byte count
+TYPED-VARIABLE CFG-A ptr u8    variable CFG-U     \ the live .claude.json document
+TYPED-VARIABLE OUT-A ptr u8    variable OUT-U     \ the spliced .claude.json
+TYPED-VARIABLE FILE-A ptr u8   variable FILE-U    \ one credentials or auth document
+TYPED-VARIABLE OBJ-A ptr u8    variable OBJ-U     \ an oauthAccount object or a JWT payload
+TYPED-VARIABLE TOK-A ptr u8    variable TOK-U     \ a raw id_token string
+TYPED-VARIABLE JSON-A ptr u8                      \ the JSON writer's output
 create TMP-BUF FS-PATH-CAP allot   variable TMP-U
 create MARK-BUF FS-PATH-CAP allot  variable MARK-U
 create LINK-BUF FS-PATH-CAP allot  variable LINK-U
 create DEST-BUF FS-PATH-CAP allot  variable DEST-U
 8 constant LINK-HOPS
-
-: CFG-A-FIELD ( -- ptr ptr u8 ) CFG-A 0 ptr-field ;
-: OUT-A-FIELD ( -- ptr ptr u8 ) OUT-A 0 ptr-field ;
-: FILE-A-FIELD ( -- ptr ptr u8 ) FILE-A 0 ptr-field ;
-: OBJ-A-FIELD ( -- ptr ptr u8 ) OBJ-A 0 ptr-field ;
-: TOK-A-FIELD ( -- ptr ptr u8 ) TOK-A 0 ptr-field ;
-: JSON-A-FIELD ( -- ptr ptr u8 ) JSON-A 0 ptr-field ;
 
 : ALLOC-ONE ( ptr ptr u8 -- )
    BUF-CAP MEM-ALLOC-BYTES drop swap ! ;
@@ -79,19 +73,19 @@ public
 
 \ mappings are process-local: MAIN allocates them, never build-time top level
 : ALLOC-BUFFERS ( -- )
-   CFG-A-FIELD ALLOC-ONE
-   OUT-A-FIELD ALLOC-ONE
-   FILE-A-FIELD ALLOC-ONE
-   OBJ-A-FIELD ALLOC-ONE
-   TOK-A-FIELD ALLOC-ONE
-   JSON-A-FIELD ALLOC-ONE ;
+   CFG-A ALLOC-ONE
+   OUT-A ALLOC-ONE
+   FILE-A ALLOC-ONE
+   OBJ-A ALLOC-ONE
+   TOK-A ALLOC-ONE
+   JSON-A ALLOC-ONE ;
 
-: CFG-BUF ( -- ptr u8 ) CFG-A-FIELD @ ;
-: OUT-BUF ( -- ptr u8 ) OUT-A-FIELD @ ;
-: FILE-BUF ( -- ptr u8 ) FILE-A-FIELD @ ;
-: OBJ-BUF ( -- ptr u8 ) OBJ-A-FIELD @ ;
-: TOK-BUF ( -- ptr u8 ) TOK-A-FIELD @ ;
-: JSON-BUF ( -- ptr u8 ) JSON-A-FIELD @ ;
+: CFG-BUF ( -- ptr u8 ) CFG-A @ ;
+: OUT-BUF ( -- ptr u8 ) OUT-A @ ;
+: FILE-BUF ( -- ptr u8 ) FILE-A @ ;
+: OBJ-BUF ( -- ptr u8 ) OBJ-A @ ;
+: TOK-BUF ( -- ptr u8 ) TOK-A @ ;
+: JSON-BUF ( -- ptr u8 ) JSON-A @ ;
 
 : CFG$ ( -- ptr u8 n ) CFG-BUF CFG-U @ ;
 : OUT$ ( -- ptr u8 n ) OUT-BUF OUT-U @ ;

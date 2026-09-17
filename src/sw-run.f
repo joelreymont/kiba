@@ -31,16 +31,14 @@ variable EXE-U
 \ the throwaway home; the table ends with a null entry as execve expects
 1024 constant ENV-MAX
 $1000 constant ENV-STR-CAP
-create ENV-TABLE ENV-MAX cells allot
+ENV-MAX TYPED-BUFFER ENV-TABLE ptr u8
 create ENV-STR ENV-STR-CAP allot
 variable ENV-N
 variable ENV-STR-U
 
-: ENV-SLOT ( n -- ptr ptr u8 ) ENV-TABLE swap ptr-field ;
-
 : ENV-PUSH ( ptr u8 -- ) {: z :}
    ENV-N @ ENV-MAX 1- >= if E-SW-CAPACITY throw then
-   z ENV-N @ ENV-SLOT !
+   z ENV-N @ ENV-TABLE !
    1 ENV-N +! ;
 
 : ENV-DEFINE ( ptr u8 n ptr u8 n -- ) {: name nu val vu :}
@@ -78,13 +76,13 @@ variable ENV-STR-U
    0 ENV-N ! 0 ENV-STR-U !
    p PROVIDER-HOME-VAR$ p LOGIN-DIR$ ENV-DEFINE
    ENV-INHERIT-REST
-   NULL$ drop ENV-N @ ENV-SLOT ! ;
+   NULL$ drop ENV-N @ ENV-TABLE ! ;
 
 \ the child keeps this process's group, terminal, and descriptors: the
 \ spawn primitives give a child its own process group, and a login that
 \ then reads the terminal is stopped by SIGTTIN
 : EXEC-STAGED ( ptr u8 ptr ptr u8 -- ) {: pathz argv :}
-   pathz argv ENV-TABLE execve drop
+   pathz argv 0 ENV-TABLE execve drop
    s" kiba: could not start the provider command" 127 die ;
 
 : RUN-STAGED ( -- n )
