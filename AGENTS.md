@@ -6,8 +6,10 @@ checked Habu program; a thin Omarchy bar widget runs it.
 
 ## Habu code
 
-- Read [Habu's Forth conventions](https://github.com/joelreymont/habu/blob/master/docs/forth.md)
-  before writing or changing any `.f` file. Its naming, package, factoring,
+- Read [Habu's Forth card](https://github.com/joelreymont/habu/blob/master/docs/forth-card.md)
+  before writing or changing any `.f` file, and open the section of
+  [forth.md](https://github.com/joelreymont/habu/blob/master/docs/forth.md)
+  it points to when a rule needs detail. Its naming, package, factoring,
   stack-comment, and checker rules apply here unchanged.
 - All Forth lives in `package SW`, split one concern per file under `src/`:
   `sw-base.f` errors and byte helpers, `sw-paths.f` file locations, `sw-io.f`
