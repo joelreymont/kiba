@@ -5,6 +5,7 @@ require lib/fs-mutate.f
 require lib/time.f
 require lib/fmt.f
 require lib/json-write.f
+require lib/span.f
 
 package SW
 
@@ -37,7 +38,7 @@ create DEST-BUF FS-PATH-CAP allot  variable DEST-U
 
 \ a relative link target is taken from the link's own directory
 : LINK-TARGET ( ptr u8 n -- ptr u8 n ) {: a u :}
-   a u LINK-BUF FS-PATH-CAP READ-LINK {: tu :}
+   a u LINK-BUF FS-PATH-CAP SPAN:MAKE READ-LINK {: tu :}
    LINK-BUF c@ SLASH = if LINK-BUF tu exit then
    a u DIRNAME {: d du :}
    SB-RESET d du SB-APPEND SLASH SB-APPEND-C LINK-BUF tu SB-APPEND

@@ -66,7 +66,7 @@ public
    rc E-STR-CAPACITY = if s" kiba: a path or name is too long" exit then
    rc E-FS-OPEN = if s" kiba: cannot open a login file" exit then
    rc E-FS-IO = if s" kiba: a file read, write, or rename failed" exit then
-   rc E-FS-CAPACITY = if s" kiba: a login file or path is too large" exit then
+   rc E-FS-CAPACITY = rc E-SPAN-CAPACITY = or rc E-SPAN-RANGE = or if s" kiba: a login file or path is too large" exit then
    rc E-FS-PATH-UNSAFE = if s" kiba: refusing to write through a symlink chain" exit then
    rc E-PROC-SPAWN = if s" kiba: could not start the provider command" exit then
    rc E-JR-LAST >= rc E-JR-FIRST <= and if s" kiba: a login file is not valid JSON" exit then
