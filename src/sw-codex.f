@@ -10,23 +10,25 @@ public
 EXPORT AUTH-NAME$
 
 : CODEX-LIVE-IDENTITY ( -- bool )
-   CODEX-AUTH$ FILE? 0= if NO-IDENTITY false exit then
-   CODEX-AUTH$ READ-FILE$ CODEX-IDENTITY ;
+   CODEX-AUTH$ FILE? 0= if ID-LIVE NO-IDENTITY false exit then
+   CODEX-AUTH$ READ-FILE$ ID-LIVE CODEX-IDENTITY ;
 
-\ requires CODEX-LIVE-IDENTITY to have loaded the live document
+\ the live document is read here, so a slot read between naming the account
+\ and saving it cannot put another login's bytes in the slot
 : CODEX-SAVE-LIVE ( ptr u8 n -- ) {: a u :}
+   CODEX-AUTH$ FILE-BUF FILE-U READ-INTO 2drop
    P-CODEX a u SLOT-DIR$ ENSURE-PRIVATE
    P-CODEX a u AUTH-NAME$ SLOT-FILE$ FILE$ WRITE-PRIVATE ;
 
 : CODEX-SLOT-PLAN ( ptr u8 n -- ) {: a u :}
-   0 PLAN-U !
+   ID-SLOT NO-IDENTITY
    P-CODEX a u AUTH-NAME$ SLOT-FILE$ FILE? 0= if exit then
-   P-CODEX a u AUTH-NAME$ SLOT-FILE$ READ-FILE$ CODEX-IDENTITY drop ;
+   P-CODEX a u AUTH-NAME$ SLOT-FILE$ READ-FILE$ ID-SLOT CODEX-IDENTITY drop ;
 
 : CODEX-INSTALL ( ptr u8 n -- ) {: a u :}
    P-CODEX a u AUTH-NAME$ SLOT-FILE$ FILE? 0= if E-SW-NO-ACCOUNT throw then
-   P-CODEX a u AUTH-NAME$ SLOT-FILE$ READ-FILE$ CODEX-IDENTITY 0= if E-SW-JSON throw then
-   a u EMAIL$ NAME-FOR-EMAIL? 0= if E-SW-MISMATCH throw then
+   P-CODEX a u AUTH-NAME$ SLOT-FILE$ READ-FILE$ ID-SLOT CODEX-IDENTITY 0= if E-SW-JSON throw then
+   a u ID-SLOT EMAIL$ NAME-FOR-EMAIL? 0= if E-SW-MISMATCH throw then
    CODEX-AUTH$ DIRNAME ENSURE-PRIVATE
    CODEX-AUTH$ FILE$ WRITE-PRIVATE ;
 

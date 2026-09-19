@@ -13,10 +13,6 @@ create ACCT-TMP NAME-CAP allot
 variable ACCT-N
 variable LIST-P
 create NAME-OUT NAME-CAP allot      variable NAME-OUT-U
-create ID-EMAIL 256 allot           variable ID-EMAIL-U    \ the identity being named
-create ID-ORG 128 allot             variable ID-ORG-U
-create ID-ORGNAME 128 allot         variable ID-ORGNAME-U
-create SLOT-ORG 128 allot           variable SLOT-ORG-U    \ a slot's organization
 variable SLOT-DAMAGED               \ bool: the slot's identity file is missing or unreadable
 create SAVED-NAME NAME-CAP allot    variable SAVED-NAME-U  \ the slot the last save went to
 
@@ -78,16 +74,6 @@ private
    a u DIRNAME BASENAME NAME-OK? 0= if exit then
    a u DIRNAME BASENAME ACCT+ ;
 
-: ID-EMAIL$ ( -- ptr u8 n ) ID-EMAIL ID-EMAIL-U @ ;
-: ID-ORG$ ( -- ptr u8 n ) ID-ORG ID-ORG-U @ ;
-: ID-ORGNAME$ ( -- ptr u8 n ) ID-ORGNAME ID-ORGNAME-U @ ;
-
-\ the identity words share buffers with slot reads, so the live one is copied
-: ID-TAKE ( -- )
-   EMAIL$ ID-EMAIL ID-EMAIL-U 256 SPAN!
-   ORG$ ID-ORG ID-ORG-U 128 SPAN!
-   ORGNAME$ ID-ORGNAME ID-ORGNAME-U 128 SPAN! ;
-
 \ the file that names a slot's account
 : IDENTITY-FILE$ ( n -- ptr u8 n )
    case
@@ -99,57 +85,54 @@ private
 : SLOT-IDENTITY ( n ptr u8 n -- bool ) {: p a u :}
    p a u p IDENTITY-FILE$ SLOT-FILE$ FILE? 0= if false exit then
    p a u p IDENTITY-FILE$ SLOT-FILE$ READ-FILE$
-   p P-CLAUDE = if CLAUDE-OAUTH-IDENTITY exit then
-   CODEX-IDENTITY ;
+   p P-CLAUDE = if ID-SLOT CLAUDE-OAUTH-IDENTITY exit then
+   ID-SLOT CODEX-IDENTITY ;
 
-: SLOT-ORG-READ-RAW ( n ptr u8 n -- ) {: p a u :}
-   p a u SLOT-IDENTITY 0= if true SLOT-DAMAGED ! exit then
-   ORG$ SLOT-ORG SLOT-ORG-U 128 SPAN! ;
+: SLOT-IDENTITY-KEEP ( n ptr u8 n -- n ptr u8 n ) {: p a u :}
+   p a u SLOT-IDENTITY 0= if true SLOT-DAMAGED ! then
+   p a u ;
 
-: SLOT-ORG-KEEP ( n ptr u8 n -- n ptr u8 n ) {: p a u :}
-   p a u SLOT-ORG-READ-RAW p a u ;
-
-\ the organization recorded in a slot; empty when the slot cannot say. A
+\ ID-SLOT holds who a slot belongs to, empty where the slot cannot say. A
 \ slot whose identity file is missing or unreadable is damaged: it must not
 \ hide the live login, and it may be overwritten by a good one.
-: SLOT-ORG-READ ( n ptr u8 n -- ) {: p a u :}
-   0 SLOT-ORG-U !
+: SLOT-IDENTITY-READ ( n ptr u8 n -- ) {: p a u :}
+   ID-SLOT NO-IDENTITY
    false SLOT-DAMAGED !
-   p a u [: SLOT-ORG-KEEP ;] catch {: rc :} 2drop drop
+   p a u [: SLOT-IDENTITY-KEEP ;] catch {: rc :} 2drop drop
    rc 0<> if true SLOT-DAMAGED ! then ;
 
 9 constant NAME-TRIES
 
 \ candidate n: the bare email, then "email #2", "email #3", ...
 : NAME-CANDIDATE ( n -- ptr u8 n ) {: n :}
-   n 1 = if ID-EMAIL$ exit then
-   SB-RESET ID-EMAIL$ SB-APPEND s"  #" SB-APPEND n FMT:SB-U SB$ ;
+   n 1 = if ID-LIVE EMAIL$ exit then
+   SB-RESET ID-LIVE EMAIL$ SB-APPEND s"  #" SB-APPEND n FMT:SB-U SB$ ;
 
 variable NAME-FREE                  \ first candidate that is free or damaged; 0 when none
 
-\ does the slot named by NAME-OUT hold exactly the organization in ID-*?
-: SLOT-HOLDS-ID? ( n -- bool ) {: p :}
-   p NAME-OUT NAME-OUT-U @ SLOT-ORG-READ
+\ does the slot named by NAME-OUT hold exactly the live login's organization?
+: SLOT-HOLDS-LIVE? ( n -- bool ) {: p :}
+   p NAME-OUT NAME-OUT-U @ SLOT-IDENTITY-READ
    SLOT-DAMAGED @ if false exit then
-   SLOT-ORG-U @ 0= if ID-ORG-U @ 0= exit then
-   ID-ORG-U @ 0= if false exit then
-   SLOT-ORG SLOT-ORG-U @ ID-ORG$ STR= ;
+   ID-SLOT ORG$ nip 0= if ID-LIVE ORG$ nip 0= exit then
+   ID-LIVE ORG$ nip 0= if false exit then
+   ID-SLOT ORG$ ID-LIVE ORG$ STR= ;
 
 : NAME-CANDIDATE! ( n -- )
    NAME-CANDIDATE NAME-OUT NAME-OUT-U NAME-CAP 1- SPAN! ;
 
-\ the slot name for the identity in ID-*: the candidate that already holds
-\ this organization wins over every other; otherwise the first free or
-\ damaged candidate, so a damaged slot is repaired only by a login no other
-\ slot claims
-: RESOLVE-NAME ( n -- ptr u8 n ) {: p :}
+\ the slot name for the live login: the candidate that already holds this
+\ organization wins over every other; otherwise the first free or damaged
+\ candidate, so a damaged slot is repaired only by a login no other slot
+\ claims
+: LIVE-NAME ( n -- ptr u8 n ) {: p :}
    0 NAME-FREE !
    1 begin dup NAME-TRIES <= while
       dup NAME-CANDIDATE!
       p NAME-OUT NAME-OUT-U @ SLOT-DIR$ DIR? 0= if
          NAME-FREE @ 0= if dup NAME-FREE ! then
       else
-         p SLOT-HOLDS-ID? if drop NAME-OUT NAME-OUT-U @ exit then
+         p SLOT-HOLDS-LIVE? if drop NAME-OUT NAME-OUT-U @ exit then
          SLOT-DAMAGED @ NAME-FREE @ 0= and if dup NAME-FREE ! then
       then
       1+
@@ -182,31 +165,22 @@ public
 \ does the live config name the installed slot's account? By email first;
 \ two organizations under one email are told apart when both are known.
 : CONFIG-NAMES-INSTALLED? ( ptr u8 n -- bool ) {: a u :}
-   ID-EMAIL$ a u NAME-EMAIL STR= 0= if false exit then
-   ID-ORG-U @ 0= if true exit then
-   P-CLAUDE a u SLOT-ORG-READ
-   SLOT-ORG-U @ 0= if true exit then
-   SLOT-ORG SLOT-ORG-U @ ID-ORG$ STR= ;
+   ID-LIVE EMAIL$ a u NAME-EMAIL STR= 0= if false exit then
+   ID-LIVE ORG$ nip 0= if true exit then
+   P-CLAUDE a u SLOT-IDENTITY-READ
+   ID-SLOT ORG$ nip 0= if true exit then
+   ID-SLOT ORG$ ID-LIVE ORG$ STR= ;
 
 : CLAUDE-MIXED? ( -- bool )
    P-CLAUDE INSTALLED$ {: a u :}
    u 0= if false exit then
    P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ FILE? 0= if false exit then
-   CLAUDE-CONFIG$ FILE? 0= if false exit then
-   CLAUDE-CREDS$ FILE? 0= if false exit then
-   CLAUDE-CONFIG$ CFG-BUF CFG-U READ-INTO 2dup CLAUDE-ORG
-   s" oauthAccount" s" emailAddress" EMAIL-BUF EMAIL-CAP DOC-STR2 dup 0 < if drop false exit then EMAIL-U !
-   ID-TAKE
+   CLAUDE-LIVE-IDENTITY 0= if false exit then
    a u CONFIG-NAMES-INSTALLED? if false exit then
    P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ OBJ-BUF OBJ-U READ-INTO
    CLAUDE-CREDS$ READ-FILE$ STR= ;
 
-
-\ the slot name the live identity saves to; callers reload the live
-\ documents afterwards because slot reads share their buffers
-: LIVE-NAME ( n -- ptr u8 n ) {: p :}
-   ID-TAKE
-   p RESOLVE-NAME ;
+EXPORT LIVE-NAME
 
 : LIST-ACCOUNTS ( n -- ) {: p :}
    0 ACCT-N !
@@ -220,7 +194,7 @@ public
 : SLOT-PLAN ( n ptr u8 n -- ) {: p a u :}
    p a u [: SLOT-PLAN-KEEP ;] catch {: rc :} 2drop drop
    rc 0= if exit then
-   0 PLAN-U !
+   ID-SLOT NO-IDENTITY
    a u rc WARN-SLOT ;
 
 : LIVE-IDENTITY ( n -- bool )
@@ -235,7 +209,6 @@ public
 : SAVE-LIVE ( n -- ) {: p :}
    p LIVE-NAME SAVED-NAME SAVED-NAME-U NAME-CAP 1- SPAN!
    SAVED-NAME$ {: a u :}
-   p LIVE-IDENTITY drop
    p case
      P-CLAUDE of a u CLAUDE-SAVE-LIVE endof
      P-CODEX of a u CODEX-SAVE-LIVE endof

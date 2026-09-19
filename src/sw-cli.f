@@ -7,27 +7,19 @@ require lib/fmt.f
 
 package SW
 
-create LEMAIL-BUF 256 allot   variable LEMAIL-U
 create LNAME-BUF 256 allot    variable LNAME-U
-create LPLAN-BUF 64 allot     variable LPLAN-U
 create NAME-BUF 256 allot     variable NAME-U
 variable CMD-P
 variable SCAN-RC                     \ 0, or why the provider could not be read
 variable SCAN-LIVE                   \ bool: the provider has a live login
 
-: LEMAIL$ ( -- ptr u8 n ) LEMAIL-BUF LEMAIL-U @ ;
 : LNAME$ ( -- ptr u8 n ) LNAME-BUF LNAME-U @ ;
-: LPLAN$ ( -- ptr u8 n ) LPLAN-BUF LPLAN-U @ ;
 : NAME$ ( -- ptr u8 n ) NAME-BUF NAME-U @ ;
 
-\ the live identity is copied aside because slot reads reuse EMAIL$/PLAN$
+\ ID-LIVE is who the provider is logged in as; LNAME$ the slot it saves to
 : LOAD-LIVE ( n -- bool ) {: p :}
-   0 LEMAIL-U ! 0 LPLAN-U ! 0 LNAME-U !
-   p LIVE-IDENTITY dup if
-      EMAIL$ LEMAIL-BUF LEMAIL-U 256 SPAN!
-      PLAN$ LPLAN-BUF LPLAN-U 64 SPAN!
-      p LIVE-NAME LNAME-BUF LNAME-U 256 SPAN!
-   then ;
+   0 LNAME-U !
+   p LIVE-IDENTITY dup if p LIVE-NAME LNAME-BUF LNAME-U 256 SPAN! then ;
 
 \ the saved list comes first so a broken live file still leaves it readable
 : SCAN-PROVIDER-RAW ( n -- n ) {: p :}
@@ -40,7 +32,7 @@ variable SCAN-LIVE                   \ bool: the provider has a live login
    false SCAN-LIVE !
    0 ACCT-RESET
    p [: SCAN-PROVIDER-RAW ;] catch SCAN-RC ! drop
-   SCAN-RC @ 0<> if false SCAN-LIVE ! 0 LEMAIL-U ! 0 LPLAN-U ! 0 LNAME-U ! then ;
+   SCAN-RC @ 0<> if false SCAN-LIVE ! ID-LIVE NO-IDENTITY 0 LNAME-U ! then ;
 
 : ACTIVE? ( n -- bool ) {: i :}
    SCAN-LIVE @ 0= if false exit then
@@ -103,12 +95,12 @@ private
 : .ACCOUNT ( n n -- ) {: p i :}
    p i ACCT-NAME SLOT-PLAN
    i ACTIVE? if s"   * " else s"     " then type
-   i ACCT-NAME type PLAN$ .PLAN
+   i ACCT-NAME type ID-SLOT PLAN$ .PLAN
    p i .USAGE cr ;
 
 : .LIVE ( -- )
    SCAN-RC @ 0<> if SCAN-RC @ REASON$ type cr exit then
-   SCAN-LIVE @ if LEMAIL$ type LPLAN$ .PLAN cr exit then
+   SCAN-LIVE @ if ID-LIVE EMAIL$ type ID-LIVE PLAN$ .PLAN cr exit then
    s" no live login" type cr ;
 
 : .PROVIDER ( n -- ) {: p :}
@@ -124,8 +116,8 @@ private
    s" live" JSON-WRITE:KEY
    SCAN-LIVE @ 0= if JSON-WRITE:NULL exit then
    JSON-WRITE:OBJECT-START
-   s" email" LEMAIL$ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
-   s" plan" LPLAN$ JSON-WRITE:FIELD-S
+   s" email" ID-LIVE EMAIL$ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
+   s" plan" ID-LIVE PLAN$ JSON-WRITE:FIELD-S
    JSON-WRITE:OBJECT-END ;
 
 : JSON-USAGE ( ptr JSON-WRITE:writer n n -- ptr JSON-WRITE:writer ) {: p i :}
@@ -143,7 +135,7 @@ private
    JSON-WRITE:OBJECT-START
    s" email" i ACCT-NAME JSON-WRITE:FIELD-S JSON-WRITE:COMMA
    p i ACCT-NAME SLOT-PLAN
-   s" plan" PLAN$ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
+   s" plan" ID-SLOT PLAN$ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
    s" active" i ACTIVE? JSON-WRITE:FIELD-BOOL JSON-WRITE:COMMA
    p i JSON-USAGE
    JSON-WRITE:OBJECT-END ;

@@ -65,9 +65,8 @@ package SW
    d du s" claudeAiOauth" DOC-OBJ-SPAN? 0= if E-SW-JSON throw then 2drop ;
 
 : CHECK-SLOT-EMAIL ( ptr u8 n -- ) {: a u :}
-   OBJ$ s" emailAddress" EMAIL-BUF EMAIL-CAP DOC-STR1
-   dup 0 < if drop E-SW-JSON throw then EMAIL-U !
-   a u EMAIL$ NAME-FOR-EMAIL? 0= if E-SW-MISMATCH throw then ;
+   OBJ$ ID-SLOT CLAUDE-OAUTH-IDENTITY 0= if E-SW-JSON throw then
+   a u ID-SLOT EMAIL$ NAME-FOR-EMAIL? 0= if E-SW-MISMATCH throw then ;
 
 public
 
@@ -75,23 +74,26 @@ EXPORT CREDS-NAME$
 
 \ loads both live documents; false when Claude Code has no login
 : CLAUDE-LIVE-IDENTITY ( -- bool )
-   CLAUDE-CONFIG$ FILE? 0= if NO-IDENTITY false exit then
-   CLAUDE-CREDS$ FILE? 0= if NO-IDENTITY false exit then
+   CLAUDE-CONFIG$ FILE? 0= if ID-LIVE NO-IDENTITY false exit then
+   CLAUDE-CREDS$ FILE? 0= if ID-LIVE NO-IDENTITY false exit then
    CLAUDE-CONFIG$ CFG-BUF CFG-U READ-INTO
    CLAUDE-CREDS$ FILE-BUF FILE-U READ-INTO
-   CLAUDE-IDENTITY ;
+   ID-LIVE CLAUDE-IDENTITY ;
 
-\ requires CLAUDE-LIVE-IDENTITY to have loaded the live documents
+\ the two live documents are read here, so a slot read between naming the
+\ account and saving it cannot put another login's bytes in the slot
 : CLAUDE-SAVE-LIVE ( ptr u8 n -- ) {: a u :}
+   CLAUDE-CONFIG$ CFG-BUF CFG-U READ-INTO 2drop
+   CLAUDE-CREDS$ FILE-BUF FILE-U READ-INTO 2drop
    P-CLAUDE a u SLOT-DIR$ ENSURE-PRIVATE
    P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ FILE$ WRITE-PRIVATE
    CFG$ OAUTH-KEY$ DOC-OBJ-SPAN {: off len :}
    P-CLAUDE a u OAUTH-NAME$ SLOT-FILE$ CFG-BUF off + len WRITE-PRIVATE ;
 
 : CLAUDE-SLOT-PLAN ( ptr u8 n -- ) {: a u :}
-   0 PLAN-U !
+   ID-SLOT NO-IDENTITY
    P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ FILE? 0= if exit then
-   P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ READ-FILE$ CLAUDE-PLAN ;
+   P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ READ-FILE$ ID-SLOT CLAUDE-PLAN ;
 
 \ the marker brackets the two live writes; see sw-io.f
 : CLAUDE-INSTALL ( ptr u8 n -- ) {: a u :}
