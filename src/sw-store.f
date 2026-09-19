@@ -84,7 +84,7 @@ private
 
 : SLOT-IDENTITY ( n ptr u8 n -- bool ) {: p a u :}
    p a u p IDENTITY-FILE$ SLOT-FILE$ FILE? 0= if false exit then
-   p a u p IDENTITY-FILE$ SLOT-FILE$ READ-FILE$
+   p a u p IDENTITY-FILE$ SLOT-FILE$ READ-SLOT$
    p P-CLAUDE = if ID-SLOT CLAUDE-OAUTH-IDENTITY exit then
    ID-SLOT CODEX-IDENTITY ;
 
@@ -177,7 +177,7 @@ public
    P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ FILE? 0= if false exit then
    CLAUDE-LIVE-IDENTITY 0= if false exit then
    a u CONFIG-NAMES-INSTALLED? if false exit then
-   P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ OBJ-BUF OBJ-U READ-INTO
+   P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ READ-SLOT$
    CLAUDE-CREDS$ READ-FILE$ STR= ;
 
 EXPORT LIVE-NAME
