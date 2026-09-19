@@ -19,7 +19,7 @@ TYPED-VARIABLE FILE-A ptr u8   variable FILE-U    \ the live credentials or auth
 TYPED-VARIABLE OBJ-A ptr u8    variable OBJ-U     \ an oauthAccount object or a JWT payload
 TYPED-VARIABLE TOK-A ptr u8    variable TOK-U     \ a raw id_token string
 TYPED-VARIABLE JSON-A ptr u8                      \ the JSON writer's output
-TYPED-VARIABLE SLOT-A ptr u8   variable SLOT-U    \ one saved slot's document
+TYPED-VARIABLE SDOC-A ptr u8   variable SDOC-U    \ one saved slot's document
 create TMP-BUF FS-PATH-CAP allot   variable TMP-U
 create MARK-BUF FS-PATH-CAP allot  variable MARK-U
 create LINK-BUF FS-PATH-CAP allot  variable LINK-U
@@ -80,7 +80,7 @@ public
    OBJ-A ALLOC-ONE
    TOK-A ALLOC-ONE
    JSON-A ALLOC-ONE
-   SLOT-A ALLOC-ONE ;
+   SDOC-A ALLOC-ONE ;
 
 : CFG-BUF ( -- ptr u8 ) CFG-A @ ;
 : OUT-BUF ( -- ptr u8 ) OUT-A @ ;
@@ -88,13 +88,13 @@ public
 : OBJ-BUF ( -- ptr u8 ) OBJ-A @ ;
 : TOK-BUF ( -- ptr u8 ) TOK-A @ ;
 : JSON-BUF ( -- ptr u8 ) JSON-A @ ;
-: SLOT-BUF ( -- ptr u8 ) SLOT-A @ ;
+: SDOC-BUF ( -- ptr u8 ) SDOC-A @ ;
 
 : CFG$ ( -- ptr u8 n ) CFG-BUF CFG-U @ ;
 : OUT$ ( -- ptr u8 n ) OUT-BUF OUT-U @ ;
 : FILE$ ( -- ptr u8 n ) FILE-BUF FILE-U @ ;
 : OBJ$ ( -- ptr u8 n ) OBJ-BUF OBJ-U @ ;
-: SLOT$ ( -- ptr u8 n ) SLOT-BUF SLOT-U @ ;
+: SDOC$ ( -- ptr u8 n ) SDOC-BUF SDOC-U @ ;
 
 \ every JSON document kiba emits is built in JSON-BUF through one writer:
 \ JSON-OPEN starts a document and JSON-WRITE:$ ends its chain with the bytes
@@ -113,7 +113,7 @@ TYPED-VARIABLE JSON-W JSON-WRITE:writer
 \ FILE-BUF holds only live documents; a saved slot's document is read here,
 \ so no slot read replaces what a live read left behind
 : READ-SLOT$ ( ptr u8 n -- ptr u8 n )
-   SLOT-BUF SLOT-U READ-INTO ;
+   SDOC-BUF SDOC-U READ-INTO ;
 
 : WRITE-TMP ( ptr u8 n -- )
    TMP$ OPEN-PRIVATE -rot WRITE-FD-ALL ;
