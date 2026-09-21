@@ -25,10 +25,6 @@ create RD-STATE JR:STORAGE-BYTES allot
    JR:TOKEN JR:T-STR <> if -1 exit then
    dst cap JR:STR ;
 
-\ offset of the current token's first byte inside the document
-: TOKEN-OFF ( JR:reader ptr u8 -- JR:reader n ) {: d :}
-   JR:SPAN$ drop d - ;
-
 public
 
 : DOC-STR1 ( ptr u8 n ptr u8 n ptr u8 n -- n ) {: d du k ku dst cap :}
@@ -59,13 +55,7 @@ public
 \ runs to its closer, a string includes its quotes, a scalar is its literal
 : VALUE-SPAN ( JR:reader ptr u8 -- JR:reader n n ) {: d :}
    JR:TOKEN {: t :}
-   t JR:T-OBJ = t JR:T-ARR = or if
-      d TOKEN-OFF {: start :}
-      JR:SKIP-VALUE
-      d TOKEN-OFF {: e :}
-      start e 1+ start - exit
-   then
-   JR:SPAN$ {: a u :}
+   t JR:T-OBJ = t JR:T-ARR = or if JR:VALUE-SPAN$ else JR:SPAN$ then {: a u :}
    t JR:T-STR = if a d - 1- u 2 + exit then
    a d - u ;
 
@@ -83,12 +73,9 @@ public
 : DOC-OBJ-SPAN? ( ptr u8 n ptr u8 n -- n n bool ) {: d du k ku :}
    d du OPEN-DOC ENTER-OBJECT
    k ku KEY-OBJECT 0= if JR:CLOSE 0 0 false exit then
-   d TOKEN-OFF {: start :}
-   JR:SKIP-VALUE
-   JR:TOKEN JR:T-OBJ-END <> if JR:CLOSE E-SW-JSON throw then
-   d TOKEN-OFF {: e :}
+   JR:VALUE-SPAN$ {: a u :}
    JR:CLOSE
-   start e 1+ start - true ;
+   a d - u true ;
 
 : DOC-OBJ-SPAN ( ptr u8 n ptr u8 n -- n n )
    DOC-OBJ-SPAN? 0= if E-SW-JSON throw then ;
@@ -99,11 +86,9 @@ public
    JR:NEXT JR:T-OBJ-END = {: empty :}
    JR:CLOSE
    d du OPEN-DOC ENTER-OBJECT
-   JR:SKIP-VALUE
-   JR:TOKEN JR:T-OBJ-END <> if JR:CLOSE E-SW-JSON throw then
-   d TOKEN-OFF
-   swap JR:CLOSE
-   empty 0= ;
+   JR:VALUE-SPAN$ {: a u :}
+   JR:CLOSE
+   a d - u + 1- empty 0= ;
 
 \ the whole document must be exactly one object
 : CHECK-OBJECT ( ptr u8 n -- )
