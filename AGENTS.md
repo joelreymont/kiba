@@ -21,7 +21,7 @@ checked Habu program; a thin Omarchy bar widget runs it.
   the entry and `MAIN`.
 - Library words come from a checkout of [Habu](https://github.com/joelreymont/habu)
   named by `HABU` (default `~/Work/habu`). `build.sh` and `test.sh` run
-  `bin/hb` from that checkout, so relative `require lib/...` resolves there.
+  `bin/hb` from that checkout, so relative `require src/lib/...` resolves there.
 - Errors are named `E-SW-*` constants in `src/sw-base.f`; fallible words throw
   them. `MAIN` maps them to one-line reasons; `status` and `usage` catch per
   provider or per account so one bad file never hides the others.

@@ -1,7 +1,7 @@
 \ sw-paths.f - home, store, and provider file locations.
 require ../src/sw-base.f
-require lib/fs.f
-require lib/fs-mutate.f
+require src/lib/fs.f
+require src/lib/fs-mutate.f
 
 package SW
 

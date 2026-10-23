@@ -1,7 +1,7 @@
 \ sw-json.f - checked field access over in-memory JSON documents.
 require ../src/sw-io.f
-require lib/float.f
-require lib/json-read.f
+require src/lib/float.f
+require src/lib/json-read.f
 
 package SW
 

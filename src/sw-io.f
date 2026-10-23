@@ -1,11 +1,11 @@
 \ sw-io.f - runtime buffers, private file writes, and the store lock.
 require ../src/sw-paths.f
-require lib/memory.f
-require lib/fs-mutate.f
-require lib/time.f
-require lib/fmt.f
-require lib/json-write.f
-require lib/span.f
+require src/lib/memory.f
+require src/lib/fs-mutate.f
+require src/lib/time.f
+require src/lib/fmt.f
+require src/lib/json-write.f
+require src/lib/span.f
 
 package SW
 

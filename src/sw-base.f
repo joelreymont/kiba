@@ -1,14 +1,14 @@
 \ sw-base.f - errors, providers, and byte helpers shared by every kiba module.
-require lib/errors.f
-require lib/string.f
-require lib/prelude.f
-require lib/fs.f
+require src/lib/errors.f
+require src/lib/string.f
+require src/lib/prelude.f
+require src/lib/fs.f
 
 package SW
 
 public
 
-\ kiba error block: -9900..-9999, outside every lib/errors.f range
+\ kiba error block: -9900..-9999, outside every src/lib/errors.f range
 -9900 constant E-SW-USAGE       \ bad command line
 -9901 constant E-SW-PROVIDER    \ unknown provider name
 -9902 constant E-SW-NO-LIVE     \ the provider has no live login to save
@@ -110,17 +110,6 @@ $3D constant EQUALS
      none OF a u ENDOF
      some OF IDX>N {: i :} a i ENDOF
    ;MATCH ;
-
-: STR< ( ptr u8 n ptr u8 n -- bool ) {: a u b v :}
-   0 begin
-      dup u < over v < and
-   while
-      dup a + c@ over b + c@ <> if
-         dup a + c@ swap b + c@ < exit
-      then
-      1+
-   repeat
-   drop u v < ;
 
 : LAST-SLASH ( ptr u8 n -- n ) {: a u :}
    u begin dup 0 > while

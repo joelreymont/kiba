@@ -2,8 +2,8 @@
 require ../src/sw-store.f
 require ../src/sw-run.f
 require ../src/sw-usage.f
-require lib/json-write.f
-require lib/fmt.f
+require src/lib/json-write.f
+require src/lib/fmt.f
 
 package SW
 

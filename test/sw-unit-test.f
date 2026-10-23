@@ -1,7 +1,7 @@
 \ sw-unit-test.f - checked kiba tests.
 \ Run through test.sh: HOME, XDG_DATA_HOME, and PATH must point at a scratch tree.
 require ../src/kiba.f
-require lib/test.f
+require src/lib/test.f
 
 package SW-TEST
 using SW
@@ -124,10 +124,6 @@ create UT-PID 32 allot
    s\" {\"k\":12}" s" z" DOC-VALUE-SPAN? TFALSE 0 T= 0 T= ;
 
 : UT-STRINGS ( -- )
-   s" a@x" s" b@x" STR< TTRUE
-   s" b" s" a" STR< TFALSE
-   s" a" s" ab" STR< TTRUE
-   s" ab" s" ab" STR< TFALSE
    s" a.b@x_y+z-1" CHECK-NAME
    s" first last@x.test" CHECK-NAME
    s" caf\xC3\xA9@x.test" CHECK-NAME

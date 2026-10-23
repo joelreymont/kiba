@@ -1,7 +1,7 @@
 \ sw-store.f - the sorted list of saved accounts for one provider.
 require ../src/sw-claude.f
 require ../src/sw-codex.f
-require lib/fmt.f
+require src/lib/fmt.f
 
 package SW
 

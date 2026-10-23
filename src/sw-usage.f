@@ -3,9 +3,9 @@
 \ calls run without the store lock; every slot write takes it briefly.
 require ../src/sw-store.f
 require ../src/sw-run.f
-require lib/time.f
-require lib/date.f
-require lib/json-write.f
+require src/lib/time.f
+require src/lib/date.f
+require src/lib/json-write.f
 
 package SW
 
