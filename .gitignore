@@ -1,2 +1,4 @@
 /build/
 /.jj-ws.noindex/
+# tree-local build outputs and agent scratch
+/.out/
