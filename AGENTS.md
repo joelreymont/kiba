@@ -75,4 +75,3 @@ checked Habu program; a thin Omarchy bar widget runs it.
   User-Agent whatever the grant, which read as dead logins for a day. Only
   a 400 or 401 from a token endpoint means a saved login is gone; any other
   answer is an `error` state, never `expired`.
-- VCS is `jj`. One commit per feature or fix.
