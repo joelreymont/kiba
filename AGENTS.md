@@ -28,9 +28,10 @@ checked Habu program; a thin Omarchy bar widget runs it.
   `sw-status.f` the status read, `sw-run.f` provider commands in the
   foreground, `sw-usage.f` usage probes and limit resets through `curl`,
   `sw-cli.f` the commands, `kiba.f` the entry and `MAIN`.
-- Library words come from a checkout of [Habu](https://github.com/joelreymont/habu)
-  named by `HABU` (default `~/Work/habu`). `build.sh` and `test.sh` run
-  `bin/hb` from that checkout, so relative `require src/lib/...` resolves there.
+- Library words come from the installed [Habu](https://github.com/joelreymont/habu),
+  the one `hb` on `PATH` resolves to. `build.sh` and `test.sh` run its
+  `bin/hb` from its root, so relative `require src/lib/...` resolves there. To
+  build with another Habu, put its `bin/hb` first on `PATH`.
 - Errors are named `E-SW-*` constants in `src/sw-base.f`; fallible words throw
   them. `MAIN` maps them to one-line reasons; `status` and `usage` catch per
   provider or per account so one bad file never hides the others.
@@ -56,7 +57,7 @@ checked Habu program; a thin Omarchy bar widget runs it.
 
 ## Verify
 
-- Tests: `HABU=<checkout> ./test.sh` runs the suite inside a scratch `HOME`;
+- Tests: `./test.sh` runs the suite inside a scratch `HOME`;
   it never touches real credentials.
 - Widget: `omarchy plugin validate plugin/kiba`, then
   `omarchy-shell kiba open` and check `journalctl --user` for QML
@@ -68,7 +69,8 @@ checked Habu program; a thin Omarchy bar widget runs it.
 
 ## Rules
 
-- kiba builds against current Habu master and uses its libraries for what
+- kiba builds with the current Habu, the installed one, and never pins a
+  Habu revision in scripts, tests or docs. It uses Habu's libraries for what
   they provide; a kiba word that a Habu library now covers gives way to it.
 - Every state kiba handles is an `FSM:DEFINE` table from Habu's
   `src/lib/fsm.f` (`docs/forth.md`, "State machines"): no branch on a flag,

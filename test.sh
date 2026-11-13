@@ -1,8 +1,10 @@
 #!/bin/sh
-# Runs the kiba tests inside a scratch HOME so real credentials are never touched.
+# Runs the kiba tests with the installed Habu, the one `hb` on PATH resolves
+# to, inside a scratch HOME so real credentials are never touched.
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
-HABU=${HABU:-$HOME/Work/habu}
+HB=$(command -v hb) || { echo 'test.sh: hb is not on PATH' >&2; exit 127; }
+HABU=$(dirname "$(dirname "$(readlink -f "$HB")")")
 SCRATCH=$(mktemp -d)
 trap 'rm -rf "$SCRATCH"' EXIT
 cd "$HABU"

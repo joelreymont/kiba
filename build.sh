@@ -1,8 +1,10 @@
 #!/bin/sh
-# Builds the native kiba binary with Habu and installs it to ~/.local/bin.
+# Builds the native kiba binary with the installed Habu, the one `hb` on PATH
+# resolves to, and installs it to ~/.local/bin.
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
-HABU=${HABU:-$HOME/Work/habu}
+HB=$(command -v hb) || { echo 'build.sh: hb is not on PATH' >&2; exit 127; }
+HABU=$(dirname "$(dirname "$(readlink -f "$HB")")")
 OUT="$HERE/build/kiba"
 mkdir -p "$HERE/build"
 cd "$HABU"

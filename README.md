@@ -15,8 +15,8 @@ provider how much of every saved account's allowance is left.
 
 - Omarchy 4 (the bar widget is an Omarchy shell plugin), `curl`, and the
   `claude` and `codex` CLIs you already use.
-- A checkout of [Habu](https://github.com/joelreymont/habu), the checked
-  Forth the CLI is written in; see [AGENTS.md](AGENTS.md).
+- [Habu](https://github.com/joelreymont/habu), the checked Forth the CLI is
+  written in, installed so that `hb` is on `PATH`; see [AGENTS.md](AGENTS.md).
 
 ## Install
 
@@ -205,8 +205,8 @@ shell's plugin reload keeps the old compiled component in this Qt build.
 `build.sh` compiles `src/kiba.f` with Habu's `tools/hb-build.f --repl` and
 installs `~/.local/bin/kiba`. `test.sh` runs the checked test suite inside a
 scratch `HOME` with fake `curl` and `codex` scripts on its PATH; it never reads
-or writes real credentials. Set `HABU` to the Habu checkout to use (default
-`~/Work/habu`).
+or writes real credentials. Both use the installed Habu that `hb` on `PATH`
+resolves to; to build with another Habu, put its `bin/hb` first on `PATH`.
 
 ## License
 
