@@ -60,6 +60,7 @@ public
    [: RUN ;] catch {: rc :}
    rc 0= if s" " 0 die then
    rc E-SW-USAGE = if USAGE s" " 64 die then
+   rc E-SW-REPORTED = if s" " 1 die then
    rc REASON$ ERR-LINE
    s" " 1 die ;
 

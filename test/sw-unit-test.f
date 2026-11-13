@@ -542,7 +542,7 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
 \ given, writes the body to the -o file, prints the status, and logs the call
 : UT-FAKE-CURL ( -- )
    s" curl"
-   s\" #!/bin/sh\nout=; auth=; url=; grant=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) case \"$2\" in @*) auth=$(/usr/bin/grep ^Authorization: \"${2#@}\"); echo \"hdrmode $(/usr/bin/stat -c %a \"${2#@}\")\" >> \"$KIBA_TEST_LOG\"; echo \"ua $(/usr/bin/grep ^User-Agent: \"${2#@}\")\" >> \"$KIBA_TEST_LOG\";; *) echo \"argvheader $2\" >> \"$KIBA_TEST_LOG\";; esac; shift;; --data-binary) echo \"data $2\" >> \"$KIBA_TEST_LOG\"; grant=$(/usr/bin/cat \"${2#@}\"); shift;; -X|-m|-w) shift;; *) url=$1;; esac; shift; done\necho \"$url $auth\" >> \"$KIBA_TEST_LOG\"\ncode=200; body='{}'\ncase \"$url\" in\n*api.anthropic.com/api/oauth/usage) case \"$auth\" in *sk-a) body='{\"five_hour\":{\"utilization\":56.25,\"resets_at\":\"2026-09-15T14:00:00+00:00\"},\"seven_day\":{\"utilization\":100,\"resets_at\":\"2026-09-21T11:00:00+00:00\"},\"limits\":[{\"kind\":\"session\",\"group\":\"session\",\"scope\":null,\"percent\":56},{\"kind\":\"weekly_scoped\",\"group\":\"weekly\",\"scope\":{\"model\":{\"id\":null,\"display_name\":\"Fable\"},\"surface\":null},\"percent\":48,\"resets_at\":\"2026-09-22T13:00:00+00:00\"}]}';; *sk-b-new) body='{\"five_hour\":{\"utilization\":12.4,\"resets_at\":\"2026-09-15T15:00:00+00:00\"},\"seven_day_oauth_apps\":{\"utilization\":0.5,\"resets_at\":\"\"}}';; *) code=401; body='{\"error\":\"expired\"}';; esac;;\n*platform.claude.com/v1/oauth/token) case \"$grant\" in *r-e*) code=429; body='{\"error\":{\"type\":\"rate_limit_error\"}}';; *) body='{\"access_token\":\"sk-b-new\",\"refresh_token\":\"r-b-new\",\"expires_in\":3600,\"refresh_token_expires_in\":2592000}';; esac;;\n*chatgpt.com/backend-api/wham/usage) case \"$auth\" in *at-c) body='{\"plan_type\":\"pro\",\"rate_limit\":{\"allowed\":false,\"limit_reached\":true,\"primary_window\":{\"used_percent\":100,\"limit_window_seconds\":604800,\"reset_after_seconds\":433078,\"reset_at\":1789904220},\"secondary_window\":null}}';; *at-d2) body='{\"rate_limit\":{\"primary_window\":{\"used_percent\":12,\"limit_window_seconds\":18000,\"reset_at\":1789489142},\"secondary_window\":{\"used_percent\":40,\"limit_window_seconds\":604800,\"reset_at\":1790075942}}}';; *at-z|*at-y) code=401; body='{\"error\":{\"code\":\"token_revoked\"}}';; *) code=401; body='{\"error\":{\"code\":\"token_expired\"}}';; esac;;\n*auth.openai.com/oauth/token) case \"$grant\" in *rt-z*) code=401; body='{\"error\":\"invalid_grant\"}';; *rt-y*) code=503; body='';; *) body='{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d2\",\"refresh_token\":\"rt-d2\"}';; esac;;\n*) code=404;;\nesac\nprintf '%s' \"$body\" > \"$out\"\nprintf '%s' \"$code\"\n"
+   s\" #!/bin/sh\nout=; auth=; url=; grant=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) case \"$2\" in @*) auth=$(/usr/bin/grep ^Authorization: \"${2#@}\"); echo \"hdrmode $(/usr/bin/stat -c %a \"${2#@}\")\" >> \"$KIBA_TEST_LOG\"; echo \"ua $(/usr/bin/grep ^User-Agent: \"${2#@}\")\" >> \"$KIBA_TEST_LOG\";; *) echo \"argvheader $2\" >> \"$KIBA_TEST_LOG\";; esac; shift;; --data-binary) echo \"data $2\" >> \"$KIBA_TEST_LOG\"; grant=$(/usr/bin/cat \"${2#@}\"); shift;; -X|-m|-w) shift;; *) url=$1;; esac; shift; done\necho \"$url $auth\" >> \"$KIBA_TEST_LOG\"\ncode=200; body='{}'\ncase \"$url\" in\n*api.anthropic.com/api/oauth/usage\\?cedar_ember=1\\&at_wall=1) case \"$auth\" in *sk-a) body='{\"five_hour\":{\"utilization\":56.25,\"resets_at\":\"2026-09-15T14:00:00+00:00\"},\"seven_day\":{\"utilization\":100,\"resets_at\":\"2026-09-21T11:00:00+00:00\"},\"limits\":[{\"kind\":\"session\",\"group\":\"session\",\"scope\":null,\"percent\":56},{\"kind\":\"weekly_scoped\",\"group\":\"weekly\",\"scope\":{\"model\":{\"id\":null,\"display_name\":\"Fable\"},\"surface\":null},\"percent\":48,\"resets_at\":\"2026-09-22T13:00:00+00:00\"}]}';; *sk-b-new) body='{\"five_hour\":{\"utilization\":12.4,\"resets_at\":\"2026-09-15T15:00:00+00:00\"},\"seven_day_oauth_apps\":{\"utilization\":0.5,\"resets_at\":\"\"}}';; *) code=401; body='{\"error\":\"expired\"}';; esac;;\n*platform.claude.com/v1/oauth/token) case \"$grant\" in *r-e*) code=429; body='{\"error\":{\"type\":\"rate_limit_error\"}}';; *) body='{\"access_token\":\"sk-b-new\",\"refresh_token\":\"r-b-new\",\"expires_in\":3600,\"refresh_token_expires_in\":2592000}';; esac;;\n*chatgpt.com/backend-api/wham/usage) case \"$auth\" in *at-c) body='{\"plan_type\":\"pro\",\"rate_limit\":{\"allowed\":false,\"limit_reached\":true,\"primary_window\":{\"used_percent\":100,\"limit_window_seconds\":604800,\"reset_after_seconds\":433078,\"reset_at\":1789904220},\"secondary_window\":null}}';; *at-d2) body='{\"rate_limit\":{\"primary_window\":{\"used_percent\":12,\"limit_window_seconds\":18000,\"reset_at\":1789489142},\"secondary_window\":{\"used_percent\":40,\"limit_window_seconds\":604800,\"reset_at\":1790075942}}}';; *at-z|*at-y) code=401; body='{\"error\":{\"code\":\"token_revoked\"}}';; *) code=401; body='{\"error\":{\"code\":\"token_expired\"}}';; esac;;\n*auth.openai.com/oauth/token) case \"$grant\" in *rt-z*) code=401; body='{\"error\":\"invalid_grant\"}';; *rt-y*) code=503; body='';; *) body='{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d2\",\"refresh_token\":\"rt-d2\"}';; esac;;\n*) code=404;;\nesac\nprintf '%s' \"$body\" > \"$out\"\nprintf '%s' \"$code\"\n"
    UT-WRITE-SCRIPT ;
 
 : AUTH-D2$ ( -- ptr u8 n )
@@ -570,92 +570,189 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
 : LOG$ ( -- ptr u8 n )
    s" KIBA_TEST_LOG" GETENV ;
 
-\ live claude a@x.test (sk-a, expired but live: no refresh) and codex c@x.test;
-\ saved b@x.test refreshes its expired token, e@x.test's refresh is rate
-\ limited (an error, not a dead login), f@x.test has no refresh token; saved
-\ d@x.test refreshes after 401, saved z@x.test is revoked
+\ ---- usage on the store ------------------------------------------------------
+variable UT-C0
+variable UT-X0
+create UT-HELD 32 allot
+
+\ ID-SLOT: email a u, organization o ou (none when empty), no plan
+: UT-ID ( ptr u8 n ptr u8 n -- ) {: a u o ou :}
+   SB-RESET s\" {\"emailAddress\":\"" SB-APPEND a u SB-APPEND [char] " SB-APPEND-C
+   ou 0 > if s\" ,\"organizationUuid\":\"" SB-APPEND o ou SB-APPEND [char] " SB-APPEND-C then
+   [char] } SB-APPEND-C
+   SB$ ID-SLOT CLAUDE-OAUTH-IDENTITY TTRUE ;
+
+: UT-PUT-RAW ( n ptr u8 n ptr u8 n -- ) {: p a u l lu :}
+   [: p a u ID-SLOT l lu UT-BUF -1 false DB-PUT ;] DB-WRITE ;
+
+\ the row p a u holding login l lu, for email a u in organization o ou
+: UT-PUT-ORG ( n ptr u8 n ptr u8 n ptr u8 n -- ) {: p a u o ou l lu :}
+   a u o ou UT-ID
+   [: p a u l lu UT-PUT-RAW ;] UT-STORE ;
+
+: UT-PUT ( n ptr u8 n ptr u8 n -- ) {: p a u l lu :}
+   p a u s" " l lu UT-PUT-ORG ;
+
+: UT-RECORD-KEEP ( n ptr u8 n -- ) DB-FETCH TTRUE 0 DB-ROW-USAGE TTRUE ;
+
+\ row p a u's usage record, in the record readers
+: UT-RECORD ( n ptr u8 n -- ) {: p a u :}
+   [: p a u UT-RECORD-KEEP ;] UT-STORE ;
+
+: UT-STATE= ( ptr u8 n -- ) {: a u :}
+   DB-USAGE-STATE DB-STATE$ a u T$= ;
+
+: UT-PLAN= ( n ptr u8 n ptr u8 n -- ) {: p a u l lu :}
+   [: p a u DB-FETCH TTRUE 0 DB-ROW-PLAN$ l lu T$= ;] UT-STORE ;
+
+: UT-ROW-LOGIN ( n ptr u8 n [ ptr u8 n -- ] -- ) {: p a u check :}
+   [: p a u DB-FETCH TTRUE 0 DB-ROW-LOGIN$ check execute ;] UT-STORE ;
+
+: UT-COUNT-USAGES ( n -- ) {: p :}
+   s" SELECT count(*) FROM history WHERE provider = ? AND kind = 'usage'" s" test"
+   [: p PROVIDER$ DB-TEXT+ ;] [: 0 DB-COL-INT UT-N ! ;] DB-QUERY ;
+
+\ the usage events provider p has recorded
+: UT-USAGES ( n -- n ) {: p :}
+   0 UT-N ! [: p UT-COUNT-USAGES ;] UT-STORE UT-N @ ;
+
+: UT-QUERY-LIVE ( n ptr u8 n -- ) {: p a u :}
+   s\" SELECT instr(details, '\"live\":true') > 0 FROM history WHERE provider = ? AND kind = 'usage' AND name = ? ORDER BY id DESC LIMIT 1" s" test"
+   [: p PROVIDER$ DB-TEXT+ a u DB-TEXT+ ;] [: 0 DB-COL-INT UT-N ! ;] DB-QUERY ;
+
+\ 1 when row p a u's last usage event was read live, 0 when not, -1 when
+\ it has none
+: UT-LAST-LIVE ( n ptr u8 n -- n ) {: p a u :}
+   -1 UT-N ! [: p a u UT-QUERY-LIVE ;] UT-STORE UT-N @ ;
+
+\ row p a u's record replaced by an ok one fetched at epoch second at
+: UT-SET-AT ( n ptr u8 n n -- ) {: p a u at :}
+   SB-RESET s\" {\"fetchedAt\":" SB-APPEND at FMT:SB-U
+   s\" ,\"limits\":[],\"note\":\"\",\"state\":\"ok\"}" SB-APPEND SB$ DB-USAGE-DECODE
+   DB-USAGE-AT at T=
+   [: [: p a u UT-BUF -1 DB-SET-USAGE ;] DB-WRITE ;] UT-STORE ;
+
+: UT-USAGE-CLAUDE ( -- )
+   P-CLAUDE s" a@x.test" UT-RECORD s" ok" UT-STATE=
+   DB-LIMIT# 3 T=
+   0 DB-LIMIT-LABEL$ s" Session (5-hour)" T$=
+   0 DB-LIMIT-PERCENT 56 T=
+   1 DB-LIMIT-PERCENT 100 T=
+   1 DB-LIMIT-RESETS$ s" 2026-09-21T11:00:00+00:00" T$=
+   2 DB-LIMIT-LABEL$ s" Fable Weekly" T$=
+   2 DB-LIMIT-PERCENT 48 T=
+   2 DB-LIMIT-RESETS$ s" 2026-09-22T13:00:00+00:00" T$=
+   DB-USAGE-AT 0 > TTRUE
+   DB-RESETS? TFALSE
+   P-CLAUDE s" a@x.test" UT-LAST-LIVE 1 T=
+   CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
+   P-CLAUDE s" a@x.test" CREDS-A$ UT-LOGIN=
+   P-CLAUDE s" b@x.test" UT-RECORD s" ok" UT-STATE=
+   DB-LIMIT# 2 T=
+   0 DB-LIMIT-PERCENT 12 T=
+   1 DB-LIMIT-PERCENT 1 T=
+   1 DB-LIMIT-LABEL$ s" Weekly (7-day)" T$=
+   P-CLAUDE s" b@x.test" UT-LAST-LIVE 0 T=
+   P-CLAUDE s" e@x.test" UT-RECORD s" error" UT-STATE=
+   DB-USAGE-NOTE$ s" Anthropic's token endpoint answered 429" T$=
+   P-CLAUDE s" e@x.test" CREDS-E$ UT-LOGIN=
+   P-CLAUDE s" f@x.test" UT-RECORD s" missing" UT-STATE=
+   DB-USAGE-NOTE$ s" access token expired and no refresh token is saved; log in again" T$= ;
+
+: UT-USAGE-CODEX ( -- )
+   P-CODEX s" c@x.test" UT-RECORD s" ok" UT-STATE=
+   DB-LIMIT# 1 T=
+   0 DB-LIMIT-LABEL$ s" Weekly (7-day)" T$=
+   0 DB-LIMIT-PERCENT 100 T=
+   0 DB-LIMIT-RESETS$ s" 2026-09-20T11:37:00Z" T$=
+   P-CODEX s" c@x.test" s" pro" UT-PLAN=
+   P-CODEX s" c@x.test" UT-LAST-LIVE 1 T=
+   CODEX-AUTH$ READ-FILE$ AUTH-C$ T$=
+   P-CODEX s" d@x.test" UT-RECORD s" ok" UT-STATE=
+   DB-LIMIT# 2 T=
+   0 DB-LIMIT-LABEL$ s" Session (5-hour)" T$=
+   0 DB-LIMIT-PERCENT 12 T=
+   1 DB-LIMIT-PERCENT 40 T=
+   P-CODEX s" y@x.test" UT-RECORD s" error" UT-STATE=
+   DB-USAGE-NOTE$ s" OpenAI's token endpoint answered 503" T$=
+   P-CODEX s" y@x.test" AUTH-Y$ UT-LOGIN= ;
+
+\ tokens travel in a 0600 header file, never argv; the scratch files go
+: UT-USAGE-LOG ( -- )
+   s" /headers.txt" PSUB-PUBLIC$ FS:FILE? TFALSE
+   s" /body.json" PSUB-PUBLIC$ FS:FILE? TFALSE
+   STORE$ {: s su :}
+   SB-RESET s" data @" SB-APPEND s su SB-APPEND s" /probe/request.json" SB-APPEND
+   SB$ UT-BUF 256 SPAN-COPY {: r ru :}
+   LOG$ READ-FILE$ {: l lu :}
+   l lu s" argvheader Authorization" CONTAINS? TFALSE
+   l lu s" hdrmode 600" CONTAINS? TTRUE
+   l lu r ru CONTAINS? TTRUE
+   l lu s" https://platform.claude.com/v1/oauth/token" CONTAINS? TTRUE
+   l lu s" https://api.anthropic.com/api/oauth/usage?cedar_ember=1&at_wall=1" CONTAINS? TTRUE
+   l lu s" https://auth.openai.com/oauth/token" CONTAINS? TTRUE
+   l lu s" Authorization: Bearer sk-a" CONTAINS? TTRUE
+   l lu s" Authorization: Bearer at-y" CONTAINS? TTRUE
+   l lu s" ua User-Agent: kiba" CONTAINS? TTRUE
+   l lu s" ua User-Agent: codex-cli" CONTAINS? TTRUE
+   l lu s" ua User-Agent: claude-cli/2.1.282 (external, cli)" CONTAINS? TTRUE ;
+
+\ live claude a@x.test (sk-a) and codex c@x.test, saved back first; saved
+\ b@x.test refreshes its expired token, e@x.test's refresh is rate limited
+\ (an error, not a dead login), f@x.test has no refresh token; saved
+\ d@x.test refreshes after a 401, y@x.test's refresh meets a 503. Each
+\ account's error stays its own: the command succeeds.
 : UT-USAGE ( -- )
    UT-FAKE-CURL
-   P-CLAUDE s" b@x.test" SLOT-DIR$ ENSURE-PRIVATE
-   P-CLAUDE s" b@x.test" s" credentials.json" SLOT-FILE$ CREDS-B$ WRITE-PRIVATE
-   P-CLAUDE s" b@x.test" s" oauth-account.json" SLOT-FILE$ s\" {\"emailAddress\":\"b@x.test\"}" WRITE-PRIVATE
-   P-CLAUDE s" e@x.test" SLOT-DIR$ ENSURE-PRIVATE
-   P-CLAUDE s" e@x.test" s" credentials.json" SLOT-FILE$ CREDS-E$ WRITE-PRIVATE
-   P-CLAUDE s" e@x.test" s" oauth-account.json" SLOT-FILE$ s\" {\"emailAddress\":\"e@x.test\"}" WRITE-PRIVATE
-   P-CLAUDE s" f@x.test" SLOT-DIR$ ENSURE-PRIVATE
-   P-CLAUDE s" f@x.test" s" credentials.json" SLOT-FILE$ CREDS-F$ WRITE-PRIVATE
-   P-CLAUDE s" f@x.test" s" oauth-account.json" SLOT-FILE$ s\" {\"emailAddress\":\"f@x.test\"}" WRITE-PRIVATE
-   P-CODEX s" z@x.test" SLOT-DIR$ ENSURE-PRIVATE
-   P-CODEX s" z@x.test" s" auth.json" SLOT-FILE$ AUTH-Z$ WRITE-PRIVATE
-   P-CODEX s" y@x.test" SLOT-DIR$ ENSURE-PRIVATE
-   P-CODEX s" y@x.test" s" auth.json" SLOT-FILE$ AUTH-Y$ WRITE-PRIVATE
+   P-CLAUDE s" b@x.test" CREDS-B$ UT-PUT
+   P-CLAUDE s" e@x.test" CREDS-E$ UT-PUT
+   P-CLAUDE s" f@x.test" CREDS-F$ UT-PUT
+   P-CODEX s" y@x.test" AUTH-Y$ UT-PUT
+   P-CLAUDE UT-USAGES UT-C0 !
+   P-CODEX UT-USAGES UT-X0 !
    -1 CMD-USAGE
-   P-CLAUDE s" a@x.test" LOAD-USAGE TTRUE
-   LIM#@ 3 T=
-   0 LIM-LABEL$ s" Session (5-hour)" T$=
-   0 LIM-PCT@ 56 T=
-   1 LIM-PCT@ 100 T=
-   1 LIM-RESET$ s" 2026-09-21T11:00:00+00:00" T$=
-   2 LIM-LABEL$ s" Fable Weekly" T$=
-   2 LIM-PCT@ 48 T=
-   2 LIM-RESET$ s" 2026-09-22T13:00:00+00:00" T$=
-   USAGE-AT@ 0 > TTRUE
-   CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
-   P-CLAUDE s" b@x.test" LOAD-USAGE TTRUE
-   LIM#@ 2 T=
-   0 LIM-PCT@ 12 T=
-   1 LIM-PCT@ 1 T=
-   1 LIM-LABEL$ s" Weekly (7-day)" T$=
-   P-CLAUDE s" b@x.test" s" credentials.json" SLOT-FILE$ READ-FILE$ {: c cu :}
+   P-CLAUDE UT-USAGES UT-C0 @ 4 + T=
+   P-CODEX UT-USAGES UT-X0 @ 3 + T=
+   UT-USAGE-CLAUDE
+   UT-USAGE-CODEX
+   UT-USAGE-LOG
+   P-CLAUDE s" e@x.test" CMD-FORGET
+   P-CLAUDE s" f@x.test" CMD-FORGET
+   P-CODEX s" y@x.test" CMD-FORGET ;
+
+: UT-RENEWED-B ( ptr u8 n -- ) {: c cu :}
+   c cu CHECK-OBJECT
    c cu s\" \"accessToken\":\"sk-b-new\"" CONTAINS? TTRUE
    c cu s\" \"refreshToken\":\"r-b-new\"" CONTAINS? TTRUE
    c cu s\" \"expiresAt\":2," CONTAINS? TFALSE
    c cu s\" \"refreshTokenExpiresAt\":1," CONTAINS? TFALSE
-   c cu s\" \"subscriptionType\":\"pro\"" CONTAINS? TTRUE
-   P-CLAUDE s" e@x.test" LOAD-USAGE TTRUE STATE$ s" error" T$=
-   NOTE$ s" Anthropic's token endpoint answered 429" T$=
-   P-CLAUDE s" e@x.test" s" credentials.json" SLOT-FILE$ READ-FILE$ CREDS-E$ T$=
-   P-CLAUDE s" f@x.test" LOAD-USAGE TTRUE STATE$ s" expired" T$=
-   NOTE$ s" access token expired and no refresh token is saved; log in again" T$=
-   P-CODEX s" c@x.test" LOAD-USAGE TTRUE
-   LIM#@ 1 T=
-   0 LIM-LABEL$ s" Weekly (7-day)" T$=
-   0 LIM-PCT@ 100 T=
-   0 LIM-RESET$ s" 2026-09-20T11:37:00Z" T$=
-   CODEX-AUTH$ READ-FILE$ AUTH-C$ T$=
-   P-CODEX s" d@x.test" LOAD-USAGE TTRUE
-   LIM#@ 2 T=
-   0 LIM-LABEL$ s" Session (5-hour)" T$=
-   0 LIM-PCT@ 12 T=
-   1 LIM-PCT@ 40 T=
-   P-CODEX s" d@x.test" s" auth.json" SLOT-FILE$ READ-FILE$ {: d du :}
+   c cu s\" \"refreshTokenExpiresAt\":" CONTAINS? TTRUE
+   c cu s\" \"subscriptionType\":\"pro\"" CONTAINS? TTRUE ;
+
+: UT-RENEWED-D ( ptr u8 n -- ) {: d du :}
+   d du CHECK-OBJECT
    d du s\" \"access_token\":\"at-d2\"" CONTAINS? TTRUE
    d du s\" \"refresh_token\":\"rt-d2\"" CONTAINS? TTRUE
    d du s\" \"account_id\":\"acct\"" CONTAINS? TTRUE
-   d du ID-SLOT CODEX-IDENTITY TTRUE ID-SLOT EMAIL$ s" d@x.test" T$=
-   P-CODEX s" z@x.test" SLOT-DIR$ FS:DIR? TFALSE
-   P-CODEX s" y@x.test" SLOT-DIR$ FS:DIR? TTRUE
-   P-CODEX s" y@x.test" LOAD-USAGE TTRUE STATE$ s" error" T$=
-   P-CODEX s" y@x.test" s" auth.json" SLOT-FILE$ READ-FILE$ AUTH-Y$ T$=
-   P-CODEX s" y@x.test" SLOT-DIR$ FS:REMOVE-TREE
-   LOG$ READ-FILE$ s" argvheader Authorization" CONTAINS? TFALSE
-   LOG$ READ-FILE$ s" hdrmode 600" CONTAINS? TTRUE
-   s" /headers.txt" PSUB-PUBLIC$ FS:FILE? TFALSE
-   P-CLAUDE s" a@x.test" LOAD-USAGE TTRUE STATE$ s" ok" T$=
-   LOG$ READ-FILE$ {: l lu :}
-   l lu s" https://platform.claude.com/v1/oauth/token" CONTAINS? TTRUE
-   STORE$ {: s su :}
-   SB-RESET s" data @" SB-APPEND s su SB-APPEND s" /probe/request.json" SB-APPEND
-   l lu SB$ CONTAINS? TTRUE
-   l lu s" https://auth.openai.com/oauth/token" CONTAINS? TTRUE
-   l lu s" Authorization: Bearer sk-a" CONTAINS? TTRUE
-   l lu s" Authorization: Bearer at-z" CONTAINS? TTRUE
-   l lu s" ua User-Agent: kiba" CONTAINS? TTRUE
-   l lu s" ua User-Agent: codex-cli" CONTAINS? TTRUE
-   s" /body.json" PSUB-PUBLIC$ FS:FILE? TFALSE
-   P-CLAUDE s" b@x.test" SLOT-DIR$ FS:REMOVE-TREE
-   P-CLAUDE s" e@x.test" SLOT-DIR$ FS:REMOVE-TREE
-   P-CLAUDE s" f@x.test" SLOT-DIR$ FS:REMOVE-TREE ;
+   d du s\" \"last_refresh\":\"" CONTAINS? TTRUE
+   d du ID-SLOT CODEX-IDENTITY TTRUE ID-SLOT EMAIL$ s" d@x.test" T$= ;
+
+\ a renewed token is saved back into its row: Claude's members replaced,
+\ Codex's last_refresh added
+: UT-USAGE-REFRESHED ( -- )
+   P-CLAUDE s" b@x.test" [: UT-RENEWED-B ;] UT-ROW-LOGIN
+   P-CODEX s" d@x.test" [: UT-RENEWED-D ;] UT-ROW-LOGIN
+   P-CLAUDE s" b@x.test" CMD-FORGET ;
+
+\ a login revoked by a sign-out keeps its row, marked revoked
+: UT-USAGE-REVOKED ( -- )
+   P-CODEX s" z@x.test" AUTH-Z$ UT-PUT
+   P-CODEX CMD-USAGE
+   P-CODEX s" z@x.test" UT-RECORD s" revoked" UT-STATE=
+   DB-USAGE-NOTE$ s" login revoked by a sign-out at chatgpt.com or in codex; log in again" T$=
+   P-CODEX s" z@x.test" AUTH-Z$ UT-LOGIN=
+   LOG$ READ-FILE$ s" Authorization: Bearer at-z" CONTAINS? TTRUE
+   P-CODEX s" z@x.test" CMD-FORGET ;
 
 \ the fake `claude` logs its argv and writes account B into CLAUDE_CONFIG_DIR
 : UT-FAKE-CLAUDE ( -- )
@@ -722,43 +819,96 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
 : UT-LIVE-EXPIRED ( -- )
    CLAUDE-CREDS$ CREDS-A-OLD$ WRITE-PRIVATE
    P-CLAUDE CMD-USAGE
-   P-CLAUDE s" a@x.test" LOAD-USAGE TTRUE
-   STATE$ s" expired" T$=
-   LIM#@ 0 T=
+   P-CLAUDE s" a@x.test" UT-RECORD s" expired" UT-STATE=
+   DB-USAGE-NOTE$ s" access token expired; Claude Code refreshes it on its next run" T$=
+   DB-LIMIT# 0 T=
    LOG$ READ-FILE$ s" Bearer sk-a-old" CONTAINS? TFALSE
    CLAUDE-CREDS$ READ-FILE$ CREDS-A-OLD$ T$=
+   P-CLAUDE s" a@x.test" CREDS-A-OLD$ UT-LOGIN=
    CLAUDE-CREDS$ CREDS-A$ WRITE-PRIVATE
    P-CLAUDE CMD-USAGE
-   P-CLAUDE s" a@x.test" LOAD-USAGE TTRUE STATE$ s" ok" T$= ;
+   P-CLAUDE s" a@x.test" UT-RECORD s" ok" UT-STATE= ;
 
-\ one provider's unreadable live file does not stop the other's probe
+\ one provider's unreadable live file does not stop the other's probe; the
+\ command fails once both have run
 : UT-USAGE-ISOLATION ( -- )
    CLAUDE-CONFIG$ s" {not json" WRITE-PRIVATE
-   P-CODEX s" c@x.test" USAGE-FILE-PUBLIC$ FS:REMOVE-FILE
-   -1 CMD-USAGE
-   P-CODEX s" c@x.test" LOAD-USAGE TTRUE STATE$ s" ok" T$=
+   P-CODEX UT-USAGES UT-X0 !
+   [: -1 CMD-USAGE ;] E-SW-REPORTED TTHROWSQ
+   P-CODEX UT-USAGES UT-X0 @ 2 + T=
+   P-CODEX s" c@x.test" UT-RECORD s" ok" UT-STATE=
    CLAUDE-CONFIG$ CFG-BA$ WRITE-PRIVATE ;
 
-\ a damaged slot with the live account's name does not block saving the
-\ live login
-: UT-DAMAGED-LIVE-SLOT ( -- )
-   P-CODEX s" c@x.test" s" auth.json" SLOT-FILE$ s" garbage" WRITE-PRIVATE
-   P-CODEX UT-SLOT
-   P-CODEX s" c@x.test" s" auth.json" SLOT-FILE$ READ-FILE$ AUTH-C$ T$= ;
+: UT-PUT-C-GARBAGE ( -- )
+   AUTH-C$ ID-SLOT CODEX-IDENTITY TTRUE
+   [: P-CODEX s" c@x.test" ID-SLOT s" garbage" UT-BUF -1 false DB-PUT ;] DB-WRITE ;
 
-\ a damaged bare slot is not claimed by a login whose organization another
-\ slot already holds: that slot keeps the name, the damaged one stays put
+\ a damaged row with the live account's name does not block saving the
+\ live login over it
+: UT-DAMAGED-LIVE-SLOT ( -- )
+   [: UT-PUT-C-GARBAGE ;] UT-STORE
+   P-CODEX CMD-USAGE
+   P-CODEX s" c@x.test" AUTH-C$ UT-LOGIN=
+   P-CODEX s" c@x.test" UT-RECORD s" ok" UT-STATE= ;
+
+\ a damaged bare row is not claimed by a login whose organization another
+\ row already holds: that row keeps the name, the damaged one stays put
 : UT-DAMAGED-NOT-CLAIMED ( -- )
-   P-CLAUDE s" a@x.test #2" SLOT-DIR$ ENSURE-PRIVATE
-   P-CLAUDE s" a@x.test #2" s" credentials.json" SLOT-FILE$ CREDS-A$ WRITE-PRIVATE
-   P-CLAUDE s" a@x.test #2" s" oauth-account.json" SLOT-FILE$ OAUTH-A$ WRITE-PRIVATE
-   P-CLAUDE s" a@x.test" s" oauth-account.json" SLOT-FILE$ s" garbage" WRITE-PRIVATE
-   P-CLAUDE LIVE-IDENTITY TTRUE
-   P-CLAUDE LIVE-NAME s" a@x.test #2" T$=
-   P-CLAUDE s" a@x.test" s" oauth-account.json" SLOT-FILE$ OAUTH-A$ WRITE-PRIVATE
-   P-CLAUDE s" a@x.test #2" SLOT-DIR$ FS:REMOVE-TREE
-   P-CLAUDE LIVE-IDENTITY TTRUE
-   P-CLAUDE LIVE-NAME s" a@x.test" T$= ;
+   P-CLAUDE s" a@x.test" s" org-z" s" garbage" UT-PUT-ORG
+   P-CLAUDE s" a@x.test #2" s" org-a" CREDS-A$ UT-PUT-ORG
+   P-CLAUDE UT-LIVE-NAME s" a@x.test #2" T$=
+   P-CLAUDE CMD-USAGE
+   P-CLAUDE s" a@x.test" s" garbage" UT-LOGIN=
+   P-CLAUDE s" a@x.test" UT-RECORD s" missing" UT-STATE=
+   DB-USAGE-NOTE$ s" no access token saved; log in again" T$=
+   P-CLAUDE s" a@x.test #2" UT-RECORD s" ok" UT-STATE=
+   P-CLAUDE s" a@x.test #2" UT-LAST-LIVE 1 T=
+   P-CLAUDE s" a@x.test" CMD-FORGET
+   P-CLAUDE s" a@x.test #2" CMD-FORGET
+   P-CLAUDE UT-LIVE-NAME s" a@x.test" T$=
+   P-CLAUDE CMD-SAVE ;
+
+: UT-HOLD ( ptr u8 n -- ) {: c cu :}
+   cu 32 T= c UT-HELD 32 BYTE-COPY ;
+
+\ a pending install stops the probe before anything is probed or refreshed
+: UT-UNREPAIRED ( -- )
+   [: [: P-CLAUDE s" b@x.test" DB-NOTE-PENDING UT-HOLD ;] DB-WRITE ;] UT-STORE
+   P-CLAUDE UT-USAGES UT-C0 !
+   [: P-CLAUDE CMD-USAGE ;] E-SW-REPORTED TTHROWSQ
+   P-CLAUDE UT-USAGES UT-C0 @ T=
+   E-SW-UNREPAIRED REASON$
+   s" kiba: the claude switch to b@x.test did not finish; nothing is probed or refreshed until a switch completes" T$=
+   [: [: P-CLAUDE UT-HELD 32 DB-CLEAR-PENDING ;] DB-WRITE ;] UT-STORE
+   P-CLAUDE UT-PENDING? TFALSE ;
+
+\ when every saved login was probed after the run began, the recorded
+\ outcomes are reported and nothing is probed
+: UT-USAGE-CHECKED ( -- )
+   [: P-CODEX DB-LIST DB-ROW# 2 T= ;] UT-STORE
+   epoch-seconds 100000 + {: later :}
+   P-CODEX s" c@x.test" later UT-SET-AT
+   P-CODEX s" d@x.test" later UT-SET-AT
+   P-CODEX UT-USAGES UT-X0 !
+   LOG$ READ-FILE$ nip {: lu :}
+   P-CODEX CMD-USAGE
+   P-CODEX UT-USAGES UT-X0 @ T=
+   LOG$ READ-FILE$ nip lu T=
+   P-CODEX s" c@x.test" UT-RECORD DB-USAGE-AT later T=
+   P-CODEX s" c@x.test" 1 UT-SET-AT
+   P-CODEX s" d@x.test" 1 UT-SET-AT ;
+
+\ use probes the login it installs as live, then the one it saved back as
+\ saved
+: UT-USE-PROBES ( -- )
+   P-CODEX UT-USAGES UT-X0 !
+   P-CODEX s" d@x.test" CMD-USE
+   P-CODEX UT-USAGES UT-X0 @ 2 + T=
+   P-CODEX s" d@x.test" UT-LAST-LIVE 1 T=
+   P-CODEX s" c@x.test" UT-LAST-LIVE 0 T=
+   P-CODEX s" d@x.test" UT-RECORD s" ok" UT-STATE=
+   P-CODEX s" c@x.test" CMD-USE
+   CODEX-AUTH$ READ-FILE$ AUTH-C$ T$= ;
 
 \ a lock left by a dead process is taken over; a live holder is respected
 : UT-STALE-LOCK ( -- )
@@ -1015,10 +1165,15 @@ create UT-LIST UT-LIST-CAP allot
    UT-ADD-CLAUDE
    UT-PCT
    UT-USAGE
+   UT-USAGE-REFRESHED
+   UT-USAGE-REVOKED
    UT-LIVE-EXPIRED
    UT-USAGE-ISOLATION
    UT-DAMAGED-LIVE-SLOT
    UT-DAMAGED-NOT-CLAIMED
+   UT-UNREPAIRED
+   UT-USAGE-CHECKED
+   UT-USE-PROBES
    UT-STALE-LOCK
    UT-NAMES
    UT-DB

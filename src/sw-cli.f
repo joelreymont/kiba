@@ -10,37 +10,19 @@ require src/lib/fmt.f
 
 package SW
 
-create LNAME-BUF 256 allot    variable LNAME-U
 variable CMD-P
-variable SCAN-RC                     \ 0, or why the provider could not be read
-variable SCAN-LIVE                   \ bool: the provider has a live login
-
-: LNAME$ ( -- ptr u8 n ) LNAME-BUF LNAME-U @ ;
-
-\ ID-LIVE is who the provider is logged in as; LNAME$ the slot it saves to
-: LOAD-LIVE ( n -- bool ) {: p :}
-   0 LNAME-U !
-   p LIVE-IDENTITY dup if p LIVE-NAME LNAME-BUF LNAME-U 256 SPAN! then ;
-
-\ the saved list comes first so a broken live file still leaves it readable
-: SCAN-PROVIDER-RAW ( n -- n ) {: p :}
-   p LIST-ACCOUNTS
-   p LOAD-LIVE SCAN-LIVE !
-   p ;
-
-\ everything that can fail for one provider happens here, before any output
-: SCAN-PROVIDER ( n -- ) {: p :}
-   false SCAN-LIVE !
-   0 ACCT-RESET
-   p [: SCAN-PROVIDER-RAW ;] catch SCAN-RC ! drop
-   SCAN-RC @ 0<> if false SCAN-LIVE ! ID-LIVE NO-IDENTITY 0 LNAME-U ! then ;
-
-: ACTIVE? ( n -- bool ) {: i :}
-   SCAN-LIVE @ 0= if false exit then
-   i ACCT-NAME LNAME$ STR= ;
 
 \ ---- reasons ----------------------------------------------------------------
+\ the switch E-SW-UNREPAIRED names: its provider and the name it installs
+variable UNREPAIRED-P
+create UNREPAIRED-NAME NAME-CAP allot   variable UNREPAIRED-NAME-U
+
 public
+
+: UNREPAIRED-REASON$ ( -- ptr u8 n )
+   SB-RESET s" kiba: the " SB-APPEND UNREPAIRED-P @ PROVIDER$ SB-APPEND
+   s"  switch to " SB-APPEND UNREPAIRED-NAME UNREPAIRED-NAME-U @ SB-APPEND
+   s"  did not finish; nothing is probed or refreshed until a switch completes" SB-APPEND SB$ ;
 
 \ LOCK$ builds through the same string builder, so it goes first
 : LOCKED-REASON$ ( -- ptr u8 n )
@@ -70,6 +52,7 @@ public
    rc E-SW-UNRESTORED = if s" kiba: the live login waits to be put back after an add; a new add does it" exit then
    rc E-SW-SUPERSEDED = if s" kiba: another Claude switch began before this one wrote anything; this one changed nothing" exit then
    rc E-SW-ORPHAN-LIVE = if ORPHAN-REASON$ exit then
+   rc E-SW-UNREPAIRED = if UNREPAIRED-REASON$ exit then
    rc E-SW-MIXED = if s" kiba: the live Claude files name different accounts; switch to an account to repair them" exit then
    rc E-SW-DB = if SB-RESET s" kiba: the account database refused: " SB-APPEND DB-ERROR$ SB-APPEND SB$ exit then
    rc E-SW-DB-VERSION = if s" kiba: the account store is from a newer kiba; upgrade kiba" exit then
@@ -259,60 +242,276 @@ FSM:DEFINE SAVE-BACK-ROW ( n ) back-state back-input
    FINAL stopped BACK-RETHROW
 ;DEFINE
 
+\ ---- probing saved logins ----------------------------------------------------
+\ The saved names whose tokens the CLI is using: the live identity's name
+\ and, while the live Claude files are mixed, the installed name, whose
+\ tokens are still the live credentials. E-SW-UNRESTORED while an add's
+\ record of the live login waits; E-SW-UNREPAIRED while an install is
+\ pending: a failed repair may have left any saved login's tokens live, so
+\ no saved name is known not to be live until a switch completes.
+create LIVE-A NAME-CAP allot   variable LIVE-A-U    \ -1 when none
+create LIVE-B NAME-CAP allot   variable LIVE-B-U    \ -1 when none
+
+: UNREPAIRED ( n ptr u8 n -- ) {: p a u :}
+   p UNREPAIRED-P !
+   a u UNREPAIRED-NAME UNREPAIRED-NAME-U NAME-CAP SPAN!
+   E-SW-UNREPAIRED throw ;
+
+: REQUIRE-REPAIRED ( n -- ) {: p :}
+   p DB-PENDING {: a u pending :}
+   pending if p a u UNREPAIRED then ;
+
+: INSTALLED-LIVE ( n -- )
+   DB-INSTALLED {: a u has :}
+   has if a u LIVE-B LIVE-B-U NAME-CAP SPAN! then ;
+
+: LIVE-NAMES ( n bool -- ) {: p mixed :}
+   -1 LIVE-A-U ! -1 LIVE-B-U !
+   p REQUIRE-RESTORED
+   p LIVE-IDENTITY if p ID-LIVE DB-LIVE-NAME LIVE-A LIVE-A-U NAME-CAP SPAN! then
+   p REQUIRE-REPAIRED
+   mixed if p INSTALLED-LIVE then ;
+
+: LIVE-NAME? ( ptr u8 n -- bool ) {: a u :}
+   LIVE-A-U @ 0 >= if a u LIVE-A LIVE-A-U @ STR= if true exit then then
+   LIVE-B-U @ 0 >= if a u LIVE-B LIVE-B-U @ STR= exit then
+   false ;
+
+: PROBE-KEEP ( n n bool -- n n bool ) {: p r live :}
+   p r DB-ROW-LOGIN$ live PROBE
+   p r live ;
+
+\ row r probed; a probe that throws is the account's error outcome
+: OUTCOME ( n n bool -- ) {: p r live :}
+   p r live [: PROBE-KEEP ;] catch {: rc :} 2drop drop
+   rc 0<> if rc REASON$ PROBE-FAILED then ;
+
+: LOGIN-CHANGED? ( n -- bool ) {: r :}
+   PROBE-RENEWED? 0= if false exit then
+   SDOC$ r DB-ROW-LOGIN$ STR= 0= ;
+
+\ ID-SLOT carries the plan the provider named, when it named one
+: PLAN-OVER ( -- )
+   PROBED-PLAN$ {: a u :}
+   u 0 < if exit then
+   a u ID-SLOT PLAN-ROW ID-SLOT F-PLAN LEN-CELL PLAN-CAP SPAN! ;
+
+\ row r's outcome in one transaction: the usage record and the plan the
+\ provider named, any refreshed login, and the usage event under the plan
+\ committed with it; live is whether the probe read the login as live. A
+\ login the provider revoked keeps its row, listed until it is forgotten.
+: RECORD ( n n bool -- ) {: p r live :}
+   r ID-SLOT ROW-IDENTITY
+   PLAN-OVER
+   DB-NOW-US {: at :}
+   r DB-ROW-NAME$ {: a u :}
+   r LOGIN-CHANGED? {: changed :}
+   [: p a u PROBED-PLAN$ DB-SET-USAGE
+      changed if p a u SDOC$ DB-SET-LOGIN then
+      p a u ID-SLOT live at DB-APPEND-USAGE ;] DB-WRITE ;
+
+\ probes the saved login a u and records the outcome, for an operation that
+\ holds p's turn; E-SW-NO-ACCOUNT when there is no such login
+: PROBE-IN-TURN ( n ptr u8 n bool -- ) {: p a u live :}
+   p a u DB-FETCH 0= if E-SW-NO-ACCOUNT throw then
+   p 0 live OUTCOME
+   p 0 live RECORD ;
+
+create OLD-NAME NAME-CAP allot   variable OLD-NAME-U
+
+\ after the install the new login is probed as live, then the login saved
+\ back as saved: its usage came from a live probe, which never refreshes
 : USE-RUN ( n ptr u8 n -- ) {: p a u :}
    p construct back-state saving SAVE-BACK-ROW
-   p a u INSTALL ;
+   LIVE-ROW$ OLD-NAME OLD-NAME-U NAME-CAP SPAN!
+   p a u INSTALL
+   p a u true PROBE-IN-TURN
+   OLD-NAME OLD-NAME-U @ {: o ou :}
+   ou 0= if exit then
+   o ou a u STR= if exit then
+   p o ou false PROBE-IN-TURN ;
 
-\ usage's folder save-back: the live login goes to its slot so the slot's
-\ tokens are fresh before it is probed
-: SAVE-BACK ( n -- ) {: p :}
-   p LIVE-IDENTITY if p SAVE-LIVE then ;
+\ ---- usage --------------------------------------------------------------------
+\ Every saved login of one provider probed and recorded, inside its turn. A
+\ save-back failure is reported and the probe goes on; a provider whose turn
+\ cannot be taken, whose logins cannot be read, whose install is pending or
+\ whose add's live login waits to go back is not probed at all. The live
+\ login is probed as live, so its tokens are never refreshed; no outcome
+\ removes a login. When every saved login was probed after the second the
+\ run began, another holder's probe answered it while this one waited.
+ENUM usage-step checking saving listing probing reported failed ;ENUM
+ENUM check-input answered stale threw ;ENUM
+ENUM list-input listed threw ;ENUM
+ENUM probe-input recorded unrecorded finished ;ENUM
+ENUM usage-turn entering left ;ENUM
+ENUM turn-input ran refused ;ENUM
 
-: .PROBED ( n n -- ) {: p i :}
-   p PROVIDER$ type s" : " type i ACCT-NAME type s"   " type
-   PROBE-REMOVED? if s" login revoked; removed" type cr exit then
-   p i ACCT-NAME LOAD-USAGE drop
-   LIM#@ 0= if NOTE$ type cr exit then
+variable USAGE-ASKED                \ epoch second the run began
+variable USAGE-MIXED                \ bool: the save-back found the live Claude files mixed
+variable USAGE-ROW                  \ the row being probed
+variable USAGE-RC                   \ what the last failed step threw
+variable USAGE-FAILED               \ bool: a provider reported an error
+create BACK-ERR 1024 allot   variable BACK-ERR-U   \ the save-back error; empty when none
+DYNAMIC-BUFFER FAULTS u8     variable FAULTS-U     \ the provider error; empty when none
+
+: FAULTS$ ( -- ptr u8 n ) 0 FAULTS FAULTS-U @ ;
+
+: FAULTS-RESET ( -- ) 0 FAULTS-U ! 1 FAULTS-RESERVE ;
+
+: FAULT+ ( ptr u8 n -- ) {: a u :}
+   u 0= if exit then
+   FAULTS-U @ u + FAULTS-RESERVE
+   a FAULTS-U @ FAULTS u BYTE-COPY
+   FAULTS-U @ u + FAULTS-U ! ;
+
+: FAULT-NEXT ( -- ) FAULTS-U @ 0 > if s" ; " FAULT+ then ;
+
+\ provider p's account: its name, then its windows, or its note when none
+: .USAGE ( n ptr u8 n -- ) {: p a u :}
+   p PROVIDER$ type s" : " type a u type s"   " type
+   DB-LIMIT# 0= if DB-USAGE-NOTE$ type cr exit then
    .LIMITS cr ;
 
-: SAVE-BACK-KEEP ( n -- n ) {: p :}
-   p SAVE-BACK p ;
+\ every saved row holds a record fetched after the run began
+: ALL-PROBED? ( -- bool )
+   DB-ROW# 0= if false exit then
+   DB-ROW# 0 ?do
+      i DB-ROW-USAGE 0= if false unloop exit then
+      DB-USAGE-AT USAGE-ASKED @ <= if false unloop exit then
+   loop
+   true ;
 
-\ the live login is saved first, under the lock, so its slot is fresh and
-\ so a login saved by this very run is probed by it; a live login that
-\ cannot be read is reported and the saved accounts are still probed
-: USAGE-PREPARE-LOCKED ( -- )
-   CMD-P @ [: SAVE-BACK-KEEP ;] catch {: rc :} drop
-   rc 0<> if
-      CMD-P @ PROVIDER$ ERR-PART s" : live login not saved: " ERR-PART rc REASON$ ERR-NOTE
+\ 1 when the recorded outcomes answer the run; the live names and the list
+\ are read again for them
+: CHECK-RUN ( n -- n ) {: p :}
+   p DB-LIST
+   ALL-PROBED? 0= if 0 exit then
+   p p LIVE-MIXED? LIVE-NAMES
+   p DB-LIST
+   1 ;
+
+: CHECK-SENSE ( n -- check-input )
+   [: CHECK-RUN ;] catch {: rc :}
+   rc 0<> if drop rc USAGE-RC ! construct check-input threw exit then
+   0<> if construct check-input answered exit then
+   construct check-input stale ;
+
+: ROWS-RUN ( n -- n ) {: p :}
+   p USAGE-MIXED @ LIVE-NAMES
+   p DB-LIST
+   0 USAGE-ROW !
+   p ;
+
+: ROWS-SENSE ( n -- list-input )
+   [: ROWS-RUN ;] catch {: rc :} drop
+   rc 0= if construct list-input listed exit then
+   rc USAGE-RC ! construct list-input threw ;
+
+: ROW-RUN ( n -- n ) {: p :}
+   USAGE-ROW @ {: r :}
+   r DB-ROW-NAME$ LIVE-NAME? {: live :}
+   p r live OUTCOME
+   p r live RECORD
+   p ;
+
+: ROW-SENSE ( n -- probe-input )
+   USAGE-ROW @ DB-ROW# >= if drop construct probe-input finished exit then
+   [: ROW-RUN ;] catch {: rc :} drop
+   rc 0= if construct probe-input recorded exit then
+   rc USAGE-RC ! construct probe-input unrecorded ;
+
+: .RECORDED ( n -- ) {: p :}
+   DB-ROW# 0 ?do
+      i DB-ROW-USAGE drop
+      p i DB-ROW-NAME$ .USAGE
+   loop ;
+
+: NOTE-BACK ( n -- ) drop
+   BACK-RC @ REASON$ BACK-ERR BACK-ERR-U 1024 SPAN! ;
+
+: NOTE-MIXED ( n -- )
+   true USAGE-MIXED !
+   E-SW-MIXED BACK-RC !
+   NOTE-BACK ;
+
+: NOTE-FAILURE ( n -- ) drop
+   FAULT-NEXT USAGE-RC @ REASON$ FAULT+ ;
+
+: .ROW ( n -- ) {: p :}
+   p USAGE-ROW @ DB-ROW-NAME$ .USAGE
+   1 USAGE-ROW +! ;
+
+: NOTE-UNRECORDED ( n -- ) drop
+   FAULT-NEXT
+   USAGE-ROW @ DB-ROW-NAME$ FAULT+ s" : usage not recorded: " FAULT+
+   USAGE-RC @ REASON$ FAULT+
+   1 USAGE-ROW +! ;
+
+FSM:DEFINE USAGE-STEPS ( n ) usage-step check-input
+   IN checking CHECK-SENSE
+      answered    .RECORDED        >reported
+      stale       -                >saving
+      threw       NOTE-FAILURE     >failed
+   IN saving BACK-SENSE ( back-input )
+      saved       -                >listing
+      absent      -                >listing
+      mixed       NOTE-MIXED       >listing
+      refused     NOTE-BACK        >listing
+   IN listing ROWS-SENSE ( list-input )
+      listed      -                >probing
+      threw       NOTE-FAILURE     >failed
+   IN probing ROW-SENSE ( probe-input )
+      recorded    .ROW             >probing
+      unrecorded  NOTE-UNRECORDED  >probing
+      finished    -                >reported
+   FINAL reported -
+   FINAL failed -
+;DEFINE
+
+: USAGE-IN-TURN ( n -- n ) {: p :}
+   p [: p construct usage-step checking USAGE-STEPS ;] STORE-TURN
+   p ;
+
+: USAGE-TURN-SENSE ( n -- turn-input )
+   [: USAGE-IN-TURN ;] catch {: rc :} drop
+   rc 0= if construct turn-input ran exit then
+   rc USAGE-RC ! construct turn-input refused ;
+
+FSM:DEFINE USAGE-TURN ( n ) usage-turn turn-input
+   IN entering USAGE-TURN-SENSE
+      ran         -                >left
+      refused     NOTE-FAILURE     >left
+   FINAL left -
+;DEFINE
+
+\ the save-back error goes to stderr, the provider error to stdout
+: .FAULTS ( n -- ) {: p :}
+   BACK-ERR-U @ 0 > if
+      p PROVIDER$ ERR-PART s" : live login not saved: " ERR-PART BACK-ERR BACK-ERR-U @ ERR-NOTE
+      true USAGE-FAILED !
    then
-   CMD-P @ SCAN-PROVIDER ;
+   FAULTS-U @ 0 > if
+      p PROVIDER$ type s" : " type FAULTS$ type cr
+      true USAGE-FAILED !
+   then ;
 
-\ every saved account of one provider, probed without the lock; a provider
-\ that cannot be read is reported and the others still run
 : USAGE-PROVIDER ( n -- ) {: p :}
-   p CMD-P !
-   [: USAGE-PREPARE-LOCKED ;] WITH-LOCK
-   SCAN-RC @ 0<> if p PROVIDER$ type s" : " type SCAN-RC @ REASON$ type cr exit then
-   0 begin dup ACCT# < while
-      {: i :}
-      p i ACCT-NAME i ACTIVE? PROBE-SLOT
-      p i .PROBED
-      i 1+
-   repeat drop ;
-
-: USAGE-RUN ( n -- )
-   dup 0 < if drop 0 begin dup P-COUNT < while dup USAGE-PROVIDER 1+ repeat drop exit then
-   USAGE-PROVIDER ;
+   epoch-seconds USAGE-ASKED !
+   false USAGE-MIXED ! 0 BACK-ERR-U ! FAULTS-RESET
+   p construct usage-turn entering USAGE-TURN
+   p .FAULTS ;
 
 public
 
 : CMD-STATUS ( bool -- ) {: json :}
    [: json STATUS-SHOW ;] WITH-STORE ;
 
-\ p < 0 probes every provider
+\ p < 0 probes every provider; once each has run, E-SW-REPORTED when any
+\ reported an error
 : CMD-USAGE ( n -- )
-   USAGE-RUN ;
+   false USAGE-FAILED !
+   dup 0 < if drop P-COUNT 0 ?do i USAGE-PROVIDER loop else USAGE-PROVIDER then
+   USAGE-FAILED @ if E-SW-REPORTED throw then ;
 
 \ p < 0 saves every provider
 : CMD-SAVE ( n -- )
@@ -391,8 +590,7 @@ variable LOGIN-RC
    [: ADD-SAVE ;] catch {: src :}
    src 0<> if p ADD-END src throw then
    p ADD-END
-   p e eu .ADDED
-   p SAVED-NAME$ false PROBE-SLOT ;
+   p e eu .ADDED ;
 
 : LOGIN-HOME-PUBLIC$ ( n -- ptr u8 n ) LOGIN-HOME$ ;
 
