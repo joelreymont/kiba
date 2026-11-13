@@ -4,6 +4,14 @@ kiba swaps the live Claude Code and Codex CLI logins between saved accounts
 and reports how much of each saved account's allowance is left. The CLI is a
 checked Habu program; a thin Omarchy bar widget runs it.
 
+## Goal
+
+- kiba does on Linux everything kiba-mac does (`~/Work/kiba-mac`, whose
+  `DESIGN.md` is its contract): it has fallen behind and is brought up to
+  par.
+- `PARITY.md` holds the parity design: what exists, what is settled, and
+  what is still the user's to choose.
+
 ## Habu code
 
 - Read [Habu's Forth card](https://github.com/joelreymont/habu/blob/master/docs/forth-card.md)

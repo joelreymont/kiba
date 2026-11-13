@@ -1,0 +1,79 @@
+# Parity with kiba-mac
+
+The goal (AGENTS.md): kiba does on Linux everything kiba-mac does, and
+kiba-mac's `DESIGN.md` is the contract. This file holds what exists, what is
+settled and what is still the user's to choose. It does not restate
+kiba-mac's behaviour; `DESIGN.md` holds that.
+
+## What exists
+
+- **kiba-mac** (`~/Work/kiba-mac`): Swift.
+  - `KibaCore` holds the store, providers, probes and switching; with
+    `KibaCLI` it is about 5,700 lines.
+  - The `kiba` CLI has `status --json`, `usage` and `use`
+    (`Sources/KibaCLI/main.swift:17`). The Claude Code auto-switch mod
+    calls it (`~/Work/Dotfiles/.skills/claude/kiba/hooks/register.ts`).
+  - The menu-bar app holds every other action.
+  - The store is one SQLite file, schema 5 (`Sources/KibaCore/Store.swift:48`).
+  - Platform-bound parts:
+    - the Keychain (`SecretStore.swift`);
+    - Terminal.app for logins (`LoginRunner.swift`);
+    - `O_EXLOCK` and `F_FULLFSYNC` (`PrivateFS.swift`, `Switcher.swift`);
+    - `CryptoKit` and `os`;
+    - `URLSession` (`HTTP.swift`).
+- **kiba** (this repository): a Habu Forth CLI (`src/`, about 2,500 lines)
+  and the Omarchy widget (`plugin/kiba/`).
+  - Commands: `status`, `save`, `usage`, `use`, `add`, `forget` (`src/kiba.f:45-50`).
+  - The store is a folder per account under `$XDG_DATA_HOME/kiba` (`src/sw-paths.f:23-28`).
+  - Its last behaviour change was around 2026-09-21.
+  - Missing against kiba-mac:
+    - the SQLite store and its history;
+    - four of kiba-mac's nine usage states (`Sources/KibaCore/Usage.swift:37-45`);
+    - limit resets;
+    - per-provider turns that hold across network calls (`src/sw-io.f:158`);
+    - model-only limits that leave the account usable (`plugin/kiba/Panel.qml:155`);
+    - the `status --json` shape the mod reads (`src/sw-cli.f:115`);
+    - Log In Again;
+    - queued row actions.
+  - Habu has no SQLite binding.
+- **spark**: Ubuntu 24.04 on aarch64 with GNOME, used over ssh.
+  - The widget cannot run there: it has no Hyprland and no Omarchy shell.
+  - `claude` and `codex` are in `~/.local/bin`.
+  - The auto-switch mod is in `~/Work/Dotfiles/.skills/claude/kiba` and
+    calls a `kiba` that is not installed.
+  - Habu's `bin/hb` is built. There is no Swift toolchain, and SQLite has
+    its runtime library but no headers.
+  - A snapshot of the Mac's store is at `~/.local/share/kiba/kiba.db`.
+
+## Settled
+
+- **Store**: one SQLite file at `$XDG_DATA_HOME/kiba/kiba.db`, in
+  kiba-mac's schema. There is no folder layout and no converter.
+- **CLI**: kiba-mac's contract, whose `status --json` the mod reads. On the
+  spark the CLI is the only front end, so it also carries every account
+  action the app has: `save`, `add` (which also logs a row in again),
+  `forget` and `redeem`.
+- **Logins on Linux**:
+  - Claude keeps its credentials in a file, so there is no Keychain.
+  - `add` runs the provider's login in the calling terminal, as kiba does
+    today.
+- **The copied store**: no token from the Mac is used on the spark.
+  - A saved login refreshed on one machine dies on the other: both CLIs and
+    kiba's probes rotate tokens (README, Save-back).
+  - So before kiba first runs on the spark, the copy keeps its accounts and
+    history but loses its saved logins and its Mac-only install records
+    (`live`, `pending`, `adding`).
+  - Each account is then logged in again on the spark and gets its own
+    tokens.
+  - The Mac's store is untouched.
+- **Not part of parity**: a `usage --json` report, finding the login shell's
+  PATH (a CLI run from a shell already has it), and any history command,
+  daemon or background switcher. The mod already schedules and picks.
+
+## The user's to choose
+
+1. **One implementation or two.** Either make kiba-mac's Swift core and
+   CLI build on Linux and retire the Forth CLI, or port kiba-mac's behaviour
+   into Habu Forth.
+2. **The widget.** It cannot run on the spark. Its parity matters only where
+   Omarchy runs.
