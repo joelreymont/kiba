@@ -10,6 +10,8 @@ require ../src/sw-run.f
 require ../src/sw-db.f
 require src/lib/date.f
 require src/lib/json.f
+require src/lib/byte-buffer.f
+require src/lib/decimal.f
 require src/lib/fsm.f
 
 package SW
@@ -26,7 +28,6 @@ create PSUB-BUF PATH-CAP allot   variable PSUB-U    \ a file inside it
 create HDR-BUF HDR-CAP allot        variable HDR-U     \ one curl -H value
 create ACCT-ID-BUF 128 allot        variable ACCT-ID-U
 create VAL-BUF 4096 allot           variable VAL-U     \ a decoded token
-create KEY-BUF 64 allot
 create RESET-BUF RESET-CAP allot
 variable OUT-FD
 
@@ -264,19 +265,79 @@ variable HTTP-CODE                  \ the last answer's status, -1 when there wa
 
 \ ---- reading answers -------------------------------------------------------------
 \ A document or answer is read field by field only once it is known to be
-\ one JSON object; a field of another kind reads as absent.
-: OBJECT-KEEP ( ptr u8 n -- ptr u8 n ) 2dup CHECK-OBJECT ;
+\ one JSON object in which no object, nested ones included, repeats a key,
+\ as JSONFields reads one; a field of another kind reads as absent.
+TYPED-VARIABLE NEST-STATE JSON:cursor
+
+\ the object whose opening brace is at, inside d du, repeats a key
+: NEST-REPEATS? ( ptr u8 n ptr u8 -- bool )
+   {: d du at :}
+   at d - {: off :}
+   NEST-STATE at du off - JSON:READ-INIT
+   JSON:READ-NEXT drop JSON:READ-VALUE-SPAN$ {: a u :}
+   JSON:READ-CLOSE
+   a u JSON:READ-REPEATS? ;
+
+: TOKEN-REPEATS? ( JSON:reader ptr u8 n -- JSON:reader bool )
+   {: d du :}
+   JSON:READ-TOKEN JSON:T-OBJ <> if false exit then
+   JSON:READ-SPAN$ drop {: at :}
+   d du at NEST-REPEATS? ;
+
+\ whether any object in d du, which is well formed, repeats a key
+: REPEATS? ( ptr u8 n -- bool ) {: d du :}
+   d du OPEN-DOC
+   begin JSON:READ-NEXT JSON:T-END <> while
+      d du TOKEN-REPEATS? if JSON:READ-CLOSE true exit then
+   repeat
+   JSON:READ-CLOSE false ;
+
+: UNIQUE-KEYS ( ptr u8 n -- ) REPEATS? if E-SW-JSON throw then ;
+
+: OBJECT-KEEP ( ptr u8 n -- ptr u8 n )
+   2dup CHECK-OBJECT 2dup UNIQUE-KEYS ;
 
 : OBJECT? ( ptr u8 n -- bool )
    [: OBJECT-KEEP ;] catch {: rc :} 2drop rc 0= ;
 
-\ key's string decoded into dst; -1 when absent, of another kind, or longer
-\ than cap
+: NUMBER-TOKEN? ( n -- bool ) dup JSON:T-INT = swap JSON:T-FLOAT = or ;
+
+\ the number at the reader as JSONFields.int reads it: any spelling of an
+\ integer a cell holds (5, 5.0, 5e0); 0 false for any other value
+: WHOLE ( JSON:reader -- JSON:reader n bool )
+   JSON:READ-TOKEN NUMBER-TOKEN? 0= if 0 false exit then
+   JSON:READ-SPAN$ DECIMAL:EXACT MATCH option
+     none OF 0 false ENDOF
+     some OF true ENDOF
+   ;MATCH ;
+
+: OR-ZERO ( n bool -- n ) 0= if drop 0 then ;
+
+: KEY-WHOLE ( JSON:reader ptr u8 n -- JSON:reader n bool ) {: k ku :}
+   k ku JSON:READ-FIND-KEY 0= if 0 false exit then
+   WHOLE ;
+
+: INT1? ( ptr u8 n ptr u8 n -- n bool ) {: d du k ku :}
+   d du OPEN-DOC ENTER-OBJECT
+   k ku KEY-WHOLE rot JSON:READ-CLOSE ;
+
+\ a string decoded whole, so TEXT-INTO can tell one its buffer cannot hold
+create TEXT-HDR BUF:HDR-BYTES allot
+
+\ the string at the reader decoded into dst; E-SW-CAPACITY when it decodes
+\ to more than cap bytes
+: TEXT-INTO ( JSON:reader ptr u8 n -- JSON:reader n ) {: dst cap :}
+   TEXT-HDR TEXT-CAP BUF:N>BLEN BUF:RESET
+   TEXT-HDR JSON:READ-STR-APPEND
+   TEXT-HDR BUF:SPAN$ BUF:BLEN>N {: a u :}
+   u cap > if E-SW-CAPACITY throw then
+   a dst u BYTE-COPY u ;
+
+\ key's string decoded into dst; -1 when absent or of another kind
 : KEY-TEXT ( JSON:reader ptr u8 n ptr u8 n -- JSON:reader n ) {: k ku dst cap :}
    k ku JSON:READ-FIND-KEY 0= if -1 exit then
    JSON:READ-TOKEN JSON:T-STR <> if -1 exit then
-   JSON:READ-SPAN$ nip cap > if -1 exit then
-   dst cap JSON:READ-STR ;
+   dst cap TEXT-INTO ;
 
 : TEXT1 ( ptr u8 n ptr u8 n ptr u8 n -- n ) {: d du k ku dst cap :}
    d du OPEN-DOC ENTER-OBJECT
@@ -305,9 +366,7 @@ variable HTTP-CODE                  \ the last answer's status, -1 when there wa
 : INT2? ( ptr u8 n ptr u8 n ptr u8 n -- n bool ) {: d du k1 k1u k2 k2u :}
    d du OPEN-DOC ENTER-OBJECT
    k1 k1u KEY-OBJECT 0= if JSON:READ-CLOSE 0 false exit then
-   k2 k2u JSON:READ-FIND-KEY 0= if JSON:READ-CLOSE 0 false exit then
-   JSON:READ-TOKEN JSON:T-INT <> if JSON:READ-CLOSE 0 false exit then
-   JSON:READ-INT swap JSON:READ-CLOSE true ;
+   k2 k2u KEY-WHOLE rot JSON:READ-CLOSE ;
 
 \ the member k2 of the object at k1 is the string w
 : STR2-IS? ( ptr u8 n ptr u8 n ptr u8 n ptr u8 n -- bool ) {: d du k1 k1u k2 k2u w wu :}
@@ -430,12 +489,12 @@ variable LINE-GAP                   \ bool: a separator run waits for the next s
 : CREDS-KEY$ ( -- ptr u8 n ) s" claudeAiOauth" ;
 
 : BUCKET-PCT ( JSON:reader -- JSON:reader n )
-   JSON:READ-TOKEN dup JSON:T-INT = swap JSON:T-FLOAT = or 0= if -1 exit then
+   JSON:READ-TOKEN NUMBER-TOKEN? 0= if -1 exit then
    JSON:READ-SPAN$ USED-PERCENT ;
 
 : BUCKET-RESET ( JSON:reader -- JSON:reader ptr u8 n )
    JSON:READ-TOKEN JSON:T-STR <> if RESET-BUF 0 exit then
-   RESET-BUF RESET-CAP JSON:READ-STR RESET-BUF swap ;
+   RESET-BUF RESET-CAP TEXT-INTO RESET-BUF swap ;
 
 \ one bucket object {utilization, resets_at} at key; whole percent and reset text
 : CLAUDE-BUCKET ( ptr u8 n ptr u8 n -- n ptr u8 n ) {: d du k ku :}
@@ -465,16 +524,18 @@ variable SC-PCT
 : SC-ENTRY-RESET ( -- )
    0 SC-NAME-U ! 0 SC-KIND-U ! 0 SC-RESET-U ! -1 SC-PCT ! ;
 
+\ a string member's value into dst, its length into up; else skipped
+: SC-STR ( JSON:reader ptr u8 ptr n n -- JSON:reader ) {: dst up cap :}
+   JSON:READ-TOKEN JSON:T-STR <> if JSON:READ-SKIP-VALUE exit then
+   dst cap TEXT-INTO up ! ;
+
 \ on the model object's opening brace: its display name
 : SC-MODEL ( JSON:reader -- JSON:reader )
    begin JSON:READ-NEXT JSON:T-OBJ-END <> while
       JSON:READ-TOKEN JSON:T-KEY <> if E-SW-JSON throw then
-      KEY-BUF 64 JSON:READ-STR {: ku :}
+      s" display_name" JSON:READ-STR-EQ? {: named :}
       JSON:READ-NEXT drop
-      KEY-BUF ku s" display_name" STR= {: named :}
-      JSON:READ-TOKEN JSON:T-STR = named and if
-         SC-NAME 64 JSON:READ-STR SC-NAME-U !
-      else JSON:READ-SKIP-VALUE then
+      named if SC-NAME SC-NAME-U 64 SC-STR else JSON:READ-SKIP-VALUE then
    repeat ;
 
 \ on the scope value: an object with a model, or null
@@ -482,18 +543,25 @@ variable SC-PCT
    JSON:READ-TOKEN JSON:T-OBJ <> if JSON:READ-SKIP-VALUE exit then
    begin JSON:READ-NEXT JSON:T-OBJ-END <> while
       JSON:READ-TOKEN JSON:T-KEY <> if E-SW-JSON throw then
-      KEY-BUF 64 JSON:READ-STR {: ku :}
+      s" model" JSON:READ-STR-EQ? {: modelkey :}
       JSON:READ-NEXT drop
-      KEY-BUF ku s" model" STR= {: modelkey :}
       JSON:READ-TOKEN JSON:T-OBJ = modelkey and if SC-MODEL else JSON:READ-SKIP-VALUE then
    repeat ;
 
-: SC-FIELD ( JSON:reader ptr u8 n -- JSON:reader ) {: k ku :}
-   JSON:READ-TOKEN {: t :}
-   k ku s" kind" STR= t JSON:T-STR = and if SC-KIND 32 JSON:READ-STR SC-KIND-U ! exit then
-   k ku s" resets_at" STR= t JSON:T-STR = and if SC-RESET RESET-CAP JSON:READ-STR SC-RESET-U ! exit then
-   k ku s" percent" STR= t JSON:T-INT = t JSON:T-FLOAT = or and if BUCKET-PCT SC-PCT ! exit then
-   k ku s" scope" STR= if SC-SCOPE exit then
+: SC-PERCENT ( JSON:reader -- JSON:reader )
+   BUCKET-PCT SC-PCT ! JSON:READ-SKIP-VALUE ;
+
+\ on a limits entry's key: the member it names, read
+: SC-MEMBER ( JSON:reader -- JSON:reader )
+   s" kind" JSON:READ-STR-EQ? {: kind :}
+   s" resets_at" JSON:READ-STR-EQ? {: reset :}
+   s" percent" JSON:READ-STR-EQ? {: pct :}
+   s" scope" JSON:READ-STR-EQ? {: scope :}
+   JSON:READ-NEXT drop
+   kind if SC-KIND SC-KIND-U 32 SC-STR exit then
+   reset if SC-RESET SC-RESET-U RESET-CAP SC-STR exit then
+   pct if SC-PERCENT exit then
+   scope if SC-SCOPE exit then
    JSON:READ-SKIP-VALUE ;
 
 : SC-WINDOW$ ( -- ptr u8 n )
@@ -515,9 +583,7 @@ variable SC-PCT
    SC-ENTRY-RESET
    begin JSON:READ-NEXT JSON:T-OBJ-END <> while
       JSON:READ-TOKEN JSON:T-KEY <> if E-SW-JSON throw then
-      KEY-BUF 64 JSON:READ-STR {: ku :}
-      JSON:READ-NEXT drop
-      KEY-BUF ku SC-FIELD
+      SC-MEMBER
    repeat
    SC-ENTRY+ ;
 
@@ -561,7 +627,7 @@ variable GRANT-LEFT
    JSON:READ-NEXT drop
    JSON:READ-TOKEN {: t :}
    idk t JSON:T-STR = and if GRANT-NEXT GRANT-NEXT-U @ JSON:READ-STR-EQ? GRANT-IS ! exit then
-   leftk t JSON:T-INT = and if JSON:READ-INT GRANT-LEFT ! true GRANT-HAS-LEFT ! exit then
+   leftk t NUMBER-TOKEN? and if WHOLE GRANT-HAS-LEFT ! GRANT-LEFT ! exit then
    JSON:READ-SKIP-VALUE ;
 
 : GRANT-OBJECT ( JSON:reader -- JSON:reader )
@@ -757,7 +823,7 @@ ENUM profile-input free limited ;ENUM
 \ expiresAt in epoch milliseconds; -1 when absent
 : CLAUDE-EXPIRES ( -- n )
    SDOC$ OBJECT? 0= if -1 exit then
-   SDOC$ CREDS-KEY$ s" expiresAt" DOC-INT2 ;
+   SDOC$ CREDS-KEY$ s" expiresAt" INT2? 0= if drop -1 then ;
 
 \ a token this close to expiring, a minute, counts as expired
 : CLAUDE-FRESH ( n -- fresh-input ) drop
@@ -775,9 +841,10 @@ ENUM profile-input free limited ;ENUM
    s" client_id" CLAUDE-CLIENT-ID$ JSON:WRITE-FIELD-S
    JSON:WRITE-OBJECT-END JSON:WRITTEN$ ;
 
-\ epoch milliseconds secs after the probe began, at claudeAiOauth.k
-: EXPIRY-SET ( n ptr u8 n -- ) {: secs k ku :}
-   secs 0 <= if exit then
+\ epoch milliseconds secs after the probe began, at claudeAiOauth.k, when
+\ the answer gave secs
+: EXPIRY-SET ( n bool ptr u8 n -- ) {: secs given k ku :}
+   given 0= secs 0 <= or if exit then
    CREDS-KEY$ k ku PROBE-AT @ secs + 1000 * NUMBER$ CFG-SET2 ;
 
 \ the answer b's tokens spliced in; its access token is in VAL-BUF
@@ -787,8 +854,8 @@ ENUM profile-input free limited ;ENUM
    b bu s" refresh_token" VAL-BUF 4096 DOC-STR1 dup 0 >= if
       VAL-U ! CREDS-KEY$ s" refreshToken" VAL-BUF VAL-U @ LITERAL$ CFG-SET2
    else drop then
-   b bu s" expires_in" DOC-INT1 s" expiresAt" EXPIRY-SET
-   b bu s" refresh_token_expires_in" DOC-INT1 s" refreshTokenExpiresAt" EXPIRY-SET
+   b bu s" expires_in" INT1? s" expiresAt" EXPIRY-SET
+   b bu s" refresh_token_expires_in" INT1? s" refreshTokenExpiresAt" EXPIRY-SET
    SPLICE-END ;
 
 : CLAUDE-RENEWED ( n -- renew-input )
@@ -931,6 +998,14 @@ FSM:DEFINE CLAUDE-EXCHANGE ( n ) claude-step fresh-input
 : CODEX-CLIENT-ID$ ( -- ptr u8 n ) s" app_EMoamEEZ73f0CkXaXp7hrann" ;
 : TOKENS-KEY$ ( -- ptr u8 n ) s" tokens" ;
 
+\ the integer member f of the window at k, which CODEX-WINDOW found; 0 when
+\ absent or not an integer
+: WINDOW-INT ( ptr u8 n ptr u8 n ptr u8 n -- n ) {: d du k ku f fu :}
+   d du OPEN-DOC ENTER-OBJECT
+   s" rate_limit" KEY-OBJECT drop
+   k ku KEY-OBJECT drop
+   f fu KEY-WHOLE OR-ZERO swap JSON:READ-CLOSE ;
+
 \ the window at key inside rate_limit: used percent, window seconds, reset epoch
 : CODEX-WINDOW ( ptr u8 n ptr u8 n -- n n n ) {: d du k ku :}
    d du OPEN-DOC ENTER-OBJECT
@@ -939,20 +1014,9 @@ FSM:DEFINE CLAUDE-EXCHANGE ( n ) claude-step fresh-input
    s" used_percent" JSON:READ-FIND-KEY 0= if JSON:READ-CLOSE -1 0 0 exit then
    BUCKET-PCT {: h :}
    JSON:READ-CLOSE
-   d du OPEN-DOC ENTER-OBJECT
-   s" rate_limit" KEY-OBJECT drop
-   k ku KEY-OBJECT drop
-   s" limit_window_seconds" JSON:READ-FIND-KEY 0= if JSON:READ-CLOSE h 0 0 exit then
-   JSON:READ-TOKEN JSON:T-INT <> if JSON:READ-CLOSE h 0 0 exit then
-   JSON:READ-INT {: secs :}
-   JSON:READ-CLOSE
-   d du OPEN-DOC ENTER-OBJECT
-   s" rate_limit" KEY-OBJECT drop
-   k ku KEY-OBJECT drop
-   s" reset_at" JSON:READ-FIND-KEY 0= if JSON:READ-CLOSE h secs 0 exit then
-   JSON:READ-TOKEN JSON:T-INT <> if JSON:READ-CLOSE h secs 0 exit then
-   JSON:READ-INT swap JSON:READ-CLOSE
-   h secs rot ;
+   d du k ku s" limit_window_seconds" WINDOW-INT {: secs :}
+   d du k ku s" reset_at" WINDOW-INT {: at :}
+   h secs at ;
 
 \ the longest window, six hours, still called a session
 : WINDOW-LABEL$ ( n -- ptr u8 n )
