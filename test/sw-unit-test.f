@@ -920,7 +920,7 @@ create UT-AT-BUF 1024 allot
 \ a plan longer than PLAN-CAP is the probe's error, never a missing plan
 : UT-ANSWER-LONG ( -- )
    P-CODEX s" long@x.test" UT-RECORD s" error" UT-STATE=
-   DB-USAGE-NOTE$ E-SW-CAPACITY REASON$ T$=
+   DB-USAGE-NOTE$ s" too many: bytes in a JSON string (limit 64)" T$=
    DB-LIMIT# 0 T= ;
 
 \ provider answers read as kiba-mac's JSONFields reads them

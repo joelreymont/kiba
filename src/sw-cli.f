@@ -73,8 +73,8 @@ public
 
 private
 
-\ rc's reason without its "kiba: " prefix, for a line that already starts
-\ with its provider
+\ rc's reason without its "kiba: " prefix: for a line that already starts
+\ with its provider, and for an account's note, as kiba-mac records it
 : BARE-REASON$ ( n -- ptr u8 n )
    REASON$ {: a u :}
    s" kiba: " {: k ku :}
@@ -295,7 +295,7 @@ create LIVE-B NAME-CAP allot   variable LIVE-B-U    \ -1 when none
 \ row r probed; a probe that throws is the account's error outcome
 : OUTCOME ( n n bool -- ) {: p r live :}
    p r live [: PROBE-KEEP ;] catch {: rc :} 2drop drop
-   rc 0<> if rc REASON$ PROBE-FAILED then ;
+   rc 0<> if rc BARE-REASON$ PROBE-FAILED then ;
 
 : LOGIN-CHANGED? ( n -- bool ) {: r :}
    PROBE-RENEWED? 0= if false exit then
