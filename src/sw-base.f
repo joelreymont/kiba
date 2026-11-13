@@ -50,11 +50,6 @@ $3D constant EQUALS
      E-SW-PROVIDER throw
    endcase ;
 
-: PROVIDER# ( ptr u8 n -- n ) {: a u :}
-   a u s" claude" STR= if P-CLAUDE exit then
-   a u s" codex" STR= if P-CODEX exit then
-   E-SW-PROVIDER throw ;
-
 : ERR-TYPE ( ptr u8 n -- ) {: a u :}
    2 a u write u <> if E-FS-IO throw then ;
 

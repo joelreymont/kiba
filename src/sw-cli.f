@@ -73,7 +73,8 @@ public
 private
 
 \ rc's reason without its "kiba: " prefix: for a line that already starts
-\ with its provider, and for an account's note, as kiba-mac records it
+\ with its provider, and for an account's note and a provider's status
+\ error, as kiba-mac records them
 : BARE-REASON$ ( n -- ptr u8 n )
    REASON$ {: a u :}
    s" kiba: " {: k ku :}
@@ -153,7 +154,7 @@ private
 
 : SNAP-ERROR ( -- )
    STATUS-ERROR 0= if exit then
-   ENC-COMMA s" error" ENC-KEY STATUS-ERROR REASON$ ENC-STR ;
+   ENC-COMMA s" error" ENC-KEY STATUS-ERROR BARE-REASON$ ENC-STR ;
 
 : SNAP-AT ( -- )
    STATUS-AT 0= if drop exit then
@@ -531,7 +532,6 @@ public
 
 \ saves the live login back, then makes the saved login live
 : CMD-USE ( n ptr u8 n -- ) {: p a u :}
-   a u CHECK-NAME
    p [: p a u USE-RUN ;] STORE-TURN
    p PROVIDER$ type s" : now " type a u type cr ;
 
@@ -651,13 +651,11 @@ create LINE-BUF 256 allot
 
 \ spends one limit reset of the saved login a u
 : CMD-REDEEM ( n ptr u8 n -- ) {: p a u :}
-   a u CHECK-NAME
    a u REDEEM-NAME REDEEM-NAME-U NAME-CAP SPAN!
    p [: p a u REDEEM-RUN ;] STORE-TURN
    p PROVIDER$ type s" : " type a u REDEEMED$ type cr ;
 
 : CMD-FORGET ( n ptr u8 n -- ) {: p a u :}
-   a u CHECK-NAME
    p [: p a u FORGET-ROW ;] STORE-TURN
    p PROVIDER$ type s" : forgot " type a u type cr ;
 

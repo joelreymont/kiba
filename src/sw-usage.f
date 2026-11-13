@@ -197,7 +197,7 @@ variable HTTP-CODE                  \ the last answer's status, -1 when there wa
    s" curl" RESOLVE
    PROC-ARGV-RESET
    0 HDR-U !
-   s" -sS" ARG+
+   s" -s" ARG+
    s" -m" ARG+
    SB-RESET HTTP-TIMEOUT-SEC FMT:SB-U SB$ ARG+
    s" -o" ARG+ p BODY$ ARG+

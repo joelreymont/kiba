@@ -19,6 +19,19 @@ package SW
 : ARG-COUNT ( n -- )
    SCRIPT-ARGC <> if E-SW-USAGE throw then ;
 
+\ the provider argument n; kiba-mac's command line refuses any other
+: PROVIDER# ( n -- n )
+   ARG$ {: a u :}
+   a u s" claude" STR= if P-CLAUDE exit then
+   a u s" codex" STR= if P-CODEX exit then
+   E-SW-USAGE throw ;
+
+\ the account name argument n, refused as kiba-mac refuses a bad SlotName
+: NAME-ARG$ ( n -- ptr u8 n )
+   ARG$ {: a u :}
+   a u NAME-OK? 0= if E-SW-USAGE throw then
+   a u ;
+
 : DISPATCH-STATUS ( -- )
    SCRIPT-ARGC 1 = if false CMD-STATUS exit then
    2 ARG-COUNT
@@ -28,17 +41,17 @@ package SW
 : DISPATCH-SAVE ( -- )
    SCRIPT-ARGC 1 = if -1 CMD-SAVE exit then
    2 ARG-COUNT
-   1 ARG$ PROVIDER# CMD-SAVE ;
+   1 PROVIDER# CMD-SAVE ;
 
 : DISPATCH-USAGE ( -- )
    SCRIPT-ARGC 1 = if -1 CMD-USAGE exit then
    2 ARG-COUNT
-   1 ARG$ PROVIDER# CMD-USAGE ;
+   1 PROVIDER# CMD-USAGE ;
 
 : DISPATCH-ADD ( -- )
-   SCRIPT-ARGC 2 = if 1 ARG$ PROVIDER# s" " CMD-ADD exit then
+   SCRIPT-ARGC 2 = if 1 PROVIDER# s" " CMD-ADD exit then
    3 ARG-COUNT
-   1 ARG$ PROVIDER# 2 ARG$ CMD-ADD ;
+   1 PROVIDER# 2 NAME-ARG$ CMD-ADD ;
 
 : DISPATCH ( -- )
    SCRIPT-ARGC 0= if E-SW-USAGE throw then
@@ -46,10 +59,10 @@ package SW
    c cu s" status" STR= if DISPATCH-STATUS exit then
    c cu s" save" STR= if DISPATCH-SAVE exit then
    c cu s" usage" STR= if DISPATCH-USAGE exit then
-   c cu s" use" STR= if 3 ARG-COUNT 1 ARG$ PROVIDER# 2 ARG$ CMD-USE exit then
+   c cu s" use" STR= if 3 ARG-COUNT 1 PROVIDER# 2 NAME-ARG$ CMD-USE exit then
    c cu s" add" STR= if DISPATCH-ADD exit then
-   c cu s" forget" STR= if 3 ARG-COUNT 1 ARG$ PROVIDER# 2 ARG$ CMD-FORGET exit then
-   c cu s" redeem" STR= if 3 ARG-COUNT 1 ARG$ PROVIDER# 2 ARG$ CMD-REDEEM exit then
+   c cu s" forget" STR= if 3 ARG-COUNT 1 PROVIDER# 2 NAME-ARG$ CMD-FORGET exit then
+   c cu s" redeem" STR= if 3 ARG-COUNT 1 PROVIDER# 2 NAME-ARG$ CMD-REDEEM exit then
    E-SW-USAGE throw ;
 
 : RUN ( -- )
