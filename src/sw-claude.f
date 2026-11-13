@@ -43,7 +43,7 @@ package SW
    d du s" claudeAiOauth" DOC-OBJ-SPAN? 0= if E-SW-JSON throw then 2drop ;
 
 : CHECK-SLOT-EMAIL ( ptr u8 n -- ) {: a u :}
-   OBJ$ ID-SLOT CLAUDE-OAUTH-IDENTITY 0= if E-SW-JSON throw then
+   OBJ$ ID-SLOT CLAUDE-OAUTH-IDENTITY
    a u ID-SLOT EMAIL$ NAME-FOR-EMAIL? 0= if E-SW-MISMATCH throw then ;
 
 public
@@ -70,12 +70,13 @@ private
    CFG-U @ 0 < if E-SW-ORPHAN-LIVE throw then
    true ;
 
-\ ID-LIVE from the config's oauthAccount object plus the credentials' plan;
-\ answers the object's offset and length in CFG
+\ ID-LIVE from the config's oauthAccount object plus the credentials' plan,
+\ as ClaudeLive.decode reads them; answers the object's offset and length
+\ in CFG
 : CLAUDE-DECODE ( -- n n )
+   CFG$ CHECK-OBJECT
    CFG$ OAUTH-KEY$ DOC-OBJ-SPAN {: off len :}
-   CFG-BUF off + len ID-LIVE CLAUDE-OAUTH-IDENTITY 0= if E-SW-JSON throw then
-   ID-LIVE EMAIL$ nip 0= if E-SW-JSON throw then
+   CFG-BUF off + len ID-LIVE CLAUDE-OAUTH-IDENTITY
    FILE$ ID-LIVE CLAUDE-PLAN
    off len ;
 

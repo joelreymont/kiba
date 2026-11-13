@@ -122,6 +122,30 @@ create UT-BUF 256 allot
    ID-LIVE ORG$ s" org-a" T$=
    ID-LIVE PLAN$ nip 0 T= ;
 
+\ claims whose seats object, two objects down, repeats a key
+: CLAIMS-R$ ( -- ptr u8 n )
+   s\" {\"email\":\"r@x.test\",\"https://api.openai.com/auth\":{\"chatgpt_plan_type\":\"plus\",\"seats\":{\"n\":1,\"n\":2}}}" ;
+
+: AUTH-R$ ( -- ptr u8 n )
+   s\" {\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InJAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicGx1cyIsInNlYXRzIjp7Im4iOjEsIm4iOjJ9fX0.c2ln\"}}" ;
+
+\ claims that repeat a key deeper than JSONDoc looks are no login, as
+\ fromAuth's JSONFields refuses them
+: UT-CLAIMS-REPEAT ( -- )
+   AUTH-R$ CHECK-OBJECT
+   CLAIMS-R$ CHECK-OBJECT
+   [: AUTH-R$ ID-SLOT CODEX-IDENTITY drop ;] E-SW-JSON TTHROWSQ ;
+
+\ an identity field longer than its buffer is an error, never a missing field
+: UT-FIELD-LONG ( -- )
+   [: CFG-A$ s\" {\"claudeAiOauth\":{\"subscriptionType\":\"ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\"}}" ID-SLOT CLAUDE-IDENTITY drop ;]
+   E-SW-CAPACITY TTHROWSQ ;
+
+\ an integer spelled as a whole decimal reads as that integer
+: UT-WHOLE-EXPIRY ( -- )
+   s\" {\"claudeAiOauth\":{\"expiresAt\":4102444800000.0}}" s" claudeAiOauth" s" expiresAt" DOC-INT2
+   TTRUE 4102444800000 T= ;
+
 \ a throw inside a parse must not wedge the reader storage for the next parse
 : UT-READER-RECOVERS ( -- )
    [: s\" {\"a\":" s" a" UT-BUF 256 DOC-STR1 drop ;] E-JSON-READ-EOF TTHROWSQ
@@ -647,7 +671,7 @@ create UT-ERR-PATH 256 allot   variable UT-ERR-U
    SB-RESET s\" {\"emailAddress\":\"" SB-APPEND a u SB-APPEND [char] " SB-APPEND-C
    ou 0 > if s\" ,\"organizationUuid\":\"" SB-APPEND o ou SB-APPEND [char] " SB-APPEND-C then
    [char] } SB-APPEND-C
-   SB$ ID-SLOT CLAUDE-OAUTH-IDENTITY TTRUE ;
+   SB$ ID-SLOT CLAUDE-OAUTH-IDENTITY ;
 
 : UT-PUT-RAW ( n ptr u8 n ptr u8 n -- ) {: p a u l lu :}
    [: p a u ID-SLOT l lu UT-BUF -1 false DB-PUT ;] DB-WRITE ;
@@ -1511,6 +1535,9 @@ create UT-LIST UT-LIST-CAP allot
    UT-PLAN-UNREADABLE
    UT-STRINGS
    UT-READER-RECOVERS
+   UT-CLAIMS-REPEAT
+   UT-FIELD-LONG
+   UT-WHOLE-EXPIRY
    UT-DOC-CLOSE
    UT-STORE-SAVE
    UT-STORE-USE

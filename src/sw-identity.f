@@ -48,41 +48,48 @@ public
 : NO-IDENTITY ( n -- ) {: id :}
    F-COUNT 0 ?do 0 id i LEN! loop ;
 
-\ ---- Claude Code ------------------------------------------------------------
+\ ---- reading a login ---------------------------------------------------------
+\ Identity.swift builds JSONFields with try where a login must be read, so a
+\ document CHECK-FIELDS refuses throws; with try? where it may be unreadable.
 private
 
-: PLAN-KEEP ( ptr u8 n n -- ptr u8 n n ) {: cr cru id :}
+\ the document is one JSONFields reads
+: FIELDS? ( ptr u8 n -- bool )
+   [: 2dup CHECK-FIELDS ;] catch {: rc :} 2drop rc 0= ;
+
+\ ---- Claude Code ------------------------------------------------------------
+\ planFromCreds: credentials JSONFields cannot read name no plan; false then
+: PLAN-READ? ( ptr u8 n n -- bool ) {: cr cru id :}
+   cr cru FIELDS? 0= if false exit then
    cr cru s" claudeAiOauth" s" subscriptionType" id PLAN-ROW PLAN-CAP DOC-STR2
    id F-PLAN LEN!
-   cr cru id ;
-
-: PLAN-READ? ( ptr u8 n n -- bool )
-   [: PLAN-KEEP ;] catch {: rc :} 2drop drop rc 0= ;
+   true ;
 
 public
 
-\ the credentials' plan; empty when they are not one JSON object, lack the
-\ string, or hold one too long, since the account comes from the config alone
+\ the credentials' plan; empty when they are not a document JSONFields reads
+\ or lack the string, since the account comes from the config alone; a plan
+\ longer than PLAN-CAP is E-SW-CAPACITY
 : CLAUDE-PLAN ( ptr u8 n n -- ) {: cr cru id :}
    cr cru id PLAN-READ? 0= if 0 id F-PLAN LEN! then ;
 
-\ the organization tells two logins under one email apart
-: CLAUDE-ORG ( ptr u8 n n -- ) {: cfg cu id :}
-   cfg cu s" oauthAccount" s" organizationUuid" id ORG-ROW ORG-CAP DOC-STR2 id F-ORG LEN! ;
-
-\ the oauthAccount object on its own, as saved in a slot
-: CLAUDE-OAUTH-IDENTITY ( ptr u8 n n -- bool ) {: d du id :}
+\ fromOAuthAccount: the oauthAccount object on its own, as saved in a slot;
+\ E-SW-JSON unless JSONFields reads it and it names an email
+: CLAUDE-OAUTH-IDENTITY ( ptr u8 n n -- ) {: d du id :}
    id NO-IDENTITY
-   d du s" emailAddress" id EMAIL-ROW EMAIL-CAP DOC-STR1 dup 0 < if drop false exit then id F-EMAIL LEN!
-   d du s" organizationUuid" id ORG-ROW ORG-CAP DOC-STR1 id F-ORG LEN!
-   true ;
+   d du CHECK-FIELDS
+   d du s" emailAddress" id EMAIL-ROW EMAIL-CAP DOC-STR1
+   dup 0 <= if E-SW-JSON throw then id F-EMAIL LEN!
+   d du s" organizationUuid" id ORG-ROW ORG-CAP DOC-STR1 id F-ORG LEN! ;
 
-\ config document (.claude.json) plus credentials document
+\ config document (.claude.json) plus credentials document; the config is
+\ checked as profile's JSONDoc checks it, and false when it holds no
+\ oauthAccount object
 : CLAUDE-IDENTITY ( ptr u8 n ptr u8 n n -- bool ) {: cfg cu cr cru id :}
    id NO-IDENTITY
-   cfg cu s" oauthAccount" s" emailAddress" id EMAIL-ROW EMAIL-CAP DOC-STR2
-   dup 0 < if drop false exit then id F-EMAIL LEN!
-   cfg cu id CLAUDE-ORG
+   cfg cu CHECK-OBJECT
+   cfg cu s" oauthAccount" DOC-OBJ-SPAN? 0= if 2drop false exit then {: off len :}
+   cfg off + len id CLAUDE-OAUTH-IDENTITY
    cr cru id CLAUDE-PLAN
    true ;
 
@@ -99,7 +106,9 @@ public
    ;MATCH {: d2 :}
    r d2 ;
 
+\ isAPIKey: OPENAI_API_KEY is a non-empty string in a document JSONFields reads
 : CODEX-API-KEY? ( ptr u8 n -- bool ) {: d du :}
+   d du FIELDS? 0= if false exit then
    d du s" OPENAI_API_KEY" TOK-BUF BUF-CAP DOC-STR1 0 > ;
 
 \ an API-key login has no claims; it is saved under a fixed slot name
@@ -109,14 +118,18 @@ public
    s" apikey" id PLAN-ROW id F-PLAN LEN-CELL PLAN-CAP SPAN!
    true ;
 
-\ auth.json document: identity comes from the id_token claims
+\ fromAuth: the auth.json document, its identity from the id_token claims;
+\ E-SW-JSON unless JSONFields reads the document and the claims and they
+\ name an email
 : CODEX-IDENTITY ( ptr u8 n n -- bool ) {: d du id :}
    id NO-IDENTITY
+   d du CHECK-FIELDS
    d du s" tokens" s" id_token" TOK-BUF BUF-CAP DOC-STR2
    dup 0 < if drop d du id CODEX-API-IDENTITY exit then {: tu :}
    TOK-BUF tu JWT-PAYLOAD OBJ-BUF BUF-CAP B64URL-DECODE OBJ-U !
+   OBJ$ CHECK-FIELDS
    OBJ$ s" email" id EMAIL-ROW EMAIL-CAP DOC-STR1
-   dup 0 < if drop false exit then id F-EMAIL LEN!
+   dup 0 <= if E-SW-JSON throw then id F-EMAIL LEN!
    OBJ$ s" https://api.openai.com/auth" s" chatgpt_plan_type" id PLAN-ROW PLAN-CAP DOC-STR2 id F-PLAN LEN!
    OBJ$ s" https://api.openai.com/auth" s" chatgpt_account_id" id ORG-ROW ORG-CAP DOC-STR2 id F-ORG LEN!
    true ;

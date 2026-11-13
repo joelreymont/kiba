@@ -21,7 +21,6 @@ package SW
 $0A constant LF
 64 constant RESET-CAP               \ a window's reset instant, as the record holds it
 4096 constant HDR-CAP
-4096 constant TEXT-CAP              \ a server-supplied string kiba reads
 120 constant DETAIL-MAX             \ the longest server-supplied text a note carries
 20 constant HTTP-TIMEOUT-SEC
 
@@ -275,88 +274,11 @@ variable HTTP-CODE                  \ the last answer's status, -1 when there wa
 \ A document or answer is read field by field only once it is known to be
 \ one JSON object in which no object, nested ones included, repeats a key,
 \ as JSONFields reads one; a field of another kind reads as absent.
-TYPED-VARIABLE NEST-STATE JSON:cursor
-
-\ the object whose opening brace is at, inside d du, repeats a key
-: NEST-REPEATS? ( ptr u8 n ptr u8 -- bool )
-   {: d du at :}
-   at d - {: off :}
-   NEST-STATE at du off - JSON:READ-INIT
-   JSON:READ-NEXT drop JSON:READ-VALUE-SPAN$ {: a u :}
-   JSON:READ-CLOSE
-   a u JSON:READ-REPEATS? ;
-
-: TOKEN-REPEATS? ( JSON:reader ptr u8 n -- JSON:reader bool )
-   {: d du :}
-   JSON:READ-TOKEN JSON:T-OBJ <> if false exit then
-   JSON:READ-SPAN$ drop {: at :}
-   d du at NEST-REPEATS? ;
-
-\ whether any object in d du, which is well formed, repeats a key
-: REPEATS? ( ptr u8 n -- bool ) {: d du :}
-   d du OPEN-DOC
-   begin JSON:READ-NEXT JSON:T-END <> while
-      d du TOKEN-REPEATS? if JSON:READ-CLOSE true exit then
-   repeat
-   JSON:READ-CLOSE false ;
-
-: UNIQUE-KEYS ( ptr u8 n -- ) REPEATS? if E-SW-JSON throw then ;
-
 : OBJECT-KEEP ( ptr u8 n -- ptr u8 n )
-   2dup CHECK-OBJECT 2dup UNIQUE-KEYS ;
+   2dup CHECK-FIELDS ;
 
 : OBJECT? ( ptr u8 n -- bool )
    [: OBJECT-KEEP ;] catch {: rc :} 2drop rc 0= ;
-
-: NUMBER-TOKEN? ( n -- bool ) dup JSON:T-INT = swap JSON:T-FLOAT = or ;
-
-\ the number at the reader as JSONFields.int reads it: any spelling of an
-\ integer a cell holds (5, 5.0, 5e0); 0 false for any other value
-: WHOLE ( JSON:reader -- JSON:reader n bool )
-   JSON:READ-TOKEN NUMBER-TOKEN? 0= if 0 false exit then
-   JSON:READ-SPAN$ DECIMAL:EXACT MATCH option
-     none OF 0 false ENDOF
-     some OF true ENDOF
-   ;MATCH ;
-
-: OR-ZERO ( n bool -- n ) 0= if drop 0 then ;
-
-: KEY-WHOLE ( JSON:reader ptr u8 n -- JSON:reader n bool ) {: k ku :}
-   k ku JSON:READ-FIND-KEY 0= if 0 false exit then
-   WHOLE ;
-
-: INT1? ( ptr u8 n ptr u8 n -- n bool ) {: d du k ku :}
-   d du OPEN-DOC ENTER-OBJECT
-   k ku KEY-WHOLE rot JSON:READ-CLOSE ;
-
-\ a string decoded whole, so TEXT-INTO can tell one its buffer cannot hold
-create TEXT-HDR BUF:HDR-BYTES allot
-
-\ the string at the reader decoded into dst; E-SW-CAPACITY when it decodes
-\ to more than cap bytes
-: TEXT-INTO ( JSON:reader ptr u8 n -- JSON:reader n ) {: dst cap :}
-   TEXT-HDR TEXT-CAP BUF:N>BLEN BUF:RESET
-   TEXT-HDR JSON:READ-STR-APPEND
-   TEXT-HDR BUF:SPAN$ BUF:BLEN>N {: a u :}
-   u cap > if s" bytes in a JSON string" cap LIMIT$ TOO-MANY then
-   a dst u BYTE-COPY u ;
-
-\ key's string decoded into dst; -1 when absent or of another kind
-: KEY-TEXT ( JSON:reader ptr u8 n ptr u8 n -- JSON:reader n ) {: k ku dst cap :}
-   k ku JSON:READ-FIND-KEY 0= if -1 exit then
-   JSON:READ-TOKEN JSON:T-STR <> if -1 exit then
-   dst cap TEXT-INTO ;
-
-: TEXT1 ( ptr u8 n ptr u8 n ptr u8 n -- n ) {: d du k ku dst cap :}
-   d du OPEN-DOC ENTER-OBJECT
-   k ku dst cap KEY-TEXT
-   swap JSON:READ-CLOSE ;
-
-: TEXT2 ( ptr u8 n ptr u8 n ptr u8 n ptr u8 n -- n ) {: d du k1 k1u k2 k2u dst cap :}
-   d du OPEN-DOC ENTER-OBJECT
-   k1 k1u KEY-OBJECT 0= if JSON:READ-CLOSE -1 exit then
-   k2 k2u dst cap KEY-TEXT
-   swap JSON:READ-CLOSE ;
 
 : KEY-OBJ? ( ptr u8 n ptr u8 n -- bool ) {: d du k ku :}
    d du OPEN-DOC ENTER-OBJECT
@@ -370,11 +292,6 @@ create TEXT-HDR BUF:HDR-BYTES allot
    JSON:READ-TOKEN swap JSON:READ-CLOSE ;
 
 : TRUE2? ( ptr u8 n ptr u8 n ptr u8 n -- bool ) KIND2 JSON:T-TRUE = ;
-
-: INT2? ( ptr u8 n ptr u8 n ptr u8 n -- n bool ) {: d du k1 k1u k2 k2u :}
-   d du OPEN-DOC ENTER-OBJECT
-   k1 k1u KEY-OBJECT 0= if JSON:READ-CLOSE 0 false exit then
-   k2 k2u KEY-WHOLE rot JSON:READ-CLOSE ;
 
 \ the member k2 of the object at k1 is the string w
 : STR2-IS? ( ptr u8 n ptr u8 n ptr u8 n ptr u8 n -- bool ) {: d du k1 k1u k2 k2u w wu :}
@@ -660,7 +577,7 @@ variable GRANT-LEFT
 
 : BANKED? ( ptr u8 n -- bool ) {: d du :}
    d du s" cedar_ember" s" eligible" TRUE2? 0= if false exit then
-   d du s" cedar_ember" s" next_grant_id" GRANT-NEXT REC-WORD-CAP TEXT2
+   d du s" cedar_ember" s" next_grant_id" GRANT-NEXT REC-WORD-CAP DOC-STR2
    dup 0 < if drop false exit then
    GRANT-NEXT-U !
    d du GRANTS-SCAN
@@ -683,15 +600,15 @@ create REF-URI TEXT-CAP allot    variable REF-URI-U    \ -1 when the answer name
 : REF-DESC$ ( -- ptr u8 n ) REF-DESC REF-DESC-U @ ;
 
 : REF-CODE-READ ( ptr u8 n -- ) {: b bu :}
-   b bu s" error" REF-CODE TEXT-CAP TEXT1 dup 0 >= if REF-CODE-U ! exit then
-   drop b bu s" error" s" type" REF-CODE TEXT-CAP TEXT2 0 max REF-CODE-U ! ;
+   b bu s" error" REF-CODE TEXT-CAP DOC-STR1 dup 0 >= if REF-CODE-U ! exit then
+   drop b bu s" error" s" type" REF-CODE TEXT-CAP DOC-STR2 0 max REF-CODE-U ! ;
 
 : REFUSAL-READ ( ptr u8 n -- ) {: b bu :}
    0 REF-CODE-U ! 0 REF-DESC-U ! -1 REF-URI-U !
    b bu OBJECT? 0= if exit then
    b bu REF-CODE-READ
-   b bu s" error_description" REF-DESC TEXT-CAP TEXT1 0 max REF-DESC-U !
-   b bu s" error_uri" REF-URI TEXT-CAP TEXT1 REF-URI-U ! ;
+   b bu s" error_description" REF-DESC TEXT-CAP DOC-STR1 0 max REF-DESC-U !
+   b bu s" error_uri" REF-URI TEXT-CAP DOC-STR1 REF-URI-U ! ;
 
 \ Anthropic's on-hold refusal, as Claude Code 2.1.285 reads it
 : ON-HOLD? ( n -- bool ) {: code :}
@@ -794,7 +711,7 @@ create MSG-BUF DETAIL-MAX 4 * allot   variable MSG-U
 : MESSAGE! ( ptr u8 n -- ) {: b bu :}
    0 MSG-U !
    b bu OBJECT? 0= if exit then
-   b bu s" error" s" message" DETAIL-RAW TEXT-CAP TEXT2 {: mu :}
+   b bu s" error" s" message" DETAIL-RAW TEXT-CAP DOC-STR2 {: mu :}
    mu 0 <= if exit then
    DETAIL-RAW mu ONE-LINE MSG-BUF MSG-U DETAIL-MAX 4 * SPAN! ;
 
@@ -808,7 +725,7 @@ create MSG-BUF DETAIL-MAX 4 * allot   variable MSG-U
 : FREE-PLAN? ( ptr u8 n -- bool ) {: b bu :}
    b bu OBJECT? 0= if false exit then
    b bu s" organization" KEY-OBJ? 0= if false exit then
-   b bu s" organization" s" organization_type" DETAIL-RAW TEXT-CAP TEXT2 0 max
+   b bu s" organization" s" organization_type" DETAIL-RAW TEXT-CAP DOC-STR2 0 max
    DETAIL-RAW swap PAID? 0= ;
 
 \ ---- Anthropic's exchange ------------------------------------------------------------
@@ -831,7 +748,7 @@ ENUM profile-input free limited ;ENUM
 \ expiresAt in epoch milliseconds; -1 when absent
 : CLAUDE-EXPIRES ( -- n )
    SDOC$ OBJECT? 0= if -1 exit then
-   SDOC$ CREDS-KEY$ s" expiresAt" INT2? 0= if drop -1 then ;
+   SDOC$ CREDS-KEY$ s" expiresAt" DOC-INT2 0= if drop -1 then ;
 
 \ a token this close to expiring, a minute, counts as expired
 : CLAUDE-FRESH ( n -- fresh-input ) drop
@@ -862,8 +779,8 @@ ENUM profile-input free limited ;ENUM
    b bu s" refresh_token" VAL-BUF 4096 DOC-STR1 dup 0 >= if
       VAL-U ! CREDS-KEY$ s" refreshToken" VAL-BUF VAL-U @ LITERAL$ CFG-SET2
    else drop then
-   b bu s" expires_in" INT1? s" expiresAt" EXPIRY-SET
-   b bu s" refresh_token_expires_in" INT1? s" refreshTokenExpiresAt" EXPIRY-SET
+   b bu s" expires_in" DOC-INT1 s" expiresAt" EXPIRY-SET
+   b bu s" refresh_token_expires_in" DOC-INT1 s" refreshTokenExpiresAt" EXPIRY-SET
    SPLICE-END ;
 
 : CLAUDE-RENEWED ( n -- renew-input )
@@ -1061,12 +978,12 @@ FSM:DEFINE CLAUDE-EXCHANGE ( n ) claude-step fresh-input
 
 \ the limit-reset credits the answer reports, when it says anything of them
 : CODEX-RESETS ( ptr u8 n -- ) {: d du :}
-   d du s" rate_limit_reset_credits" s" available_count" INT2? 0= if drop exit then
+   d du s" rate_limit_reset_credits" s" available_count" DOC-INT2 0= if drop exit then
    s" " s" " DB-RESETS! ;
 
 \ the account's current plan, which the login's id_token only knew at sign-in
 : CODEX-PLAN ( ptr u8 n -- ) {: d du :}
-   d du s" plan_type" PLAN-NAMED PLAN-CAP TEXT1 PLAN-NAMED-U ! ;
+   d du s" plan_type" PLAN-NAMED PLAN-CAP DOC-STR1 PLAN-NAMED-U ! ;
 
 \ ---- OpenAI's exchange ------------------------------------------------------------------
 \ A 401 on a saved login earns one refresh, then one more usage call; the
@@ -1455,7 +1372,7 @@ create RID-BUF 36 allot
 : RESET-ANSWERED ( n -- reset-reply ) {: p :}
    p BODY-READ {: b bu :}
    b bu OBJECT? 0= if construct reset-reply unreadable exit then
-   b bu p RESET-FIELD$ RESET-WORD TEXT-CAP TEXT1 0 max RESET-WORD-U !
+   b bu p RESET-FIELD$ RESET-WORD TEXT-CAP DOC-STR1 0 max RESET-WORD-U !
    p P-CLAUDE = if CLAUDE-WORD? else CODEX-WORD? then
    if construct reset-reply fine exit then
    construct reset-reply unknown ;
