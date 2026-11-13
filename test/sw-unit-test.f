@@ -611,7 +611,8 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
    [: P-CLAUDE s" b@x.test" CMD-USE ;] E-SW-ORPHAN-LIVE TTHROWSQ
    CLAUDE-CREDS$ READ-FILE$ CREDS-A9$ T$=
    CLAUDE-CONFIG$ FS:FILE? TFALSE
-   E-SW-ORPHAN-LIVE REASON$ CLAUDE-CONFIG$ CONTAINS? TTRUE
+   CLAUDE-CONFIG$ {: c cu :}
+   E-SW-ORPHAN-LIVE REASON$ c cu CONTAINS? TTRUE
    CLAUDE-CONFIG$ CFG-BA$ WRITE-PRIVATE ;
 
 \ leaves no Claude row, so the store tests below start from an empty list
@@ -1209,6 +1210,9 @@ create UT-AT-BUF 1024 allot
 : UT-CODEX-ROWS ( -- n )
    0 UT-N ! [: P-CODEX DB-LIST DB-ROW# UT-N ! ;] UT-STORE UT-N @ ;
 
+\ where UT-ADD moves the fake codex aside
+create UT-OFF-PATH 256 allot
+
 : UT-ADD ( -- )
    UT-FAKE-CODEX
    UT-FAKE-CURL
@@ -1223,7 +1227,7 @@ create UT-AT-BUF 1024 allot
    f fu FS:REMOVE-FILE
    HOME$ {: h2 h2u :}
    SB-RESET h2 h2u SB-APPEND s" /bin/codex" SB-APPEND SB$ UT-BUF 256 SPAN-COPY {: cx cxu :}
-   SB-RESET h2 h2u SB-APPEND s" /bin/codex.off" SB-APPEND SB$ UT-BUF 256 SPAN-COPY {: cxo cxou :}
+   SB-RESET h2 h2u SB-APPEND s" /bin/codex.off" SB-APPEND SB$ UT-OFF-PATH 256 SPAN-COPY {: cxo cxou :}
    cx cxu cxo cxou FS:RENAME-FILE
    [: P-CODEX s" " CMD-ADD ;] E-SW-NO-CLI TTHROWSQ
    CODEX-AUTH$ FS:FILE? TTRUE
