@@ -48,7 +48,7 @@ holds that.
     calls the `kiba` in `~/.local/bin`.
   - Habu's `bin/hb` is built. There is no Swift toolchain, and SQLite has
     its runtime library but no headers.
-  - A snapshot of the Mac's store is at `~/.local/share/kiba/kiba.db`.
+  - The store, the Mac's last snapshot, is at `~/.local/share/kiba/kiba.db`.
 
 ## Settled
 
@@ -67,17 +67,12 @@ holds that.
   - Claude keeps its credentials in a file, so there is no Keychain.
   - `add` runs the provider's login in the calling terminal, as kiba does
     today.
-- **The copied store**: the final copy is taken once kiba-mac, Claude and
-  Codex on the Mac have quit. It keeps its accounts and history and loses
-  its Mac-only install records (`live`, `pending`, `adding`). The Mac's
-  store is untouched.
-  - Whether its saved logins survive the move is proven once, the user's
-    choice (2026-11-13): on the spark, one saved account that is not the
-    live login is refreshed once, and its new tokens are saved into its row.
-  - A 200 keeps the copied logins. A 400 or 401 means a login refreshed on
-    one machine dies on the other (both CLIs and kiba's probes rotate
-    tokens, README, Save-back): the copy then loses its saved logins, and
-    each account is logged in again on the spark.
+- **The copied store**: the user's choice (2026-11-13). There is no Mac
+  any more. The spark's store, copied to neubau at the same path, is the
+  Mac's last snapshot: its accounts and history stay. Saved logins are
+  shared across machines; each one whose refresh is refused is logged in
+  again on the Omarchy machine (`kiba add`), and the logins are then used
+  everywhere.
 - **Habu and state machines**: the user's choice (2026-11-13). kiba is
   brought up to current Habu master and its features, and rebuilt on Habu's
   state machine library: every state kiba handles is an `FSM:DEFINE` table
