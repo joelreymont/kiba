@@ -685,6 +685,15 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
 : LOG$ ( -- ptr u8 n )
    s" KIBA_TEST_LOG" GETENV ;
 
+variable UT-LOG0
+
+: UT-LOG-MARK ( -- ) LOG$ READ-FILE$ nip UT-LOG0 ! ;
+
+\ what the fakes logged since the mark
+: UT-LOG-NEW$ ( -- ptr u8 n )
+   LOG$ READ-FILE$ {: l lu :}
+   l UT-LOG0 @ + lu UT-LOG0 @ - ;
+
 \ ---- usage on the store ------------------------------------------------------
 variable UT-C0
 variable UT-X0
@@ -1002,14 +1011,28 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    P-CODEX s" d@x.test" [: UT-RENEWED-D ;] UT-ROW-LOGIN
    P-CLAUDE s" b@x.test" CMD-FORGET ;
 
+\ z@x.test's row holds its revoked login and the outcome saying so
+: UT-REVOKED-Z ( -- )
+   P-CODEX s" z@x.test" UT-RECORD s" revoked" UT-STATE=
+   DB-USAGE-NOTE$ s" login revoked by a sign-out at chatgpt.com or in codex; log in again" T$=
+   P-CODEX s" z@x.test" AUTH-Z$ UT-LOGIN= ;
+
 \ a login revoked by a sign-out keeps its row, marked revoked
 : UT-USAGE-REVOKED ( -- )
    P-CODEX s" z@x.test" AUTH-Z$ UT-PUT
    P-CODEX CMD-USAGE
-   P-CODEX s" z@x.test" UT-RECORD s" revoked" UT-STATE=
-   DB-USAGE-NOTE$ s" login revoked by a sign-out at chatgpt.com or in codex; log in again" T$=
-   P-CODEX s" z@x.test" AUTH-Z$ UT-LOGIN=
-   LOG$ READ-FILE$ s" Authorization: Bearer at-z" CONTAINS? TTRUE
+   UT-REVOKED-Z
+   LOG$ READ-FILE$ s" Authorization: Bearer at-z" CONTAINS? TTRUE ;
+
+\ the next usage probes the revoked login again, as it probes every saved
+\ login: its refresh grant is posted again and the row stays revoked
+: UT-USAGE-REVOKED-AGAIN ( -- )
+   UT-LOG-MARK
+   P-CODEX CMD-USAGE
+   UT-REVOKED-Z
+   UT-LOG-NEW$ {: l lu :}
+   l lu s" wham/usage Authorization: Bearer at-z" CONTAINS? TTRUE
+   l lu s\" \"refresh_token\":\"rt-z\"" CONTAINS? TTRUE
    P-CODEX s" z@x.test" CMD-FORGET ;
 
 create UT-AT-BUF 1024 allot
@@ -1397,9 +1420,36 @@ create UT-AT-BUF 1024 allot
    P-CODEX s" c@x.test" CMD-USE
    CODEX-AUTH$ READ-FILE$ AUTH-C$ T$= ;
 
+: OAUTH-N$ ( -- ptr u8 n )
+   s\" {\"accountUuid\":\"u3\",\"emailAddress\":\"n@x.test\",\"organizationUuid\":\"org-n\"}" ;
+
+\ a login whose token the fake usage answers ok
+: CREDS-N$ ( -- ptr u8 n )
+   s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-b-new\",\"refreshToken\":\"r-n\",\"expiresAt\":4102444800000,\"subscriptionType\":\"pro\"}}" ;
+
+\ the Claude row n@x.test, with the profile an install splices in
+: UT-PUT-N ( -- )
+   OAUTH-N$ ID-SLOT CLAUDE-OAUTH-IDENTITY
+   [: [: P-CLAUDE s" n@x.test" ID-SLOT CREDS-N$ OAUTH-N$ false DB-PUT ;] DB-WRITE ;] UT-STORE ;
+
+\ a Claude use probes the login it installs as live, then the one it saved
+\ back as saved
+: UT-USE-PROBES-CLAUDE ( -- )
+   UT-PUT-N
+   P-CLAUDE UT-USAGES UT-C0 !
+   P-CLAUDE s" n@x.test" CMD-USE
+   P-CLAUDE UT-USAGES UT-C0 @ 2 + T=
+   P-CLAUDE s" n@x.test" UT-LAST-LIVE 1 T=
+   P-CLAUDE s" a@x.test" UT-LAST-LIVE 0 T=
+   P-CLAUDE s" n@x.test" UT-RECORD s" ok" UT-STATE=
+   P-CLAUDE s" a@x.test" UT-RECORD s" ok" UT-STATE=
+   P-CLAUDE s" a@x.test" CMD-USE
+   CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
+   CLAUDE-CONFIG$ READ-FILE$ CFG-BA$ T$=
+   P-CLAUDE s" n@x.test" CMD-FORGET ;
+
 \ ---- redeem ------------------------------------------------------------------
 create UT-AUTH-BUF 256 allot
-variable UT-LOG0
 
 \ row p a u's record replaced by an ok one offering a reset of program g
 \ under grant w
@@ -1412,13 +1462,6 @@ variable UT-LOG0
 
 : UT-SET-LOGIN ( n ptr u8 n ptr u8 n -- ) {: p a u l lu :}
    [: [: p a u l lu DB-SET-LOGIN ;] DB-WRITE ;] UT-STORE ;
-
-: UT-LOG-MARK ( -- ) LOG$ READ-FILE$ nip UT-LOG0 ! ;
-
-\ what the fakes logged since the mark
-: UT-LOG-NEW$ ( -- ptr u8 n )
-   LOG$ READ-FILE$ {: l lu :}
-   l UT-LOG0 @ + lu UT-LOG0 @ - ;
 
 : CREDS-R$ ( -- ptr u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-r\",\"refreshToken\":\"r-r\",\"expiresAt\":4102444800000,\"subscriptionType\":\"max\"}}" ;
@@ -1699,6 +1742,47 @@ create UT-REASON 512 allot
 
 : UT-UNNAMED-CLAUDE ( -- ) P-CLAUDE CLAUDE-CONFIG$ CFG-NOAUTH$ UT-UNNAMED ;
 : UT-UNNAMED-CODEX ( -- ) P-CODEX CODEX-AUTH$ AUTH-NO-ID$ UT-UNNAMED ;
+
+\ a saved Claude login whose token has expired is renewed before its reset
+\ is sent; the reset then fails, and the renewed login is saved anyway
+: UT-REDEEM-EXPIRED ( -- )
+   P-CLAUDE s" b@x.test" s" org-b" CREDS-B$ UT-PUT-ORG
+   P-CLAUDE s" b@x.test" s" cedar_ember" s" w-bogus" UT-OFFER
+   UT-LOG-MARK
+   [: P-CLAUDE s" b@x.test" CMD-REDEEM ;] E-SW-REMOTE TTHROWSQ
+   E-SW-REMOTE REASON$ s\" kiba: Anthropic's reset endpoint sent an unknown result \"bogus\"" T$=
+   P-CLAUDE s" b@x.test" [: UT-RENEWED-B ;] UT-ROW-LOGIN
+   UT-LOG-NEW$ {: l lu :}
+   l lu s" https://platform.claude.com/v1/oauth/token" CONTAINS? TTRUE
+   l lu s" /org-b/reset_rate_limits Authorization: Bearer sk-b-new" CONTAINS? TTRUE
+   l lu s\" Bearer sk-b\n" CONTAINS? TFALSE
+   P-CLAUDE s" b@x.test" CMD-FORGET ;
+
+\ an unknown name is refused before any endpoint is called
+: UT-REDEEM-UNKNOWN ( -- )
+   UT-LOG-MARK
+   [: P-CLAUDE s" nobody@x.test" CMD-REDEEM ;] E-SW-NO-ACCOUNT TTHROWSQ
+   UT-LOG-NEW$ nip 0 T= ;
+
+\ the redeem of r@x.test's offer stops with e, calling no endpoint
+: UT-REDEEM-STOPS ( n -- ) {: e :}
+   UT-LOG-MARK
+   [: P-CLAUDE s" r@x.test" CMD-REDEEM ;] e TTHROWSQ
+   UT-LOG-NEW$ nip 0 T= ;
+
+\ a pending install, or an add's live login waiting to go back, leaves no
+\ saved name known not to be live: the redeem stops before it sends
+: UT-REDEEM-BLOCKED ( -- )
+   P-CLAUDE s" r@x.test" s" org-r" CREDS-R$ UT-PUT-ORG
+   P-CLAUDE s" r@x.test" s" cedar_ember" s" w-reset" UT-OFFER
+   [: [: P-CLAUDE s" r@x.test" DB-NOTE-PENDING UT-HOLD ;] DB-WRITE ;] UT-STORE
+   E-SW-UNREPAIRED UT-REDEEM-STOPS
+   [: [: P-CLAUDE UT-HELD 32 DB-CLEAR-PENDING ;] DB-WRITE ;] UT-STORE
+   [: s" INSERT INTO adding (provider, live, service) VALUES ('claude', NULL, '')" s" test" DB-EXEC ;] UT-STORE
+   E-SW-UNRESTORED UT-REDEEM-STOPS
+   [: s" DELETE FROM adding WHERE provider = 'claude'" s" test" DB-EXEC ;] UT-STORE
+   P-CLAUDE s" r@x.test" CREDS-R$ UT-LOGIN=
+   P-CLAUDE s" r@x.test" CMD-FORGET ;
 
 \ ---- the SQLite store -------------------------------------------------------
 create UT-NUL 3 allot                 \ a login blob holding a NUL byte
@@ -2057,6 +2141,7 @@ create UT-LIST UT-LIST-CAP allot
    UT-USAGE
    UT-USAGE-REFRESHED
    UT-USAGE-REVOKED
+   UT-USAGE-REVOKED-AGAIN
    UT-ANSWER-READS
    UT-CLAUDE-OUTCOMES
    UT-CODEX-OUTCOMES
@@ -2069,12 +2154,16 @@ create UT-LIST UT-LIST-CAP allot
    UT-UNRECORDED
    UT-USAGE-CHECKED
    UT-USE-PROBES
+   UT-USE-PROBES-CLAUDE
    UT-REDEEM-CLAUDE
    UT-REDEEM-RENEWED
    UT-REDEEM-SEGMENT
    UT-REDEEM-LIVE
    UT-REDEEM-CODEX
    UT-REDEEM-REVOKED
+   UT-REDEEM-EXPIRED
+   UT-REDEEM-UNKNOWN
+   UT-REDEEM-BLOCKED
    UT-NAMES
    UT-DB
    UT-TURN-ROUND
