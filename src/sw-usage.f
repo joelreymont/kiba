@@ -14,6 +14,7 @@ require src/lib/json.f
 require src/lib/byte-buffer.f
 require src/lib/decimal.f
 require src/lib/fsm.f
+require src/lib/fmt.f
 require src/lib/entropy.f
 
 package SW
@@ -274,12 +275,6 @@ variable HTTP-CODE                  \ the last answer's status, -1 when there wa
 \ A document or answer is read field by field only once it is known to be
 \ one JSON object in which no object, nested ones included, repeats a key,
 \ as JSONFields reads one; a field of another kind reads as absent.
-: OBJECT-KEEP ( ptr u8 n -- ptr u8 n )
-   2dup CHECK-FIELDS ;
-
-: OBJECT? ( ptr u8 n -- bool )
-   [: OBJECT-KEEP ;] catch {: rc :} 2drop rc 0= ;
-
 : KEY-OBJ? ( ptr u8 n ptr u8 n -- bool ) {: d du k ku :}
    d du OPEN-DOC ENTER-OBJECT
    k ku KEY-OBJECT swap JSON:READ-CLOSE ;
@@ -605,7 +600,7 @@ create REF-URI TEXT-CAP allot    variable REF-URI-U    \ -1 when the answer name
 
 : REFUSAL-READ ( ptr u8 n -- ) {: b bu :}
    0 REF-CODE-U ! 0 REF-DESC-U ! -1 REF-URI-U !
-   b bu OBJECT? 0= if exit then
+   b bu FIELDS? 0= if exit then
    b bu REF-CODE-READ
    b bu s" error_description" REF-DESC TEXT-CAP DOC-STR1 0 max REF-DESC-U !
    b bu s" error_uri" REF-URI TEXT-CAP DOC-STR1 REF-URI-U ! ;
@@ -697,7 +692,7 @@ create HOST-BUF DETAIL-MAX allot    variable HOST-U
 \ Claude Code's OAuth: a lapsed subscription answers so, while the token
 \ document still claims the old plan.
 : NO-PLAN? ( ptr u8 n -- bool ) {: b bu :}
-   b bu OBJECT? 0= if false exit then
+   b bu FIELDS? 0= if false exit then
    b bu OPEN-DOC ENTER-OBJECT
    s" error" KEY-OBJECT 0= if JSON:READ-CLOSE false exit then
    s" details" KEY-OBJECT 0= if JSON:READ-CLOSE false exit then
@@ -710,7 +705,7 @@ create MSG-BUF DETAIL-MAX 4 * allot   variable MSG-U
 
 : MESSAGE! ( ptr u8 n -- ) {: b bu :}
    0 MSG-U !
-   b bu OBJECT? 0= if exit then
+   b bu FIELDS? 0= if exit then
    b bu s" error" s" message" DETAIL-RAW TEXT-CAP DOC-STR2 {: mu :}
    mu 0 <= if exit then
    DETAIL-RAW mu ONE-LINE MSG-BUF MSG-U DETAIL-MAX 4 * SPAN! ;
@@ -723,7 +718,7 @@ create MSG-BUF DETAIL-MAX 4 * allot   variable MSG-U
    a u s" claude_team" STR= or a u s" claude_enterprise" STR= or ;
 
 : FREE-PLAN? ( ptr u8 n -- bool ) {: b bu :}
-   b bu OBJECT? 0= if false exit then
+   b bu FIELDS? 0= if false exit then
    b bu s" organization" KEY-OBJ? 0= if false exit then
    b bu s" organization" s" organization_type" DETAIL-RAW TEXT-CAP DOC-STR2 0 max
    DETAIL-RAW swap PAID? 0= ;
@@ -741,13 +736,13 @@ ENUM profile-input free limited ;ENUM
 \ the claudeAiOauth token k in VAL-BUF; its length, -1 when absent or "", as
 \ in a document whose tokens were blanked
 : CLAUDE-TOKEN ( ptr u8 n -- n ) {: k ku :}
-   SDOC$ OBJECT? 0= if -1 exit then
+   SDOC$ FIELDS? 0= if -1 exit then
    SDOC$ CREDS-KEY$ k ku VAL-BUF 4096 DOC-STR2 dup 0 > if dup VAL-U ! exit then
    drop -1 ;
 
 \ expiresAt in epoch milliseconds; -1 when absent
 : CLAUDE-EXPIRES ( -- n )
-   SDOC$ OBJECT? 0= if -1 exit then
+   SDOC$ FIELDS? 0= if -1 exit then
    SDOC$ CREDS-KEY$ s" expiresAt" DOC-INT2 0= if drop -1 then ;
 
 \ a token this close to expiring, a minute, counts as expired
@@ -785,7 +780,7 @@ ENUM profile-input free limited ;ENUM
 
 : CLAUDE-RENEWED ( n -- renew-input )
    BODY-READ {: b bu :}
-   b bu OBJECT? 0= if construct renew-input unusable exit then
+   b bu FIELDS? 0= if construct renew-input unusable exit then
    b bu s" access_token" VAL-BUF 4096 DOC-STR1 dup 0 < if drop construct renew-input unusable exit then
    VAL-U !
    b bu CLAUDE-SPLICE
@@ -811,7 +806,7 @@ ENUM profile-input free limited ;ENUM
    p CLAUDE-USAGE-URL$ CURL-RUN dup HTTP-CODE ! ;
 
 : CLAUDE-ANSWERED ( n -- ask-input )
-   BODY-READ OBJECT? if construct ask-input fine exit then
+   BODY-READ FIELDS? if construct ask-input fine exit then
    construct ask-input unreadable ;
 
 : CLAUDE-ASK ( n -- ask-input ) {: p :}
@@ -998,12 +993,12 @@ ENUM retry-input no-token unreachable fine unreadable rejected throttled other ;
 
 \ the tokens member k in VAL-BUF; its length, -1 when absent
 : CODEX-TOKEN ( ptr u8 n -- n ) {: k ku :}
-   SDOC$ OBJECT? 0= if -1 exit then
+   SDOC$ FIELDS? 0= if -1 exit then
    SDOC$ TOKENS-KEY$ k ku VAL-BUF 4096 DOC-STR2 dup 0 >= if dup VAL-U ! then ;
 
 \ an API-key login without an id_token has no usage windows
 : CODEX-KEYED ( n -- key-input ) drop
-   SDOC$ OBJECT? 0= if construct key-input tokens exit then
+   SDOC$ FIELDS? 0= if construct key-input tokens exit then
    SDOC$ CODEX-API-KEY? 0= if construct key-input tokens exit then
    SDOC$ TOKENS-KEY$ s" id_token" KIND2 JSON:T-STR = if construct key-input tokens exit then
    construct key-input api-key ;
@@ -1016,12 +1011,12 @@ ENUM retry-input no-token unreachable fine unreadable rejected throttled other ;
    ACCT-ID-U @ 0 > if s" ChatGPT-Account-Id" ACCT-ID-BUF ACCT-ID-U @ HDR then
    p CODEX-USAGE-URL$ CURL-RUN dup HTTP-CODE ! ;
 
-: CODEX-ANSWERED? ( n -- bool ) BODY-READ OBJECT? ;
+: CODEX-ANSWERED? ( n -- bool ) BODY-READ FIELDS? ;
 
 : CODEX-REJECTED-FIRST ( n -- first-input ) {: p :}
    PROBE-LIVE @ if construct first-input rejected-live exit then
    p BODY-READ {: b bu :}
-   b bu OBJECT? 0= if construct first-input rejected-saved exit then
+   b bu FIELDS? 0= if construct first-input rejected-saved exit then
    b bu s" error" s" code" s" token_revoked" STR2-IS? if construct first-input rejected-revoked exit then
    construct first-input rejected-saved ;
 
@@ -1062,7 +1057,7 @@ ENUM retry-input no-token unreachable fine unreadable rejected throttled other ;
 
 : CODEX-RENEWED ( n -- codex-renew-input )
    BODY-READ {: b bu :}
-   b bu OBJECT? 0= if construct codex-renew-input unusable exit then
+   b bu FIELDS? 0= if construct codex-renew-input unusable exit then
    b bu s" access_token" VAL-BUF 4096 DOC-STR1 dup 0 < if drop construct codex-renew-input unusable exit then
    VAL-U !
    b bu CODEX-SPLICE
@@ -1371,7 +1366,7 @@ create RID-BUF 36 allot
 \ the word a 200 answer names, as RESET-GOT when the provider's words hold it
 : RESET-ANSWERED ( n -- reset-reply ) {: p :}
    p BODY-READ {: b bu :}
-   b bu OBJECT? 0= if construct reset-reply unreadable exit then
+   b bu FIELDS? 0= if construct reset-reply unreadable exit then
    b bu p RESET-FIELD$ RESET-WORD TEXT-CAP DOC-STR1 0 max RESET-WORD-U !
    p P-CLAUDE = if CLAUDE-WORD? else CODEX-WORD? then
    if construct reset-reply fine exit then
@@ -1382,7 +1377,7 @@ create RID-BUF 36 allot
 : REJECTION ( n -- reset-reply ) {: p :}
    PROBE-LIVE @ if construct reset-reply rejected-live exit then
    p BODY-READ {: b bu :}
-   b bu OBJECT? 0= if construct reset-reply rejected-saved exit then
+   b bu FIELDS? 0= if construct reset-reply rejected-saved exit then
    b bu s" error" s" code" s" token_revoked" STR2-IS? if construct reset-reply rejected-revoked exit then
    construct reset-reply rejected-saved ;
 

@@ -230,7 +230,7 @@ create DEC-WORD 16 allot   variable DEC-WORD-U
    JSON:T-INT DEC-NEXT JSON:READ-INT ;
 
 : DEC-STR ( JSON:reader ptr u8 ptr n n -- JSON:reader ) {: dst up cap :}
-   JSON:T-STR DEC-NEXT dst cap JSON:READ-STR up ! ;
+   JSON:T-STR DEC-NEXT dst cap TEXT-INTO up ! ;
 
 : MEMBER? ( JSON:reader ptr u8 n -- JSON:reader bool ) JSON:READ-STR-EQ? ;
 

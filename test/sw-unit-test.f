@@ -490,6 +490,31 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
    P-CLAUDE UT-PENDING? TFALSE
    P-CLAUDE s" bad@x.test" CMD-FORGET ;
 
+: CFG-Q$ ( -- ptr u8 n )
+   s\" {\"oauthAccount\":{\"accountUuid\":\"u9\",\"emailAddress\":\"q@x.test\"}}" ;
+
+\ credentials whose claudeAiOauth repeats a key
+: CREDS-Q$ ( -- ptr u8 n )
+   s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-q\",\"subscriptionType\":\"max\",\"subscriptionType\":\"pro\"}}" ;
+
+\ credentials whose claudeAiOauth repeats a key are saved with no plan, as
+\ planFromCreds reads them; their row is refused before anything is
+\ claimed, as ClaudeLive.prepare's JSONDoc refuses it
+: UT-REPEATED-CREDS ( -- )
+   CLAUDE-CONFIG$ CFG-Q$ WRITE-PRIVATE
+   CLAUDE-CREDS$ CREDS-Q$ WRITE-PRIVATE
+   P-CLAUDE CMD-SAVE
+   P-CLAUDE s" q@x.test" CREDS-Q$ UT-LOGIN=
+   [: P-CLAUDE s" q@x.test" DB-FETCH TTRUE
+      0 DB-ROW-PLAN$ nip 0 T= ;] UT-STORE
+   P-CLAUDE s" a@x.test" CMD-USE
+   P-CLAUDE UT-SWITCHES UT-SW0 !
+   [: P-CLAUDE s" q@x.test" CMD-USE ;] E-SW-JSON TTHROWSQ
+   CLAUDE-CREDS$ READ-FILE$ CREDS-A9$ T$=
+   P-CLAUDE UT-PENDING? TFALSE
+   P-CLAUDE UT-SWITCHES UT-SW0 @ T=
+   P-CLAUDE s" q@x.test" CMD-FORGET ;
+
 \ API-key Codex logins are saved and restored under a fixed name
 : UT-API-KEY ( -- )
    CODEX-AUTH$ AUTH-KEY$ WRITE-PRIVATE
@@ -1552,6 +1577,7 @@ create UT-LIST UT-LIST-CAP allot
    UT-REPAIR-PENDING
    UT-MISMATCH
    UT-DAMAGED-ROW
+   UT-REPEATED-CREDS
    UT-API-KEY
    UT-SYMLINK
    UT-FAILED-WRITE

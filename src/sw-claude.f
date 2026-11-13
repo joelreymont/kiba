@@ -70,22 +70,17 @@ private
    CFG-U @ 0 < if E-SW-ORPHAN-LIVE throw then
    true ;
 
-\ ID-LIVE from the config's oauthAccount object plus the credentials' plan,
-\ as ClaudeLive.decode reads them; answers the object's offset and length
-\ in CFG
-: CLAUDE-DECODE ( -- n n )
-   CFG$ CHECK-OBJECT
-   CFG$ OAUTH-KEY$ DOC-OBJ-SPAN {: off len :}
-   CFG-BUF off + len ID-LIVE CLAUDE-OAUTH-IDENTITY
-   FILE$ ID-LIVE CLAUDE-PLAN
-   off len ;
+\ ID-LIVE from the config in CFG and the credentials in FILE; answers the
+\ oauthAccount object in CFG, and E-SW-JSON when there is none
+: CLAUDE-DECODE ( -- ptr u8 n )
+   CFG$ FILE$ ID-LIVE CLAUDE-ACCOUNT 0= if E-SW-JSON throw then ;
 
 \ the login as one read: the credentials, and the profile the identity came
 \ from; false when there is no live login
 : CLAUDE-LIVE-LOGIN ( -- ptr u8 n ptr u8 n bool )
    CLAUDE-LIVE 0= if FILE-BUF 0 FILE-BUF -1 false exit then
-   CLAUDE-DECODE {: off len :}
-   FILE$ CFG-BUF off + len true ;
+   CLAUDE-DECODE {: pa pu :}
+   FILE$ pa pu true ;
 
 create MIXED-NAME NAME-CAP allot   variable MIXED-NAME-U
 

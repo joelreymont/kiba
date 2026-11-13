@@ -53,10 +53,6 @@ public
 \ document CHECK-FIELDS refuses throws; with try? where it may be unreadable.
 private
 
-\ the document is one JSONFields reads
-: FIELDS? ( ptr u8 n -- bool )
-   [: 2dup CHECK-FIELDS ;] catch {: rc :} 2drop rc 0= ;
-
 \ ---- Claude Code ------------------------------------------------------------
 \ planFromCreds: credentials JSONFields cannot read name no plan; false then
 : PLAN-READ? ( ptr u8 n n -- bool ) {: cr cru id :}
@@ -82,16 +78,30 @@ public
    dup 0 <= if E-SW-JSON throw then id F-EMAIL LEN!
    d du s" organizationUuid" id ORG-ROW ORG-CAP DOC-STR1 id F-ORG LEN! ;
 
-\ config document (.claude.json) plus credentials document; the config is
-\ checked as profile's JSONDoc checks it, and false when it holds no
-\ oauthAccount object
-: CLAUDE-IDENTITY ( ptr u8 n ptr u8 n n -- bool ) {: cfg cu cr cru id :}
+private
+
+\ config document (.claude.json) plus credentials document, as
+\ ClaudeLive.decode reads them; the config is checked as profile's JSONDoc
+\ checks it; answers the oauthAccount object in cfg, and false with an
+\ empty span when it holds none
+: CLAUDE-ACCOUNT ( ptr u8 n ptr u8 n n -- ptr u8 n bool )
+   {: cfg cu cr cru id :}
    id NO-IDENTITY
    cfg cu CHECK-OBJECT
-   cfg cu s" oauthAccount" DOC-OBJ-SPAN? 0= if 2drop false exit then {: off len :}
-   cfg off + len id CLAUDE-OAUTH-IDENTITY
+   cfg cu s" oauthAccount" DOC-OBJ-SPAN? 0= if
+      2drop cfg 0 false exit
+   then {: off len :}
+   cfg off + len {: pa pu :}
+   pa pu id CLAUDE-OAUTH-IDENTITY
    cr cru id CLAUDE-PLAN
-   true ;
+   pa pu true ;
+
+public
+
+\ CLAUDE-ACCOUNT's identity alone: false when the config holds no
+\ oauthAccount object
+: CLAUDE-IDENTITY ( ptr u8 n ptr u8 n n -- bool )
+   CLAUDE-ACCOUNT nip nip ;
 
 \ ---- Codex ------------------------------------------------------------------
 : JWT-PAYLOAD ( ptr u8 n -- ptr u8 n ) {: t tu :}

@@ -172,4 +172,8 @@ public
    d du CHECK-OBJECT
    d du UNIQUE-KEYS ;
 
+\ the document is one JSONFields reads: CHECK-FIELDS as try? runs it
+: FIELDS? ( ptr u8 n -- bool )
+   [: 2dup CHECK-FIELDS ;] catch {: rc :} 2drop rc 0= ;
+
 ;package

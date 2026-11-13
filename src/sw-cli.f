@@ -59,7 +59,6 @@ public
    rc E-SW-TURN-BUSY = if s" kiba: another kiba holds that provider's turn" exit then
    rc E-SW-NO-RESETS = if NO-RESETS-REASON$ exit then
    rc E-SW-REMOTE = if REMOTE-REASON$ exit then
-   rc E-JSON-READ-STATE = if s" kiba: a login field is longer than kiba can hold" exit then
    rc E-STR-CAPACITY = if s" kiba: a path or name is too long" exit then
    rc E-FS-OPEN = if s" kiba: cannot open a login file" exit then
    rc E-FS-IO = if s" kiba: a file read, write, or rename failed" exit then
