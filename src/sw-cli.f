@@ -530,8 +530,7 @@ public
 \ variable pointing at a private directory under the store, so nothing is
 \ read, revoked, or replaced while a session is working. The new login is
 \ then saved under its own name; switching to it is a separate `use`.
-: LOGIN-HOME$ ( n -- ptr u8 n )
-   P-CLAUDE = if s" /login-claude" else s" /login-codex" then PSUB$ ;
+: LOGIN-HOME$ ( n -- ptr u8 n ) s" /login" PSUB$ ;
 
 : SITE$ ( n -- ptr u8 n )
    P-CLAUDE = if s" claude.ai" exit then

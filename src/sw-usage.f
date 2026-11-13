@@ -21,7 +21,7 @@ $0A constant LF
 120 constant DETAIL-MAX             \ the longest server-supplied text a note carries
 20 constant HTTP-TIMEOUT-SEC
 
-create PROBE-BUF PATH-CAP allot  variable PROBE-U   \ <store>/probe
+create PROBE-BUF PATH-CAP allot  variable PROBE-U   \ <store>/probe-<provider>
 create PSUB-BUF PATH-CAP allot   variable PSUB-U    \ a file inside it
 create HDR-BUF HDR-CAP allot        variable HDR-U     \ one curl -H value
 create ACCT-ID-BUF 128 allot        variable ACCT-ID-U
@@ -98,32 +98,32 @@ variable HTTP-CODE                  \ the last answer's status, -1 when there wa
    PROBE-AT @ st a u DB-USAGE! ;
 
 \ ---- scratch files ---------------------------------------------------------------
-: PROBE$ ( -- ptr u8 n )
+: PROBE$ ( n -- ptr u8 n ) {: p :}
    STORE$ {: s su :}
-   SB-RESET s su SB-APPEND s" /probe" SB-APPEND
+   SB-RESET s su SB-APPEND s" /probe-" SB-APPEND p PROVIDER$ SB-APPEND
    SB$ PROBE-BUF PROBE-U PATH!
    PROBE-BUF PROBE-U @ ;
 
-: PSUB$ ( ptr u8 n -- ptr u8 n ) {: a u :}
-   PROBE$ 2drop
+: PSUB$ ( n ptr u8 n -- ptr u8 n ) {: p a u :}
+   p PROBE$ 2drop
    SB-RESET PROBE-BUF PROBE-U @ SB-APPEND a u SB-APPEND
    SB$ PSUB-BUF PSUB-U PATH!
    PSUB-BUF PSUB-U @ ;
 
-: BODY$ ( -- ptr u8 n ) s" /body.json" PSUB$ ;
-: CODE$ ( -- ptr u8 n ) s" /code.txt" PSUB$ ;
-: REQ$ ( -- ptr u8 n ) s" /request.json" PSUB$ ;
-: HEADERS$ ( -- ptr u8 n ) s" /headers.txt" PSUB$ ;
+: BODY$ ( n -- ptr u8 n ) s" /body.json" PSUB$ ;
+: CODE$ ( n -- ptr u8 n ) s" /code.txt" PSUB$ ;
+: REQ$ ( n -- ptr u8 n ) s" /request.json" PSUB$ ;
+: HEADERS$ ( n -- ptr u8 n ) s" /headers.txt" PSUB$ ;
 
-: PROBE-CLEANUP ( -- )
-   BODY$ FS:FILE? if BODY$ FS:REMOVE-FILE then
-   CODE$ FS:FILE? if CODE$ FS:REMOVE-FILE then
-   REQ$ FS:FILE? if REQ$ FS:REMOVE-FILE then
-   HEADERS$ FS:FILE? if HEADERS$ FS:REMOVE-FILE then ;
+: PROBE-CLEANUP ( n -- ) {: p :}
+   p BODY$ FS:FILE? if p BODY$ FS:REMOVE-FILE then
+   p CODE$ FS:FILE? if p CODE$ FS:REMOVE-FILE then
+   p REQ$ FS:FILE? if p REQ$ FS:REMOVE-FILE then
+   p HEADERS$ FS:FILE? if p HEADERS$ FS:REMOVE-FILE then ;
 
-: PROBE-PREPARE ( -- )
-   PROBE$ ENSURE-PRIVATE
-   PROBE-CLEANUP ;
+: PROBE-PREPARE ( n -- ) {: p :}
+   p PROBE$ ENSURE-PRIVATE
+   p PROBE-CLEANUP ;
 
 \ ---- curl --------------------------------------------------------------------------
 \ Every request is one curl process. Headers, which carry the bearer token,
@@ -154,20 +154,20 @@ variable HTTP-CODE                  \ the last answer's status, -1 when there wa
 \ the grant, so every request names its client
 : KIBA-UA$ ( -- ptr u8 n ) s" kiba" ;
 
-: CURL-BEGIN ( ptr u8 n -- ) {: ua uu :}
+: CURL-BEGIN ( n ptr u8 n -- ) {: p ua uu :}
    s" curl" RESOLVE
    PROC-ARGV-RESET
    0 HDR-U !
    s" -sS" ARG+
    s" -m" ARG+
    SB-RESET HTTP-TIMEOUT-SEC FMT:SB-U SB$ ARG+
-   s" -o" ARG+ BODY$ ARG+
+   s" -o" ARG+ p BODY$ ARG+
    s" -w" ARG+ s" %{http_code}" ARG+
    s" Accept" s" application/json" HDR
    s" User-Agent" ua uu HDR ;
 
 \ the header file is written and named just before the run
-: HEADERS-STAGE ( -- )
+: HEADERS-STAGE ( n -- )
    HEADERS$ {: h hu :}
    h hu HDR-BUF HDR-U @ WRITE-PRIVATE
    s" -H" ARG+
@@ -180,37 +180,37 @@ variable HTTP-CODE                  \ the last answer's status, -1 when there wa
 
 \ run the staged curl; the parsed status code, or -1 when curl itself failed.
 \ curl truncates the body file rather than creating it, so it is born 0600
-: CURL-RUN ( ptr u8 n -- n ) {: url uu :}
-   HEADERS-STAGE
-   BODY$ OPEN-PRIVATE close
+: CURL-RUN ( n ptr u8 n -- n ) {: p url uu :}
+   p HEADERS-STAGE
+   p BODY$ OPEN-PRIVATE close
    url uu ARG+
    EXE$ >LEN PROC-ARGV-PREPARE {: pathz argv :}
-   CODE$ OPEN-PRIVATE OUT-FD !
+   p CODE$ OPEN-PRIVATE OUT-FD !
    PROC-FORK:CHECKED {: pid :}
    pid PID>N 0= if pathz argv EXEC-CURL then
    PROC-ARGV-RESET
    OUT-FD @ close
    pid PROCESS:WAIT PROCESS:STATUS>RC RC>N {: rc :}
    rc 0<> if -1 exit then
-   CODE$ FS:FILE? 0= if -1 exit then
-   CODE$ OBJ-BUF OBJ-U READ-INTO STR>NUMBER? MATCH option
+   p CODE$ FS:FILE? 0= if -1 exit then
+   p CODE$ OBJ-BUF OBJ-U READ-INTO STR>NUMBER? MATCH option
      none OF -1 ENDOF
      some OF ENDOF
    ;MATCH ;
 
-: BODY-READ ( -- ptr u8 n )
-   BODY$ FS:FILE? 0= if OBJ-BUF 0 exit then
-   BODY$ OBJ-BUF OBJ-U READ-INTO ;
+: BODY-READ ( n -- ptr u8 n ) {: p :}
+   p BODY$ FS:FILE? 0= if OBJ-BUF 0 exit then
+   p BODY$ OBJ-BUF OBJ-U READ-INTO ;
 
 \ the body bytes come from a finished JSON-OPEN chain
-: POST-JSON ( ptr u8 n ptr u8 n -- n ) {: b bu url uu :}
-   REQ$ {: r ru :}
+: POST-JSON ( n ptr u8 n ptr u8 n -- n ) {: p b bu url uu :}
+   p REQ$ {: r ru :}
    r ru b bu WRITE-PRIVATE
    s" -X" ARG+ s" POST" ARG+
    s" Content-Type" s" application/json" HDR
    s" --data-binary" ARG+
    SB-RESET $40 SB-APPEND-C r ru SB-APPEND SB$ ARG+
-   url uu CURL-RUN ;
+   p url uu CURL-RUN ;
 
 
 \ "<what> answered <code>", or "<what> could not be reached" when code < 0
@@ -223,10 +223,10 @@ variable HTTP-CODE                  \ the last answer's status, -1 when there wa
    SB-RESET what wu SB-APPEND s"  sent an answer that is not a JSON object" SB-APPEND SB$ ;
 
 \ a token request answered; its status is in HTTP-CODE
-: TOKEN-POST ( ptr u8 n ptr u8 n -- n ) {: b bu url uu :}
-   KIBA-UA$ CURL-BEGIN
-   b bu url uu POST-JSON
-   REQ$ FS:REMOVE-FILE
+: TOKEN-POST ( n ptr u8 n ptr u8 n -- n ) {: p b bu url uu :}
+   p KIBA-UA$ CURL-BEGIN
+   p b bu url uu POST-JSON
+   p REQ$ FS:REMOVE-FILE
    dup HTTP-CODE ! ;
 
 \ only a token endpoint's 400 or 401 proves a saved login gone
@@ -766,7 +766,7 @@ ENUM profile-input free limited ;ENUM
    b bu s" refresh_token_expires_in" DOC-INT1 s" refreshTokenExpiresAt" EXPIRY-SET
    SPLICE-END ;
 
-: CLAUDE-RENEWED ( -- renew-input )
+: CLAUDE-RENEWED ( n -- renew-input )
    BODY-READ {: b bu :}
    b bu OBJECT? 0= if construct renew-input unusable exit then
    b bu s" access_token" VAL-BUF 4096 DOC-STR1 dup 0 < if drop construct renew-input unusable exit then
@@ -774,45 +774,45 @@ ENUM profile-input free limited ;ENUM
    b bu CLAUDE-SPLICE
    construct renew-input renewed ;
 
-: CLAUDE-DENIED ( n -- renew-input ) {: code :}
-   BODY-READ REFUSAL-READ
+: CLAUDE-DENIED ( n n -- renew-input ) {: p code :}
+   p BODY-READ REFUSAL-READ
    code ON-HOLD? if construct renew-input on-hold exit then
    code REFUSED-STATUS? if construct renew-input refused exit then
    construct renew-input answered ;
 
-: CLAUDE-RENEW ( n -- renew-input ) drop
+: CLAUDE-RENEW ( n -- renew-input ) {: p :}
    s" refreshToken" CLAUDE-TOKEN 0 < if construct renew-input no-grant exit then
-   CLAUDE-GRANT-BODY CLAUDE-TOKEN-URL$ TOKEN-POST {: code :}
+   p CLAUDE-GRANT-BODY CLAUDE-TOKEN-URL$ TOKEN-POST {: code :}
    code 0 < if construct renew-input unreachable exit then
-   code 200 = if CLAUDE-RENEWED exit then
-   code CLAUDE-DENIED ;
+   code 200 = if p CLAUDE-RENEWED exit then
+   p code CLAUDE-DENIED ;
 
-: CLAUDE-GET ( -- n )
-   CLAUDE-UA$ CURL-BEGIN
+: CLAUDE-GET ( n -- n ) {: p :}
+   p CLAUDE-UA$ CURL-BEGIN
    VAL-BUF VAL-U @ BEARER
    s" anthropic-beta" s" oauth-2025-04-20" HDR
-   CLAUDE-USAGE-URL$ CURL-RUN dup HTTP-CODE ! ;
+   p CLAUDE-USAGE-URL$ CURL-RUN dup HTTP-CODE ! ;
 
-: CLAUDE-ANSWERED ( -- ask-input )
+: CLAUDE-ANSWERED ( n -- ask-input )
    BODY-READ OBJECT? if construct ask-input fine exit then
    construct ask-input unreadable ;
 
-: CLAUDE-ASK ( n -- ask-input ) drop
+: CLAUDE-ASK ( n -- ask-input ) {: p :}
    s" accessToken" CLAUDE-TOKEN 0 < if construct ask-input no-token exit then
-   CLAUDE-GET {: code :}
+   p CLAUDE-GET {: code :}
    code 0 < if construct ask-input unreachable exit then
-   code 200 = if CLAUDE-ANSWERED exit then
+   code 200 = if p CLAUDE-ANSWERED exit then
    code 401 = if construct ask-input rejected exit then
-   code 403 = BODY-READ NO-PLAN? and if construct ask-input no-plan exit then
+   code 403 = p BODY-READ NO-PLAN? and if construct ask-input no-plan exit then
    code 429 = if construct ask-input throttled exit then
    construct ask-input other ;
 
 \ the profile is read with the token CLAUDE-ASK left in VAL-BUF
-: CLAUDE-PROFILE ( n -- profile-input ) drop
-   KIBA-UA$ CURL-BEGIN
+: CLAUDE-PROFILE ( n -- profile-input ) {: p :}
+   p KIBA-UA$ CURL-BEGIN
    VAL-BUF VAL-U @ BEARER
-   CLAUDE-PROFILE-URL$ CURL-RUN 200 <> if construct profile-input limited exit then
-   BODY-READ FREE-PLAN? if construct profile-input free exit then
+   p CLAUDE-PROFILE-URL$ CURL-RUN 200 <> if construct profile-input limited exit then
+   p BODY-READ FREE-PLAN? if construct profile-input free exit then
    construct profile-input limited ;
 
 : CLAUDE-LIVE-STALE ( n -- ) drop
@@ -842,9 +842,9 @@ ENUM profile-input free limited ;ENUM
 : CLAUDE-USAGE-ANSWER ( n -- ) drop
    construct usage-state error s" Anthropic's usage endpoint" HTTP-CODE @ HTTP-NOTE SAY ;
 
-: CLAUDE-FINE ( n -- ) drop
+: CLAUDE-FINE ( n -- ) {: p :}
    construct usage-state ok s" " SAY
-   BODY-READ {: b bu :}
+   p BODY-READ {: b bu :}
    b bu CLAUDE-LIMITS
    b bu CLAUDE-RESETS ;
 
@@ -859,7 +859,7 @@ ENUM profile-input free limited ;ENUM
    s" no plan for Claude Code: Anthropic does not allow this organization's OAuth login" SAY ;
 
 \ Anthropic's own words, when its answer gives them, say which limit hit
-: CLAUDE-THROTTLE-READ ( n -- ) drop BODY-READ MESSAGE! ;
+: CLAUDE-THROTTLE-READ ( n -- ) BODY-READ MESSAGE! ;
 
 : CLAUDE-FREE ( n -- ) drop
    construct usage-state free s" free plan: Anthropic's profile shows no paid plan for this organization" SAY ;
@@ -980,32 +980,32 @@ ENUM retry-input no-token unreachable fine unreadable rejected throttled other ;
    construct key-input api-key ;
 
 \ the usage call with the access token CODEX-TOKEN left in VAL-BUF
-: CODEX-GET ( -- n )
+: CODEX-GET ( n -- n ) {: p :}
    SDOC$ TOKENS-KEY$ s" account_id" ACCT-ID-BUF 128 DOC-STR2 0 max ACCT-ID-U !
-   s" codex-cli" CURL-BEGIN
+   p s" codex-cli" CURL-BEGIN
    VAL-BUF VAL-U @ BEARER
    ACCT-ID-U @ 0 > if s" ChatGPT-Account-Id" ACCT-ID-BUF ACCT-ID-U @ HDR then
-   CODEX-USAGE-URL$ CURL-RUN dup HTTP-CODE ! ;
+   p CODEX-USAGE-URL$ CURL-RUN dup HTTP-CODE ! ;
 
-: CODEX-ANSWERED? ( -- bool ) BODY-READ OBJECT? ;
+: CODEX-ANSWERED? ( n -- bool ) BODY-READ OBJECT? ;
 
-: CODEX-REJECTED-FIRST ( -- first-input )
+: CODEX-REJECTED-FIRST ( n -- first-input ) {: p :}
    PROBE-LIVE @ if construct first-input rejected-live exit then
-   BODY-READ {: b bu :}
+   p BODY-READ {: b bu :}
    b bu OBJECT? 0= if construct first-input rejected-saved exit then
    b bu s" error" s" code" s" token_revoked" STR2-IS? if construct first-input rejected-revoked exit then
    construct first-input rejected-saved ;
 
-: CODEX-ANSWERED-FIRST ( -- first-input )
+: CODEX-ANSWERED-FIRST ( n -- first-input )
    CODEX-ANSWERED? if construct first-input fine exit then
    construct first-input unreadable ;
 
-: CODEX-FIRST ( n -- first-input ) drop
+: CODEX-FIRST ( n -- first-input ) {: p :}
    s" access_token" CODEX-TOKEN 0 < if construct first-input no-token exit then
-   CODEX-GET {: code :}
+   p CODEX-GET {: code :}
    code 0 < if construct first-input unreachable exit then
-   code 200 = if CODEX-ANSWERED-FIRST exit then
-   code 401 = if CODEX-REJECTED-FIRST exit then
+   code 200 = if p CODEX-ANSWERED-FIRST exit then
+   code 401 = if p CODEX-REJECTED-FIRST exit then
    code 429 = if construct first-input throttled exit then
    construct first-input other ;
 
@@ -1031,7 +1031,7 @@ ENUM retry-input no-token unreachable fine unreadable rejected throttled other ;
    s" last_refresh" PROBE-AT @ RESET-BUF RESET-CAP DATE:FORMAT-EPOCH-UTC LITERAL$ CFG-SET
    SPLICE-END ;
 
-: CODEX-RENEWED ( -- codex-renew-input )
+: CODEX-RENEWED ( n -- codex-renew-input )
    BODY-READ {: b bu :}
    b bu OBJECT? 0= if construct codex-renew-input unusable exit then
    b bu s" access_token" VAL-BUF 4096 DOC-STR1 dup 0 < if drop construct codex-renew-input unusable exit then
@@ -1039,23 +1039,23 @@ ENUM retry-input no-token unreachable fine unreadable rejected throttled other ;
    b bu CODEX-SPLICE
    construct codex-renew-input renewed ;
 
-: CODEX-RENEW ( n -- codex-renew-input ) drop
+: CODEX-RENEW ( n -- codex-renew-input ) {: p :}
    s" refresh_token" CODEX-TOKEN 0 < if construct codex-renew-input no-grant exit then
-   CODEX-GRANT-BODY CODEX-TOKEN-URL$ TOKEN-POST {: code :}
+   p CODEX-GRANT-BODY CODEX-TOKEN-URL$ TOKEN-POST {: code :}
    code 0 < if construct codex-renew-input unreachable exit then
-   code 200 = if CODEX-RENEWED exit then
+   code 200 = if p CODEX-RENEWED exit then
    code REFUSED-STATUS? if construct codex-renew-input refused exit then
    construct codex-renew-input answered ;
 
-: CODEX-ANSWERED-AGAIN ( -- retry-input )
+: CODEX-ANSWERED-AGAIN ( n -- retry-input )
    CODEX-ANSWERED? if construct retry-input fine exit then
    construct retry-input unreadable ;
 
-: CODEX-RETRY ( n -- retry-input ) drop
+: CODEX-RETRY ( n -- retry-input ) {: p :}
    s" access_token" CODEX-TOKEN 0 < if construct retry-input no-token exit then
-   CODEX-GET {: code :}
+   p CODEX-GET {: code :}
    code 0 < if construct retry-input unreachable exit then
-   code 200 = if CODEX-ANSWERED-AGAIN exit then
+   code 200 = if p CODEX-ANSWERED-AGAIN exit then
    code 401 = if construct retry-input rejected exit then
    code 429 = if construct retry-input throttled exit then
    construct retry-input other ;
@@ -1069,9 +1069,9 @@ ENUM retry-input no-token unreachable fine unreadable rejected throttled other ;
 : CODEX-USAGE-ANSWER ( n -- ) drop
    construct usage-state error s" OpenAI's usage endpoint" HTTP-CODE @ HTTP-NOTE SAY ;
 
-: CODEX-FINE ( n -- ) drop
+: CODEX-FINE ( n -- ) {: p :}
    construct usage-state ok s" " SAY
-   BODY-READ {: b bu :}
+   p BODY-READ {: b bu :}
    b bu CODEX-LIMITS
    b bu CODEX-RESETS
    b bu CODEX-PLAN ;
@@ -1166,15 +1166,18 @@ EXPORT HUNDREDTHS
    loop ;
 
 \ a scratch path, for tests that check what is left on disk
-: PSUB-PUBLIC$ ( ptr u8 n -- ptr u8 n ) PSUB$ ;
+: PSUB-PUBLIC$ ( n ptr u8 n -- ptr u8 n ) PSUB$ ;
+
+EXPORT PROBE-PREPARE
+EXPORT PROBE-CLEANUP
 
 \ probes provider p's login document d du, live when the CLI is using it:
 \ the outcome is the usage record, SDOC with the login (renewed when
 \ PROBE-RENEWED?) and PROBED-PLAN$
 : PROBE ( n ptr u8 n bool -- ) {: p d du live :}
    d du live PROBE-BEGIN
-   PROBE-PREPARE
-   [: p PROBE-RUN ;] [: PROBE-CLEANUP ;] finally ;
+   p PROBE-PREPARE
+   [: p PROBE-RUN ;] [: p PROBE-CLEANUP ;] finally ;
 
 \ the outcome of a probe that threw: an error with the reason as its note;
 \ a login renewed before the throw is kept

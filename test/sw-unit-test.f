@@ -698,17 +698,27 @@ create UT-HELD 32 allot
    DB-USAGE-NOTE$ s" OpenAI's token endpoint answered 503" T$=
    P-CODEX s" y@x.test" AUTH-Y$ UT-LOGIN= ;
 
+\ provider p's scratch files are gone
+: UT-SCRATCH-GONE ( n -- ) {: p :}
+   p s" /headers.txt" PSUB-PUBLIC$ FS:FILE? TFALSE
+   p s" /body.json" PSUB-PUBLIC$ FS:FILE? TFALSE ;
+
+\ curl read provider p's token request from p's own scratch directory
+: UT-REQ-LOGGED ( n -- ) {: p :}
+   p s" /request.json" PSUB-PUBLIC$ {: q qu :}
+   SB-RESET s" data @" SB-APPEND q qu SB-APPEND
+   SB$ UT-BUF 256 SPAN-COPY {: r ru :}
+   LOG$ READ-FILE$ r ru CONTAINS? TTRUE ;
+
 \ tokens travel in a 0600 header file, never argv; the scratch files go
 : UT-USAGE-LOG ( -- )
-   s" /headers.txt" PSUB-PUBLIC$ FS:FILE? TFALSE
-   s" /body.json" PSUB-PUBLIC$ FS:FILE? TFALSE
-   STORE$ {: s su :}
-   SB-RESET s" data @" SB-APPEND s su SB-APPEND s" /probe/request.json" SB-APPEND
-   SB$ UT-BUF 256 SPAN-COPY {: r ru :}
+   P-CLAUDE UT-SCRATCH-GONE
+   P-CODEX UT-SCRATCH-GONE
+   P-CLAUDE UT-REQ-LOGGED
+   P-CODEX UT-REQ-LOGGED
    LOG$ READ-FILE$ {: l lu :}
    l lu s" argvheader Authorization" CONTAINS? TFALSE
    l lu s" hdrmode 600" CONTAINS? TTRUE
-   l lu r ru CONTAINS? TTRUE
    l lu s" https://platform.claude.com/v1/oauth/token" CONTAINS? TTRUE
    l lu s" https://api.anthropic.com/api/oauth/usage?cedar_ember=1&at_wall=1" CONTAINS? TTRUE
    l lu s" https://auth.openai.com/oauth/token" CONTAINS? TTRUE
@@ -717,6 +727,19 @@ create UT-HELD 32 allot
    l lu s" ua User-Agent: kiba" CONTAINS? TTRUE
    l lu s" ua User-Agent: codex-cli" CONTAINS? TTRUE
    l lu s" ua User-Agent: claude-cli/2.1.282 (external, cli)" CONTAINS? TTRUE ;
+
+\ each provider's scratch directory is its own: cleaning one, as a probe
+\ does before and after its requests, leaves the other's files
+: UT-SCRATCH-APART ( -- )
+   P-CLAUDE PROBE-PREPARE
+   P-CODEX PROBE-PREPARE
+   P-CLAUDE s" /body.json" PSUB-PUBLIC$ s" a" FS:WRITE-ALL
+   P-CODEX s" /body.json" PSUB-PUBLIC$ s" b" FS:WRITE-ALL
+   P-CLAUDE PROBE-CLEANUP
+   P-CLAUDE s" /body.json" PSUB-PUBLIC$ FS:FILE? TFALSE
+   P-CODEX s" /body.json" PSUB-PUBLIC$ FS:FILE? TTRUE
+   P-CODEX PROBE-CLEANUP
+   P-CODEX s" /body.json" PSUB-PUBLIC$ FS:FILE? TFALSE ;
 
 \ live claude a@x.test (sk-a) and codex c@x.test, saved back first; saved
 \ b@x.test refreshes its expired token, e@x.test's refresh is rate limited
@@ -823,7 +846,7 @@ create UT-HELD 32 allot
    P-CODEX LOGIN-HOME-PUBLIC$ FS:DIR? TFALSE
    LOG$ READ-FILE$ {: l lu :}
    l lu s\" present\n" ENDS-WITH? TTRUE
-   l lu s" /probe/login-codex/.codex" CONTAINS? TTRUE
+   l lu s" /probe-codex/login/.codex" CONTAINS? TTRUE
    l lu s" absent" CONTAINS? TFALSE ;
 
 \ a login that leaves nothing in the throwaway home saves nothing
@@ -851,7 +874,7 @@ create UT-HELD 32 allot
    P-CLAUDE s" b@x.test" UT-ROW? TFALSE
    P-CLAUDE s" b@x.test" CMD-ADD
    LOG$ READ-FILE$ s" auth login --email b@x.test cfg=" CONTAINS? TTRUE
-   LOG$ READ-FILE$ s" /probe/login-claude/.claude" CONTAINS? TTRUE
+   LOG$ READ-FILE$ s" /probe-claude/login/.claude" CONTAINS? TTRUE
    [: UT-CLAUDE-B ;] UT-STORE
    CLAUDE-CONFIG$ READ-FILE$ CFG-BA$ T$=
    CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
@@ -1218,6 +1241,7 @@ create UT-LIST UT-LIST-CAP allot
    UT-ADD-EMPTY
    UT-ADD-CLAUDE
    UT-PCT
+   UT-SCRATCH-APART
    UT-USAGE
    UT-USAGE-REFRESHED
    UT-USAGE-REVOKED

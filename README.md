@@ -108,7 +108,7 @@ number used, `state` is one of `ok`, `expired`, `revoked`, `error`, or
   account's tokens until you remove it.
 - **Login runs in the foreground, in a throwaway home**: `add` forks and
   execs the provider's login with `CLAUDE_CONFIG_DIR` or `CODEX_HOME`
-  pointing at a private directory under `<store>/probe/`, so the login never
+  pointing at a private directory under `<store>/probe-<provider>/`, so the login never
   sees the live login: nothing is read, revoked (`codex login` revokes
   whatever login it finds), or replaced while your sessions are working. The
   new login is read from that directory, saved under its name, probed, and
@@ -142,7 +142,9 @@ account again and add it. Any other failure is recorded as that account's
 provider. Network calls run without the store lock; only the saved-back live
 login and each slot write take it. Headers, which carry the token, reach
 `curl` through a 0600 file, never through argv; scratch files live under
-`<store>/probe/` and are removed after each request. Every request names
+`<store>/probe-<provider>/`, one directory per provider so a Claude and a
+Codex command running at once never remove each other's, and are removed
+after each request. Every request names
 `kiba` as its User-Agent (the ChatGPT usage call keeps `codex-cli`):
 Anthropic's token endpoint answers 429 to curl's own, whatever the grant.
 
