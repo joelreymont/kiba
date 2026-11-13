@@ -654,28 +654,42 @@ variable FREE-K
    [char] 0 k + CAND-BUF eu + 2 + c!
    CAND-BUF eu 3 + ;
 
-: ROW-NAMED ( ptr u8 n -- n ) {: a u :}
-   ROW-N @ 0 ?do
-      i DB-ROW-NAME$ a u STR= if i unloop exit then
-   loop -1 ;
-
-\ the first candidate whose row holds the live org, else the first with none
-: CANDIDATE-CHECK ( n n -- ) {: k id :}
-   k id EMAIL$ CANDIDATE {: c cu :}
-   c cu NAME-OK? 0= if exit then
-   c cu ROW-NAMED {: r :}
-   r 0 < if FREE-K @ 0= if k FREE-K ! then exit then
-   r DB-ROW-ORG$ id ORG$ STR= HIT-K @ 0= and if k HIT-K ! then ;
-
 9 constant SLOT-TRIES                 \ the bare email, then "email #2" to "email #9"
+
+\ which candidate k the name is; 0 when none
+: CANDIDATE# ( ptr u8 n n -- n ) {: a u id :}
+   SLOT-TRIES 1+ 1 ?do
+      i id EMAIL$ CANDIDATE a u STR= if i unloop exit then
+   loop 0 ;
+
+\ bit k of TAKEN marks candidate k as saved, of SAME as saved with the live org
+variable TAKEN
+variable SAME
+
+: NAME-ROW ( n -- ) {: id :}
+   0 DB-COL-BYTES {: a u :}
+   a u CHECK-NAME
+   a u id CANDIDATE# {: k :}
+   k 0= if exit then
+   TAKEN @ 1 k lshift or TAKEN !
+   1 DB-COL-BYTES id ORG$ STR= if SAME @ 1 k lshift or SAME ! then ;
+
+\ the first candidate saved with the live org, else the first unsaved one
+: CANDIDATE-CHECK ( n n -- ) {: k id :}
+   k id EMAIL$ CANDIDATE NAME-OK? 0= if exit then
+   1 k lshift {: bit :}
+   TAKEN @ bit and 0= if FREE-K @ 0= if k FREE-K ! then exit then
+   SAME @ bit and 0<> HIT-K @ 0= and if k HIT-K ! then ;
 
 public
 
-\ the slot the identity's login saves to; E-SW-CAPACITY when every candidate
-\ holds another org
+\ the slot the identity's login saves to, read without touching the row
+\ table; E-SW-CAPACITY when every candidate holds another org
 : DB-LIVE-NAME ( n n -- ptr u8 n ) {: p id :}
    id EMAIL$ CHECK-NAME
-   p DB-LIST
+   0 TAKEN ! 0 SAME !
+   s" SELECT name, org FROM account WHERE provider = ?" s" live name"
+   [: p PROVIDER$ DB-TEXT+ ;] [: id NAME-ROW ;] DB-QUERY
    0 HIT-K ! 0 FREE-K !
    SLOT-TRIES 1+ 1 ?do i id CANDIDATE-CHECK loop
    HIT-K @ 0= if FREE-K @ HIT-K ! then

@@ -269,6 +269,15 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
    P-CODEX UT-PENDING? TFALSE
    P-CODEX UT-SWITCHES 1 T= ;
 
+\ taking Codex's live name leaves the Claude rows a caller listed
+: UT-NAME-KEEPS-ROWS ( -- )
+   P-CODEX LIVE-IDENTITY TTRUE
+   [: P-CLAUDE DB-LIST
+      P-CODEX ID-LIVE DB-LIVE-NAME s" d@x.test" T$=
+      DB-ROW# 2 T=
+      0 DB-ROW-NAME$ s" a@x.test" T$=
+      1 DB-ROW-NAME$ s" b@x.test" T$= ;] UT-STORE ;
+
 \ a second login under the same email but another organization gets its own
 \ name, "a@x.test #2"
 : CFG-A2$ ( -- ptr u8 n )
@@ -1174,6 +1183,7 @@ create UT-LIST UT-LIST-CAP allot
    UT-STORE-SAVE
    UT-STORE-USE
    UT-STORE-USE-CODEX
+   UT-NAME-KEEPS-ROWS
    UT-SAME-EMAIL
    UT-INSTALL-INSERT
    UT-FAILED-FIRST-WRITE
