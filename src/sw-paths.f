@@ -13,6 +13,7 @@ create LIVE-BUF PATH-CAP allot    variable LIVE-U
 create CONFIG-BUF PATH-CAP allot  variable CONFIG-U
 create LROOT-BUF PATH-CAP allot   variable LROOT-U     \ a throwaway home; empty means the real one
 create LDIR-BUF PATH-CAP allot    variable LDIR-U
+create LHOME-BUF PATH-CAP allot   variable LHOME-U
 
 public
 
@@ -38,6 +39,15 @@ public
 \ `add` runs the provider login inside a private home of its own, so the
 \ live login is neither read, revoked, nor replaced by it. While the root is
 \ set, the provider file words below read from that home instead.
+
+\ inside the 0700 store so the new login's tokens stay private, and fixed so
+\ the next add removes one an interrupted add left
+: LOGIN-HOME$ ( n -- ptr u8 n ) {: p :}
+   STORE$ {: s su :}
+   SB-RESET s su SB-APPEND s" /login-" SB-APPEND p PROVIDER$ SB-APPEND
+   SB$ LHOME-BUF LHOME-U PATH!
+   LHOME-BUF LHOME-U @ ;
+
 : LOGIN-ROOT! ( ptr u8 n -- ) LROOT-BUF LROOT-U PATH! ;
 : LOGIN-ROOT-CLEAR ( -- ) 0 LROOT-U ! ;
 : LOGIN-ROOT? ( -- bool ) LROOT-U @ 0 > ;

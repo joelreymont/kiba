@@ -80,6 +80,7 @@ public
    rc E-FS-CAPACITY = rc E-SPAN-CAPACITY = or rc E-SPAN-RANGE = or if s" kiba: a login file or path is too large" exit then
    rc E-FS-PATH-UNSAFE = if s" kiba: refusing to write through a symlink chain" exit then
    rc E-PROC-SPAWN = if s" kiba: could not start the provider command" exit then
+   rc E-FFI-DLOPEN = if s" kiba: a library kiba needs could not be loaded" exit then
    rc E-JSON-READ-LAST >= rc E-JSON-READ-FIRST <= and if s" kiba: a login file is not valid JSON" exit then
    rc E-FS-LAST >= rc E-FS-FIRST <= and if s" kiba: a file operation failed" exit then
    rc E-PROC-LAST >= rc E-PROC-FIRST <= and if s" kiba: could not run a command" exit then
@@ -565,8 +566,6 @@ public
 \ read, revoked, or replaced while a session is working. The new login is
 \ then saved under its own name and, once the throwaway home is gone, probed
 \ as a saved login; switching to it is a separate `use`.
-: LOGIN-HOME$ ( n -- ptr u8 n ) s" /login" PSUB$ ;
-
 : SITE$ ( n -- ptr u8 n )
    P-CLAUDE = if s" claude.ai" exit then
    s" chatgpt.com" ;
@@ -619,8 +618,6 @@ create LINE-BUF 256 allot
    p [: p e eu ADD-TURN
       p LIVE-ROW$ false PROBE-IN-TURN ;] STORE-TURN
    p e eu .ADDED ;
-
-: LOGIN-HOME-PUBLIC$ ( n -- ptr u8 n ) LOGIN-HOME$ ;
 
 \ what the last redeem came to, for the account a u
 : REDEEMED$ ( ptr u8 n -- ptr u8 n ) {: a u :}

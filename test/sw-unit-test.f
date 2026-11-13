@@ -1435,7 +1435,7 @@ create UT-OFF-PATH 256 allot
    CODEX-AUTH$ AUTH-C$ WRITE-PRIVATE
    [: P-CODEX s" " CMD-ADD ;] E-SW-LOGIN TTHROWSQ
    CODEX-AUTH$ READ-FILE$ AUTH-C$ T$=
-   P-CODEX LOGIN-HOME-PUBLIC$ FS:DIR? TFALSE
+   P-CODEX LOGIN-HOME$ FS:DIR? TFALSE
    P-CODEX s" d@x.test" UT-ROW? TFALSE
    f fu FS:REMOVE-FILE
    HOME$ {: h2 h2u :}
@@ -1450,10 +1450,10 @@ create UT-OFF-PATH 256 allot
    P-CODEX s" d@x.test" [: UT-RENEWED-D ;] UT-ROW-LOGIN
    P-CODEX s" d@x.test" UT-RECORD s" ok" UT-STATE=
    P-CODEX s" c@x.test" AUTH-C9$ UT-LOGIN=
-   P-CODEX LOGIN-HOME-PUBLIC$ FS:DIR? TFALSE
+   P-CODEX LOGIN-HOME$ FS:DIR? TFALSE
    LOG$ READ-FILE$ {: l lu :}
    l lu s\" present\nhdrmode 600" CONTAINS? TTRUE
-   l lu s" /probe-codex/login/.codex" CONTAINS? TTRUE
+   l lu s" /login-codex/.codex" CONTAINS? TTRUE
    l lu s" absent" CONTAINS? TFALSE ;
 
 \ a login that leaves nothing in the throwaway home saves nothing
@@ -1465,7 +1465,7 @@ create UT-OFF-PATH 256 allot
    [: P-CODEX s" " CMD-ADD ;] E-SW-NO-LIVE TTHROWSQ
    f fu FS:REMOVE-FILE
    UT-CODEX-ROWS n T=
-   P-CODEX LOGIN-HOME-PUBLIC$ FS:DIR? TFALSE
+   P-CODEX LOGIN-HOME$ FS:DIR? TFALSE
    CODEX-AUTH$ READ-FILE$ AUTH-C$ T$= ;
 
 \ the new Claude row's login and profile
@@ -1481,11 +1481,11 @@ create UT-OFF-PATH 256 allot
    P-CLAUDE s" b@x.test" UT-ROW? TFALSE
    P-CLAUDE s" b@x.test" CMD-ADD
    LOG$ READ-FILE$ s" auth login --email b@x.test cfg=" CONTAINS? TTRUE
-   LOG$ READ-FILE$ s" /probe-claude/login/.claude" CONTAINS? TTRUE
+   LOG$ READ-FILE$ s" /login-claude/.claude" CONTAINS? TTRUE
    [: UT-CLAUDE-B ;] UT-STORE
    CLAUDE-CONFIG$ READ-FILE$ CFG-BA$ T$=
    CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
-   P-CLAUDE LOGIN-HOME-PUBLIC$ FS:DIR? TFALSE
+   P-CLAUDE LOGIN-HOME$ FS:DIR? TFALSE
    P-CLAUDE LIVE-IDENTITY TTRUE ID-LIVE EMAIL$ s" a@x.test" T$=
    P-CLAUDE s" b@x.test" CMD-FORGET
    P-CLAUDE s" zz@x.test" CMD-ADD
@@ -1545,7 +1545,7 @@ create UT-REAL 256 allot
    s" CLAUDE_CONFIG_DIR" GETENV nip 0 T=
    s" CODEX_HOME" GETENV nip 0 T=
    UT-LOG-NEW$ r ru CONTAINS? TFALSE
-   p LOGIN-HOME-PUBLIC$ UT-BUF 256 SPAN-COPY {: h hu :}
+   p LOGIN-HOME$ UT-BUF 256 SPAN-COPY {: h hu :}
    SB-RESET s" env " SB-APPEND var vu SB-APPEND s" =" SB-APPEND
    h hu SB-APPEND
    p UT-DIR-TAIL$ SB-APPEND s\" \n" SB-APPEND
@@ -2027,7 +2027,7 @@ create UT-REASON 512 allot
    [: P-CLAUDE s" " CMD-ADD ;] E-SW-ORPHAN-LIVE TTHROWSQ
    CLAUDE-CONFIG$ {: c cu :}
    E-SW-ORPHAN-LIVE REASON$ {: r ru :}
-   r ru s" /probe-claude/login/.claude/.claude.json" CONTAINS? TTRUE
+   r ru s" /login-claude/.claude/.claude.json" CONTAINS? TTRUE
    r ru c cu CONTAINS? TFALSE ;
 
 \ Claude credentials without a config stop usage, status, redeem and add

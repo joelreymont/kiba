@@ -125,7 +125,7 @@ absent when the provider said nothing about limit resets. `state` is one of:
   write replaces the file the link points at.
 - **Login runs in the foreground, in a throwaway home**: `add` forks and
   execs the provider's login with `CLAUDE_CONFIG_DIR` or `CODEX_HOME`
-  pointing at a private directory under `<store>/probe-<provider>/`, so the
+  pointing at the private directory `<store>/login-<provider>`, so the
   login never sees the live login: nothing is read, revoked (`codex login`
   revokes whatever login it finds), or replaced while your sessions are
   working. The new login is read from that directory and saved under its
