@@ -47,6 +47,11 @@ kiba-mac's behaviour; `DESIGN.md` holds that.
 
 ## Settled
 
+- **Language**: the user's choice (2026-11-13). kiba stays a Habu Forth
+  program, and kiba-mac's behaviour is ported into it. Habu first needs an
+  SQLite binding, which it does not have. The Omarchy widget stays in QML
+  and runs the CLI; Qt holds no account logic
+  (`plugin/kiba/Status.qml:98-120`).
 - **Store**: one SQLite file at `$XDG_DATA_HOME/kiba/kiba.db`, in
   kiba-mac's schema. There is no folder layout and no converter.
 - **CLI**: kiba-mac's contract, whose `status --json` the mod reads. On the
@@ -72,8 +77,5 @@ kiba-mac's behaviour; `DESIGN.md` holds that.
 
 ## The user's to choose
 
-1. **One implementation or two.** Either make kiba-mac's Swift core and
-   CLI build on Linux and retire the Forth CLI, or port kiba-mac's behaviour
-   into Habu Forth.
-2. **The widget.** It cannot run on the spark. Its parity matters only where
+1. **The widget.** It cannot run on the spark. Its parity matters only where
    Omarchy runs.
