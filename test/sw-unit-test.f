@@ -1921,6 +1921,18 @@ variable UT-V
          E-SW-LOGIN throw ;] DB-WRITE ;] E-SW-LOGIN TTHROWSQ
    P-CLAUDE s" c@x.test" DB-FETCH TFALSE ;
 
+\ a write outside DB-WRITE is refused; a nested DB-WRITE fails at BEGIN
+\ and leaves the outer transaction open for its later writes
+: UT-DB-NESTED ( -- )
+   [: P-CLAUDE s" n@x.test" ID-SLOT CREDS-A$ UT-NUL -1 false DB-PUT ;]
+   E-SW-DB TTHROWSQ
+   DB-ERROR$ s" put: transaction is closed" T$=
+   [: [: [: ;] DB-WRITE ;] E-SW-DB TTHROWSQ
+      P-CLAUDE s" n@x.test" ID-SLOT CREDS-A$ UT-NUL -1 false DB-PUT ;] DB-WRITE
+   P-CLAUDE s" n@x.test" DB-FETCH TTRUE
+   [: P-CLAUDE s" n@x.test" DB-REMOVE ;] DB-WRITE
+   P-CLAUDE s" n@x.test" DB-FETCH TFALSE ;
+
 \ kiba-mac's snapshot bytes: two saved Claude logins under one email, the
 \ live one in the second organization, and a live Codex login never saved
 : SNAP-LIT$ ( -- ptr u8 n )
@@ -2046,6 +2058,7 @@ variable UT-OUT-U
    UT-DB-TOO-MANY
    UT-DB-PENDING
    UT-DB-ROLLBACK
+   UT-DB-NESTED
    UT-STATUS-JSON
    UT-STATUS-ERROR
    UT-STATUS-REASON

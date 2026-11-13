@@ -462,14 +462,13 @@ variable STORE-VERSION               \ the user_version the last open read
 \ BEGIN IMMEDIATE moves idle to open, holding off every other writer; the
 \ body returning moves to committing, its throw to rolling-back, which rolls
 \ back while SQLite still reports a transaction and rethrows. Write words
-\ run only while the state is open.
+\ run only inside an open SQLite transaction.
 ENUM tx-state idle open committing rolling-back ;ENUM
 ENUM tx-input returned threw ;ENUM
 ENUM begin-input begun ;ENUM
 ENUM commit-input committed failed ;ENUM
 ENUM rollback-input live gone ;ENUM
 
-TYPED-VARIABLE TX-STATE tx-state
 variable TX-CODE                     \ what the body or COMMIT threw
 
 : TX-BEGIN ( [ -- ] -- begin-input )
@@ -517,24 +516,8 @@ FSM:DEFINE WRITE-TX ( [ -- ] ) tx-state tx-input
       rolling-back OF false ENDOF
    ;MATCH ;
 
-: TX-OPEN? ( -- bool )
-   TX-STATE @ MATCH tx-state
-      idle OF false ENDOF
-      open OF true ENDOF
-      committing OF false ENDOF
-      rolling-back OF false ENDOF
-   ;MATCH ;
-
-\ each step's state is the one write words see
-: TX-DRIVE ( [ -- ] -- ) {: body :}
-   construct tx-state idle
-   begin
-      body swap WRITE-TX-STEP drop
-      dup TX-STATE ! dup TX-IDLE?
-   until drop ;
-
 : TX-CHECK ( ptr u8 n -- ) {: op ou :}
-   TX-OPEN? 0= if op ou s" transaction is closed" DB-THROW then ;
+   SQL-IN-TX? 0= if op ou s" transaction is closed" DB-THROW then ;
 
 \ one statement of the open transaction
 : TX-RUN ( ptr u8 n ptr u8 n [ -- ] -- ) {: sql su op ou bind :}
@@ -544,10 +527,14 @@ FSM:DEFINE WRITE-TX ( [ -- ] ) tx-state tx-input
 public
 
 \ runs the body in one BEGIN IMMEDIATE transaction and commits; a throw rolls
-\ back and rethrows. A throw from the machine itself leaves it idle too.
-: DB-WRITE ( [ -- ] -- ) {: body :}
-   [: body TX-DRIVE ;]
-   [: construct tx-state idle TX-STATE ! ;] finally ;
+\ back and rethrows. A nested one fails at BEGIN; the outer stays open.
+: DB-WRITE ( [ -- ] -- )
+   {: body :}
+   construct tx-state idle
+   begin
+      body swap WRITE-TX-STEP drop
+      dup TX-IDLE?
+   until drop ;
 
 \ ---- opening ------------------------------------------------------------------
 private
