@@ -57,8 +57,8 @@ checked Habu program; a thin Omarchy bar widget runs it.
 
 ## Verify
 
-- Tests: `./test.sh` runs the suite inside a scratch `HOME`;
-  it never touches real credentials.
+- Tests: `./test.sh` runs the suite inside a scratch `HOME` with an empty
+  environment; it never touches real credentials.
 - Widget: `omarchy plugin validate plugin/kiba`, then
   `omarchy-shell kiba open` and check `journalctl --user` for QML
   errors.
