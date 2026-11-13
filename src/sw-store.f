@@ -7,15 +7,6 @@ require src/lib/fsm.f
 
 package SW
 
-public
-
-: LIVE-IDENTITY ( n -- bool )
-   case
-     P-CLAUDE of CLAUDE-LIVE-IDENTITY endof
-     P-CODEX of CODEX-LIVE-IDENTITY endof
-     E-SW-PROVIDER throw
-   endcase ;
-
 \ ---- saved logins and the live files ---------------------------------------
 \ The caller holds the provider's turn; every store change runs in DB-WRITE.
 private
@@ -41,6 +32,14 @@ create LIVE-ROW NAME-CAP allot   variable LIVE-ROW-U
      P-CODEX of CODEX-LIVE-LOGIN endof
      E-SW-PROVIDER throw
    endcase ;
+
+public
+
+\ LIVE-LOGIN's answer alone: the identity in ID-LIVE; false when there is none
+: LIVE-IDENTITY ( n -- bool )
+   LIVE-LOGIN {: la lu pa pu got :} got ;
+
+private
 
 \ only Claude keeps the account and the tokens in two files that can disagree
 : LIVE-MIXED? ( n -- bool )

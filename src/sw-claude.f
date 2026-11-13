@@ -46,15 +46,14 @@ package SW
    OBJ$ ID-SLOT CLAUDE-OAUTH-IDENTITY
    a u ID-SLOT EMAIL$ NAME-FOR-EMAIL? 0= if E-SW-MISMATCH throw then ;
 
+create ORPHAN-CFG PATH-CAP allot   variable ORPHAN-CFG-U
+
+: NOTE-ORPHAN ( -- ) CLAUDE-CONFIG$ ORPHAN-CFG ORPHAN-CFG-U PATH! ;
+
 public
 
-\ loads both live documents; false when Claude Code has no login
-: CLAUDE-LIVE-IDENTITY ( -- bool )
-   CLAUDE-CONFIG$ FS:FILE? 0= if ID-LIVE NO-IDENTITY false exit then
-   CLAUDE-CREDS$ FS:FILE? 0= if ID-LIVE NO-IDENTITY false exit then
-   CLAUDE-CONFIG$ CFG-BUF CFG-U READ-INTO
-   CLAUDE-CREDS$ FILE-BUF FILE-U READ-INTO
-   ID-LIVE CLAUDE-IDENTITY ;
+\ the config CLAUDE-LIVE last found missing beside live credentials
+: ORPHAN-CONFIG$ ( -- ptr u8 n ) ORPHAN-CFG ORPHAN-CFG-U @ ;
 
 \ ---- the live login over the store ----------------------------------------
 private
@@ -64,10 +63,11 @@ private
 
 \ false when there are no credentials; credentials without a config are some
 \ account's tokens and nothing says whose, so they are E-SW-ORPHAN-LIVE
+\ about the config ORPHAN-CONFIG$ then names
 : CLAUDE-LIVE ( -- bool )
    CLAUDE-CONFIG$ CFG-BUF CFG-U READ-OPT 2drop
    CLAUDE-CREDS$ FILE-BUF FILE-U READ-OPT nip 0 < if false exit then
-   CFG-U @ 0 < if E-SW-ORPHAN-LIVE throw then
+   CFG-U @ 0 < if NOTE-ORPHAN E-SW-ORPHAN-LIVE throw then
    true ;
 
 \ ID-LIVE from the config in CFG and the credentials in FILE; answers the

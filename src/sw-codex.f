@@ -3,14 +3,6 @@ require ../src/sw-identity.f
 
 package SW
 
-public
-
-: CODEX-LIVE-IDENTITY ( -- bool )
-   CODEX-AUTH$ FS:FILE? 0= if ID-LIVE NO-IDENTITY false exit then
-   CODEX-AUTH$ READ-FILE$ ID-LIVE CODEX-IDENTITY ;
-
-private
-
 \ the live auth.json as one read into FILE, the identity in ID-LIVE decoded
 \ from those same bytes; no profile. False when there is no auth.json.
 : CODEX-LIVE-LOGIN ( -- ptr u8 n ptr u8 n bool )

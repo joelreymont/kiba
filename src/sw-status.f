@@ -39,12 +39,7 @@ ENUM live-input present absent threw ;ENUM
    [: TIME-RUN ;] catch {: rc :} drop rc READ-INPUT ;
 
 \ 1 when the provider has a live login, now in ID-LIVE
-: LIVE-HAS ( n -- n )
-   case
-     P-CLAUDE of CLAUDE-LIVE-IDENTITY bool>n endof
-     P-CODEX of CODEX-LIVE-IDENTITY bool>n endof
-     E-SW-PROVIDER throw
-   endcase ;
+: LIVE-HAS ( n -- n ) LIVE-IDENTITY bool>n ;
 
 : LIVE-SENSE ( n -- live-input )
    [: LIVE-HAS ;] catch {: rc :}

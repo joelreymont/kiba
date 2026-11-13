@@ -1478,6 +1478,125 @@ variable UT-LOG0
    P-CODEX s" z@x.test" AUTH-Z$ UT-LOGIN=
    P-CODEX s" z@x.test" CMD-FORGET ;
 
+\ ---- live logins that name no account ---------------------------------------
+\ One reader decides the live login for every command, so a live login kiba
+\ cannot name stops each one: nothing is probed, refreshed or saved.
+create UT-SNAP 8192 allot    variable UT-SNAP-U
+create UT-SNAP0 8192 allot
+create UT-KEPT 2048 allot
+create UT-PATH 256 allot
+create UT-REASON 512 allot
+
+\ UT-LOG-MARK where no fake may have logged yet, so the log may not exist
+: UT-MARK ( -- )
+   LOG$ FS:FILE? 0= if LOG$ s" " FS:WRITE-ALL then
+   UT-LOG-MARK ;
+
+: UT-SNAP+ ( ptr u8 n -- ) {: a u :}
+   UT-SNAP-U @ u + 8192 > if E-SW-CAPACITY throw then
+   a UT-SNAP UT-SNAP-U @ + u BYTE-COPY
+   u UT-SNAP-U +! ;
+
+: UT-SNAP-KEEP ( n -- ) {: p :}
+   0 UT-SNAP-U !
+   p DB-LIST
+   DB-ROW# 0 ?do i DB-ROW-NAME$ UT-SNAP+ i DB-ROW-LOGIN$ UT-SNAP+ loop ;
+
+\ every saved row of p, its name then its login
+: UT-SNAP$ ( n -- ptr u8 n ) {: p :}
+   [: p UT-SNAP-KEEP ;] UT-STORE UT-SNAP UT-SNAP-U @ ;
+
+\ rc's reason as usage prints it on stderr, without the "kiba: " lead
+: UT-BARE$ ( n -- ptr u8 n ) REASON$ {: r ru :} r 6 + ru 6 - ;
+
+: UT-JSON-C ( n -- ) {: c :}
+   c [char] / = if $5C SB-APPEND-C then
+   c SB-APPEND-C ;
+
+\ "error":"<rc's bare reason>" as the snapshot writes it, its slashes escaped
+: UT-ERROR-KEY$ ( n -- ptr u8 n )
+   UT-BARE$ UT-REASON 512 SPAN-COPY {: r ru :}
+   SB-RESET s\" \"error\":\"" SB-APPEND
+   ru 0 ?do r i + c@ UT-JSON-C loop
+   [char] " SB-APPEND-C SB$ ;
+
+\ the fake `claude` of UT-FAKE-CLAUDE, leaving credentials but no config
+: UT-FAKE-CLAUDE-ORPHAN ( -- )
+   s" claude"
+   s\" #!/bin/sh\necho \"claude $* cfg=$CLAUDE_CONFIG_DIR\" >> \"$KIBA_TEST_LOG\"\nprintf '%s' '{\"claudeAiOauth\":{\"accessToken\":\"sk-b\",\"refreshToken\":\"r-b\",\"expiresAt\":2,\"scopes\":[\"user:inference\"],\"subscriptionType\":\"pro\"}}' > \"$CLAUDE_CONFIG_DIR/.credentials.json\"\n"
+   UT-WRITE-SCRIPT ;
+
+\ usage says why and stops before any request, every saved login unchanged
+: UT-ORPHAN-USAGE ( -- )
+   P-CLAUDE UT-SNAP$ UT-SNAP0 8192 SPAN-COPY {: s su :}
+   su 0 > TTRUE
+   UT-MARK
+   P-CLAUDE UT-USAGE-ERR
+   UT-ERR$ READ-FILE$ E-SW-ORPHAN-LIVE UT-BARE$ CONTAINS? TTRUE
+   UT-LOG-NEW$ nip 0 T=
+   P-CLAUDE UT-SNAP$ s su T$= ;
+
+\ status shows the reason as Claude's error beside its saved accounts
+: UT-ORPHAN-STATUS-KEEP ( -- )
+   STATUS-JSON$ {: j ju :}
+   j ju E-SW-ORPHAN-LIVE UT-ERROR-KEY$ CONTAINS? TTRUE
+   j ju s\" \"name\":\"a@x.test\"" CONTAINS? TTRUE
+   j ju s\" \"name\":\"b@x.test\"" CONTAINS? TTRUE ;
+
+: UT-ORPHAN-STATUS ( -- ) [: UT-ORPHAN-STATUS-KEEP ;] UT-STORE ;
+
+: UT-ORPHAN-REDEEM ( -- )
+   P-CLAUDE s" a@x.test" s" cedar_ember" s" w-reset" UT-OFFER
+   UT-MARK
+   [: P-CLAUDE s" a@x.test" CMD-REDEEM ;] E-SW-ORPHAN-LIVE TTHROWSQ
+   UT-LOG-NEW$ nip 0 T= ;
+
+\ an add whose login leaves no config names the throwaway home's
+: UT-ORPHAN-ADD ( -- )
+   UT-FAKE-CLAUDE-ORPHAN
+   [: P-CLAUDE s" " CMD-ADD ;] E-SW-ORPHAN-LIVE TTHROWSQ
+   CLAUDE-CONFIG$ {: c cu :}
+   E-SW-ORPHAN-LIVE REASON$ {: r ru :}
+   r ru s" /probe-claude/login/.claude/.claude.json" CONTAINS? TTRUE
+   r ru c cu CONTAINS? TFALSE ;
+
+\ Claude credentials without a config stop usage, status, redeem and add
+: UT-ORPHAN-STOPS ( -- )
+   UT-FAKE-CURL
+   CLAUDE-CONFIG$ FS:REMOVE-FILE
+   UT-ORPHAN-USAGE
+   UT-ORPHAN-STATUS
+   UT-ORPHAN-REDEEM
+   UT-ORPHAN-ADD
+   CLAUDE-CREDS$ READ-FILE$ CREDS-A9$ T$=
+   CLAUDE-CONFIG$ CFG-BA$ WRITE-PRIVATE ;
+
+: UT-UNNAMED-STATUS ( -- )
+   STATUS-JSON$ E-SW-JSON UT-ERROR-KEY$ CONTAINS? TTRUE ;
+
+\ p's live file f made d, which names no account: status shows that as p's
+\ error and usage refreshes no saved login; f is put back afterwards
+: UT-UNNAMED ( n ptr u8 n ptr u8 n -- ) {: p f fu d du :}
+   f fu UT-PATH 256 SPAN-COPY {: g gu :}
+   g gu READ-FILE$ UT-KEPT 2048 SPAN-COPY {: k ku :}
+   p UT-SNAP$ UT-SNAP0 8192 SPAN-COPY {: s su :}
+   su 0 > TTRUE
+   UT-FAKE-CURL
+   g gu d du WRITE-PRIVATE
+   [: UT-UNNAMED-STATUS ;] UT-STORE
+   UT-MARK
+   p UT-USAGE-ERR
+   UT-LOG-NEW$ s" /oauth/token" CONTAINS? TFALSE
+   p UT-SNAP$ s su T$=
+   g gu k ku WRITE-PRIVATE ;
+
+\ a Codex login with neither an id_token nor an API key
+: AUTH-NO-ID$ ( -- ptr u8 n )
+   s\" {\"OPENAI_API_KEY\":null,\"auth_mode\":\"chatgpt\",\"tokens\":{\"access_token\":\"at-c\",\"refresh_token\":\"rt-c\",\"account_id\":\"acct\"}}" ;
+
+: UT-UNNAMED-CLAUDE ( -- ) P-CLAUDE CLAUDE-CONFIG$ CFG-NOAUTH$ UT-UNNAMED ;
+: UT-UNNAMED-CODEX ( -- ) P-CODEX CODEX-AUTH$ AUTH-NO-ID$ UT-UNNAMED ;
+
 \ ---- the SQLite store -------------------------------------------------------
 create UT-NUL 3 allot                 \ a login blob holding a NUL byte
 create UT-CLAIM 32 allot
@@ -1712,6 +1831,9 @@ create UT-LIST UT-LIST-CAP allot
    UT-MIXED-PAIR
    UT-UNRESTORED
    UT-ORPHAN
+   UT-ORPHAN-STOPS
+   UT-UNNAMED-CLAUDE
+   UT-UNNAMED-CODEX
    UT-STORE-FORGET
    UT-LIVE-AC
    UT-ADD

@@ -37,10 +37,8 @@ public
 : REMOTE-REASON$ ( -- ptr u8 n )
    SB-RESET s" kiba: " SB-APPEND REMOTE-NOTE$ SB-APPEND SB$ ;
 
-\ CLAUDE-CONFIG$ builds through the same string builder, so it goes first
 : ORPHAN-REASON$ ( -- ptr u8 n )
-   CLAUDE-CONFIG$ {: c cu :}
-   SB-RESET s" kiba: Claude credentials exist but " SB-APPEND c cu SB-APPEND
+   SB-RESET s" kiba: Claude credentials exist but " SB-APPEND ORPHAN-CONFIG$ SB-APPEND
    s"  is missing: nothing is probed or switched until it names their account" SB-APPEND SB$ ;
 
 : REASON$ ( n -- ptr u8 n ) {: rc :}
