@@ -165,8 +165,8 @@ variable HTTP-CODE                  \ the last answer's status, -1 when there wa
 \ stdout, redirected into a second file before exec.
 \ E-SW-CAPACITY unless n more bytes fit
 : HDR-ROOM ( n -- )
-   HDR-U @ + BUF-CAP > if
-      s" bytes in a request's headers" BUF-CAP LIMIT$ TOO-MANY
+   HDR-U @ + HDR-CAP > if
+      s" bytes in a request's headers" HDR-CAP LIMIT$ TOO-MANY
    then ;
 
 : HDR-LINE+ ( ptr u8 n -- ) {: a u :}

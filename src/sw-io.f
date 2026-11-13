@@ -9,6 +9,9 @@ require src/lib/fmt.f
 package SW
 
 $400000 constant BUF-CAP         \ 4 MiB per runtime buffer
+\ a request's token and account id come from one document, so together they
+\ never need more than BUF-CAP; the rest holds the fixed header lines
+BUF-CAP 4096 + constant HDR-CAP
 $180 constant MODE-PRIVATE-FILE  \ 0600
 $A000 constant S-IFLNK           \ the symlink file type in st_mode
 
@@ -87,7 +90,7 @@ public
    TOK-A ALLOC-ONE
    VAL-A ALLOC-ONE
    ACCT-ID-A ALLOC-ONE
-   HDR-A ALLOC-ONE
+   HDR-CAP MEM-ALLOC-BYTES drop HDR-A !
    JSON-A ALLOC-ONE
    SDOC-A ALLOC-ONE
    BACK-A ALLOC-ONE ;
