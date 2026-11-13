@@ -4,7 +4,8 @@
 \ leaves the usage record (sw-db.f), the document in SDOC refreshed when a
 \ token was renewed, and the plan the provider named. It reads and writes no
 \ slot and takes no lock: the caller holds the provider's turn and records
-\ the outcome.
+\ the outcome. A reset request (REDEEM) spends one limit reset under the same
+\ terms and leaves its outcome and the document.
 require ../src/sw-store.f
 require ../src/sw-run.f
 require ../src/sw-db.f
@@ -13,6 +14,7 @@ require src/lib/json.f
 require src/lib/byte-buffer.f
 require src/lib/decimal.f
 require src/lib/fsm.f
+require src/lib/entropy.f
 
 package SW
 
@@ -907,26 +909,41 @@ ENUM profile-input free limited ;ENUM
    p BODY-READ FREE-PLAN? if construct profile-input free exit then
    construct profile-input limited ;
 
-: CLAUDE-LIVE-STALE ( n -- ) drop
-   construct usage-state expired s" access token expired; Claude Code refreshes it on its next run" SAY ;
+: CLAUDE-LIVE-STALE$ ( -- ptr u8 n )
+   s" access token expired; Claude Code refreshes it on its next run" ;
 
-: CLAUDE-NO-GRANT ( n -- ) drop
-   construct usage-state missing s" access token expired and no refresh token is saved; log in again" SAY ;
+: CLAUDE-NO-GRANT$ ( -- ptr u8 n )
+   s" access token expired and no refresh token is saved; log in again" ;
 
-: CLAUDE-TOKEN-ANSWER ( n -- ) drop
-   construct usage-state error s" Anthropic's token endpoint" HTTP-CODE @ HTTP-NOTE SAY ;
+: CLAUDE-TOKEN-NOTE$ ( -- ptr u8 n )
+   s" Anthropic's token endpoint" HTTP-CODE @ HTTP-NOTE ;
 
-: CLAUDE-ON-HOLD ( n -- ) drop
+: CLAUDE-ON-HOLD$ ( -- ptr u8 n )
    APPEAL$ {: a u :}
    SB-RESET s" account on hold and cannot use Claude Code; view details or appeal at " SB-APPEND
-   a u SB-APPEND
-   construct usage-state error SB$ SAY ;
+   a u SB-APPEND SB$ ;
 
-: CLAUDE-REFUSED ( n -- ) drop
+: CLAUDE-REFUSED$ ( -- ptr u8 n )
    HTTP-CODE @ DETAIL$ {: a u :}
    SB-RESET s" access token expired and the refresh was refused (" SB-APPEND
-   a u SB-APPEND s" ); log in again" SB-APPEND
-   construct usage-state expired SB$ SAY ;
+   a u SB-APPEND s" ); log in again" SB-APPEND SB$ ;
+
+: CLAUDE-REJECTED$ ( -- ptr u8 n ) s" login rejected by Anthropic; log in again" ;
+
+: CLAUDE-LIVE-STALE ( n -- ) drop
+   construct usage-state expired CLAUDE-LIVE-STALE$ SAY ;
+
+: CLAUDE-NO-GRANT ( n -- ) drop
+   construct usage-state missing CLAUDE-NO-GRANT$ SAY ;
+
+: CLAUDE-TOKEN-ANSWER ( n -- ) drop
+   construct usage-state error CLAUDE-TOKEN-NOTE$ SAY ;
+
+: CLAUDE-ON-HOLD ( n -- ) drop
+   construct usage-state error CLAUDE-ON-HOLD$ SAY ;
+
+: CLAUDE-REFUSED ( n -- ) drop
+   construct usage-state expired CLAUDE-REFUSED$ SAY ;
 
 : CLAUDE-NO-TOKEN ( n -- ) drop
    construct usage-state missing s" no access token saved; log in again" SAY ;
@@ -944,7 +961,7 @@ ENUM profile-input free limited ;ENUM
    construct usage-state error s" Anthropic's usage endpoint" UNREADABLE-NOTE SAY ;
 
 : CLAUDE-REJECTED ( n -- ) drop
-   construct usage-state expired s" login rejected by Anthropic; log in again" SAY ;
+   construct usage-state expired CLAUDE-REJECTED$ SAY ;
 
 : CLAUDE-NO-PLAN ( n -- ) drop
    construct usage-state unsubscribed
@@ -1149,11 +1166,25 @@ ENUM retry-input no-token unreachable fine unreadable rejected throttled other ;
    code 429 = if construct retry-input throttled exit then
    construct retry-input other ;
 
+: NO-ACCESS$ ( -- ptr u8 n ) s" no access token saved" ;
+: CODEX-LIVE-REJECTED$ ( -- ptr u8 n ) s" access token rejected; run codex once to refresh it" ;
+: CODEX-REJECTED$ ( -- ptr u8 n ) s" login rejected by OpenAI; log in again" ;
+: CODEX-TOKEN-NOTE$ ( -- ptr u8 n ) s" OpenAI's token endpoint" HTTP-CODE @ HTTP-NOTE ;
+
+: CODEX-NO-GRANT$ ( -- ptr u8 n )
+   s" access token rejected and no refresh token is saved; log in again" ;
+
+: CODEX-REFUSED$ ( -- ptr u8 n )
+   s" access token rejected and the refresh was refused; log in again" ;
+
+: CODEX-REVOKED$ ( -- ptr u8 n )
+   s" login revoked by a sign-out at chatgpt.com or in codex; log in again" ;
+
 : CODEX-API-KEY-NOTE ( n -- ) drop
    construct usage-state unknown s" API-key login: no usage windows to read" SAY ;
 
 : CODEX-NO-TOKEN ( n -- ) drop
-   construct usage-state error s" no access token saved" SAY ;
+   construct usage-state error NO-ACCESS$ SAY ;
 
 : CODEX-USAGE-ANSWER ( n -- ) drop
    construct usage-state error s" OpenAI's usage endpoint" HTTP-CODE @ HTTP-NOTE SAY ;
@@ -1169,25 +1200,25 @@ ENUM retry-input no-token unreachable fine unreadable rejected throttled other ;
    construct usage-state error s" OpenAI's usage endpoint" UNREADABLE-NOTE SAY ;
 
 : CODEX-LIVE-REJECTED ( n -- ) drop
-   construct usage-state expired s" access token rejected; run codex once to refresh it" SAY ;
+   construct usage-state expired CODEX-LIVE-REJECTED$ SAY ;
 
 : CODEX-REJECTED ( n -- ) drop
-   construct usage-state expired s" login rejected by OpenAI; log in again" SAY ;
+   construct usage-state expired CODEX-REJECTED$ SAY ;
 
 : CODEX-THROTTLED ( n -- ) drop
    construct usage-state throttled s" OpenAI is rate limiting usage checks; try again later" SAY ;
 
 : CODEX-NO-GRANT ( n -- ) drop
-   construct usage-state expired s" access token rejected and no refresh token is saved; log in again" SAY ;
+   construct usage-state expired CODEX-NO-GRANT$ SAY ;
 
 : CODEX-TOKEN-ANSWER ( n -- ) drop
-   construct usage-state error s" OpenAI's token endpoint" HTTP-CODE @ HTTP-NOTE SAY ;
+   construct usage-state error CODEX-TOKEN-NOTE$ SAY ;
 
 : CODEX-REFUSED ( n -- ) drop
-   construct usage-state expired s" access token rejected and the refresh was refused; log in again" SAY ;
+   construct usage-state expired CODEX-REFUSED$ SAY ;
 
 : CODEX-REVOKED ( n -- ) drop
-   construct usage-state revoked s" login revoked by a sign-out at chatgpt.com or in codex; log in again" SAY ;
+   construct usage-state revoked CODEX-REVOKED$ SAY ;
 
 FSM:DEFINE CODEX-EXCHANGE ( n ) codex-step key-input
    IN keyed CODEX-KEYED
@@ -1242,6 +1273,313 @@ FSM:DEFINE CODEX-EXCHANGE ( n ) codex-step key-input
      E-SW-PROVIDER throw
    endcase ;
 
+\ ---- limit resets ---------------------------------------------------------------
+\ One reset of a saved login's offer is spent, as kiba-mac's redeem spends it.
+\ A saved login's token is refreshed when it has expired (Claude), or once
+\ when the first send is rejected; the live login's never is. The answer's
+\ word is the outcome; any other answer fails with E-SW-REMOTE and a note.
+: CLAUDE-ORGS-URL$ ( -- ptr u8 n ) s" https://api.anthropic.com/api/organizations/" ;
+: CLAUDE-RESET-PATH$ ( -- ptr u8 n ) s" /reset_rate_limits" ;
+: CODEX-CONSUME-URL$ ( -- ptr u8 n ) s" https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume" ;
+
+public
+ENUM reset-outcome reset not-limited already-used no-credit cooldown ineligible unavailable ;ENUM
+private
+
+ENUM claude-reset-step freshening sending renewing resending answered failed ;ENUM
+ENUM codex-reset-step sending renewing renewing-revoked resending answered failed ;ENUM
+ENUM reset-reply no-token unreachable fine unknown unreadable rejected-live rejected-saved rejected-revoked throttled other ;ENUM
+
+1024 constant RESET-BODY-CAP
+TYPED-VARIABLE RESET-GOT reset-outcome
+create RESET-URL PATH-CAP allot              variable RESET-URL-U
+create RESET-BODY RESET-BODY-CAP allot       variable RESET-BODY-U
+create RESET-WORD TEXT-CAP allot             variable RESET-WORD-U
+create REMOTE-NOTE TEXT-CAP allot            variable REMOTE-NOTE-U
+create RID-RAW 16 allot
+create RID-BUF 36 allot
+
+: RESET-URL$ ( -- ptr u8 n ) RESET-URL RESET-URL-U @ ;
+: RESET-BODY$ ( -- ptr u8 n ) RESET-BODY RESET-BODY-U @ ;
+: RESET-WORD$ ( -- ptr u8 n ) RESET-WORD RESET-WORD-U @ ;
+: REMOTE! ( ptr u8 n -- ) REMOTE-NOTE REMOTE-NOTE-U TEXT-CAP SPAN! ;
+
+\ byte i of the id at its place in the text: two digits a byte, and a dash
+\ before bytes 4, 6, 8 and 10
+: RID-AT ( n -- n ) {: i :}
+   i 2 *
+   i 4 >= if 1+ then i 6 >= if 1+ then
+   i 8 >= if 1+ then i 10 >= if 1+ then ;
+
+: RID-BYTE ( n -- ) {: i :}
+   RID-RAW i + c@ {: b :}
+   i RID-AT {: at :}
+   b 4 rshift HEX-C RID-BUF at + c!
+   b 15 and HEX-C RID-BUF at 1+ + c! ;
+
+\ a random version 4 UUID in lowercase: each request is told apart by it
+: REQUEST-ID$ ( -- ptr u8 n )
+   RID-RAW 16 ENTROPY:FILL
+   RID-RAW 6 + c@ $0F and $40 or RID-RAW 6 + c!
+   RID-RAW 8 + c@ $3F and $80 or RID-RAW 8 + c!
+   16 0 ?do i RID-BYTE loop
+   $2D RID-BUF 8 + c! $2D RID-BUF 13 + c!
+   $2D RID-BUF 18 + c! $2D RID-BUF 23 + c!
+   RID-BUF 36 ;
+
+\ the writer's text kept as the request body, which a refresh's own body
+\ would overwrite in the writer
+: BODY! ( ptr JSON:writer -- )
+   JSON:WRITTEN$ RESET-BODY RESET-BODY-U RESET-BODY-CAP SPAN! ;
+
+: BANKED-BODY ( ptr u8 n -- ) {: g gu :}
+   REQUEST-ID$ {: id idu :}
+   JSON-OPEN
+   JSON:WRITE-OBJECT-START
+   s" program" s" cedar_ember" JSON:WRITE-FIELD-S JSON:WRITE-COMMA
+   s" grant_id" g gu JSON:WRITE-FIELD-S JSON:WRITE-COMMA
+   s" request_id" id idu JSON:WRITE-FIELD-S
+   JSON:WRITE-OBJECT-END BODY! ;
+
+: WEEKLY-BODY ( -- )
+   JSON-OPEN
+   JSON:WRITE-OBJECT-START
+   s" program" s" juniper_tide" JSON:WRITE-FIELD-S
+   JSON:WRITE-OBJECT-END BODY! ;
+
+\ the request for the offer's program; E-SW-NO-RESETS for one kiba does not know
+: CLAUDE-RESET-BODY ( -- )
+   DB-RESETS-PROGRAM$ s" cedar_ember" STR= if DB-RESETS-GRANT$ BANKED-BODY exit then
+   DB-RESETS-PROGRAM$ s" juniper_tide" STR= if WEEKLY-BODY exit then
+   E-SW-NO-RESETS throw ;
+
+: CODEX-RESET-BODY ( -- )
+   REQUEST-ID$ {: id idu :}
+   JSON-OPEN
+   JSON:WRITE-OBJECT-START
+   s" redeem_request_id" id idu JSON:WRITE-FIELD-S
+   JSON:WRITE-OBJECT-END BODY! ;
+
+\ the reset is asked of row r's organization; E-SW-JSON when it names none
+: CLAUDE-RESET-PREPARE ( n -- ) {: r :}
+   r DB-ROW-ORG$ {: o ou :}
+   ou 0= if E-SW-JSON throw then
+   r DB-ROW-USAGE drop
+   CLAUDE-RESET-BODY
+   SB-RESET CLAUDE-ORGS-URL$ SB-APPEND o ou SB-APPEND CLAUDE-RESET-PATH$ SB-APPEND
+   SB$ RESET-URL RESET-URL-U PATH! ;
+
+: CODEX-RESET-PREPARE ( -- )
+   CODEX-RESET-BODY
+   CODEX-CONSUME-URL$ RESET-URL RESET-URL-U PATH! ;
+
+: RESET-PREPARE ( n n -- ) {: p r :}
+   p P-CLAUDE = if r CLAUDE-RESET-PREPARE exit then
+   CODEX-RESET-PREPARE ;
+
+\ the endpoint as notes name it
+: RESET-WHAT$ ( n -- ptr u8 n )
+   P-CLAUDE = if s" Anthropic's reset endpoint" exit then
+   s" OpenAI's reset endpoint" ;
+
+\ the member of a 200 answer that holds the result word
+: RESET-FIELD$ ( n -- ptr u8 n )
+   P-CLAUDE = if s" result" exit then
+   s" code" ;
+
+\ the access token in VAL-BUF; its length, -1 when there is none
+: RESET-TOKEN ( n -- n )
+   P-CLAUDE = if s" accessToken" CLAUDE-TOKEN exit then
+   s" access_token" CODEX-TOKEN ;
+
+: RESET-POST ( n ptr u8 n -- n ) {: p url uu :}
+   p RESET-BODY$ url uu POST-JSON
+   p REQ$ FS:REMOVE-FILE
+   dup HTTP-CODE ! ;
+
+: CLAUDE-RESET-SEND ( -- n )
+   P-CLAUDE CLAUDE-UA$ CURL-BEGIN
+   VAL-BUF VAL-U @ BEARER
+   s" anthropic-beta" s" oauth-2025-04-20" HDR
+   P-CLAUDE RESET-URL$ RESET-POST ;
+
+: CODEX-RESET-SEND ( -- n )
+   SDOC$ TOKENS-KEY$ s" account_id" ACCT-ID-BUF 128 DOC-STR2 0 max ACCT-ID-U !
+   P-CODEX s" codex-cli" CURL-BEGIN
+   VAL-BUF VAL-U @ BEARER
+   ACCT-ID-U @ 0 > if s" ChatGPT-Account-Id" ACCT-ID-BUF ACCT-ID-U @ HDR then
+   P-CODEX RESET-URL$ RESET-POST ;
+
+: RESET-SEND ( n -- n )
+   P-CLAUDE = if CLAUDE-RESET-SEND exit then
+   CODEX-RESET-SEND ;
+
+: GOT ( reset-outcome -- bool ) RESET-GOT ! true ;
+: WORD-IS? ( ptr u8 n -- bool ) RESET-WORD$ STR= ;
+
+: CLAUDE-WORD? ( -- bool )
+   s" reset" WORD-IS? if construct reset-outcome reset GOT exit then
+   s" already_used" WORD-IS? if construct reset-outcome already-used GOT exit then
+   s" not_limited" WORD-IS? if construct reset-outcome not-limited GOT exit then
+   s" cooldown" WORD-IS? if construct reset-outcome cooldown GOT exit then
+   s" ineligible" WORD-IS? if construct reset-outcome ineligible GOT exit then
+   s" unavailable" WORD-IS? if construct reset-outcome unavailable GOT exit then
+   false ;
+
+: CODEX-WORD? ( -- bool )
+   s" reset" WORD-IS? if construct reset-outcome reset GOT exit then
+   s" nothing_to_reset" WORD-IS? if construct reset-outcome not-limited GOT exit then
+   s" no_credit" WORD-IS? if construct reset-outcome no-credit GOT exit then
+   s" already_redeemed" WORD-IS? if construct reset-outcome already-used GOT exit then
+   false ;
+
+\ the word a 200 answer names, as RESET-GOT when the provider's words hold it
+: RESET-ANSWERED ( n -- reset-reply ) {: p :}
+   p BODY-READ {: b bu :}
+   b bu OBJECT? 0= if construct reset-reply unreadable exit then
+   b bu p RESET-FIELD$ RESET-WORD TEXT-CAP TEXT1 0 max RESET-WORD-U !
+   p P-CLAUDE = if CLAUDE-WORD? else CODEX-WORD? then
+   if construct reset-reply fine exit then
+   construct reset-reply unknown ;
+
+\ a 401: the live login's token is its CLI's to renew; a saved one's is
+\ renewed, and a refused renewal after a revoked token means a sign-out
+: REJECTION ( n -- reset-reply ) {: p :}
+   PROBE-LIVE @ if construct reset-reply rejected-live exit then
+   p BODY-READ {: b bu :}
+   b bu OBJECT? 0= if construct reset-reply rejected-saved exit then
+   b bu s" error" s" code" s" token_revoked" STR2-IS? if construct reset-reply rejected-revoked exit then
+   construct reset-reply rejected-saved ;
+
+: RESET-SENSE ( n -- reset-reply ) {: p :}
+   p RESET-TOKEN 0 < if construct reset-reply no-token exit then
+   p RESET-SEND {: code :}
+   code 0 < if construct reset-reply unreachable exit then
+   code 200 = if p RESET-ANSWERED exit then
+   code 401 = if p REJECTION exit then
+   code 429 = if construct reset-reply throttled exit then
+   construct reset-reply other ;
+
+: RESET-NO-ACCESS ( n -- ) drop NO-ACCESS$ REMOTE! ;
+
+: RESET-ANSWER ( n -- ) RESET-WHAT$ HTTP-CODE @ HTTP-NOTE REMOTE! ;
+
+: RESET-UNREADABLE ( n -- ) RESET-WHAT$ UNREADABLE-NOTE REMOTE! ;
+
+: RESET-UNKNOWN ( n -- ) {: p :}
+   RESET-WORD$ ONE-LINE {: w wu :}
+   SB-RESET p RESET-WHAT$ SB-APPEND s"  sent an unknown result " SB-APPEND
+   $22 SB-APPEND-C w wu SB-APPEND $22 SB-APPEND-C SB$ REMOTE! ;
+
+: RESET-THROTTLED ( n -- )
+   P-CLAUDE = if s" Anthropic is rate limiting limit resets; try again later" REMOTE! exit then
+   s" OpenAI is rate limiting limit resets; try again later" REMOTE! ;
+
+: RESET-REJECTED ( n -- )
+   P-CLAUDE = if CLAUDE-REJECTED$ REMOTE! exit then
+   CODEX-REJECTED$ REMOTE! ;
+
+: RESET-FAIL ( n -- ) drop E-SW-REMOTE throw ;
+
+: CLAUDE-RESET-STALE ( n -- ) drop CLAUDE-LIVE-STALE$ REMOTE! ;
+: CLAUDE-RESET-NO-GRANT ( n -- ) drop CLAUDE-NO-GRANT$ REMOTE! ;
+: CLAUDE-RESET-TOKEN ( n -- ) drop CLAUDE-TOKEN-NOTE$ REMOTE! ;
+: CLAUDE-RESET-ON-HOLD ( n -- ) drop CLAUDE-ON-HOLD$ REMOTE! ;
+: CLAUDE-RESET-REFUSED ( n -- ) drop CLAUDE-REFUSED$ REMOTE! ;
+
+FSM:DEFINE CLAUDE-RESET ( n ) claude-reset-step fresh-input
+   IN freshening CLAUDE-FRESH
+      current           -                      >sending
+      stale-live        CLAUDE-RESET-STALE     >failed
+      stale-saved       -                      >renewing
+   IN sending RESET-SENSE ( reset-reply )
+      no-token          RESET-NO-ACCESS        >failed
+      unreachable       RESET-ANSWER           >failed
+      fine              -                      >answered
+      unknown           RESET-UNKNOWN          >failed
+      unreadable        RESET-UNREADABLE       >failed
+      rejected-live     CLAUDE-RESET-STALE     >failed
+      rejected-saved    -                      >renewing
+      rejected-revoked  -                      >renewing
+      throttled         RESET-THROTTLED        >failed
+      other             RESET-ANSWER           >failed
+   IN renewing CLAUDE-RENEW ( renew-input )
+      renewed           -                      >resending
+      no-grant          CLAUDE-RESET-NO-GRANT  >failed
+      unreachable       CLAUDE-RESET-TOKEN     >failed
+      unusable          CLAUDE-RESET-TOKEN     >failed
+      on-hold           CLAUDE-RESET-ON-HOLD   >failed
+      refused           CLAUDE-RESET-REFUSED   >failed
+      answered          CLAUDE-RESET-TOKEN     >failed
+   IN resending RESET-SENSE ( reset-reply )
+      no-token          RESET-NO-ACCESS        >failed
+      unreachable       RESET-ANSWER           >failed
+      fine              -                      >answered
+      unknown           RESET-UNKNOWN          >failed
+      unreadable        RESET-UNREADABLE       >failed
+      rejected-live     RESET-REJECTED         >failed
+      rejected-saved    RESET-REJECTED         >failed
+      rejected-revoked  RESET-REJECTED         >failed
+      throttled         RESET-THROTTLED        >failed
+      other             RESET-ANSWER           >failed
+   FINAL answered -
+   FINAL failed RESET-FAIL
+;DEFINE
+
+: CODEX-RESET-LIVE ( n -- ) drop CODEX-LIVE-REJECTED$ REMOTE! ;
+: CODEX-RESET-NO-GRANT ( n -- ) drop CODEX-NO-GRANT$ REMOTE! ;
+: CODEX-RESET-TOKEN ( n -- ) drop CODEX-TOKEN-NOTE$ REMOTE! ;
+: CODEX-RESET-REFUSED ( n -- ) drop CODEX-REFUSED$ REMOTE! ;
+: CODEX-RESET-REVOKED ( n -- ) drop CODEX-REVOKED$ REMOTE! ;
+
+FSM:DEFINE CODEX-RESET ( n ) codex-reset-step reset-reply
+   IN sending RESET-SENSE
+      no-token          RESET-NO-ACCESS        >failed
+      unreachable       RESET-ANSWER           >failed
+      fine              -                      >answered
+      unknown           RESET-UNKNOWN          >failed
+      unreadable        RESET-UNREADABLE       >failed
+      rejected-live     CODEX-RESET-LIVE       >failed
+      rejected-saved    -                      >renewing
+      rejected-revoked  -                      >renewing-revoked
+      throttled         RESET-THROTTLED        >failed
+      other             RESET-ANSWER           >failed
+   IN renewing CODEX-RENEW ( codex-renew-input )
+      renewed           -                      >resending
+      no-grant          CODEX-RESET-NO-GRANT   >failed
+      unreachable       CODEX-RESET-TOKEN      >failed
+      unusable          CODEX-RESET-TOKEN      >failed
+      refused           CODEX-RESET-REFUSED    >failed
+      answered          CODEX-RESET-TOKEN      >failed
+   IN renewing-revoked CODEX-RENEW ( codex-renew-input )
+      renewed           -                      >resending
+      no-grant          CODEX-RESET-NO-GRANT   >failed
+      unreachable       CODEX-RESET-TOKEN      >failed
+      unusable          CODEX-RESET-TOKEN      >failed
+      refused           CODEX-RESET-REVOKED    >failed
+      answered          CODEX-RESET-TOKEN      >failed
+   IN resending RESET-SENSE
+      no-token          RESET-NO-ACCESS        >failed
+      unreachable       RESET-ANSWER           >failed
+      fine              -                      >answered
+      unknown           RESET-UNKNOWN          >failed
+      unreadable        RESET-UNREADABLE       >failed
+      rejected-live     RESET-REJECTED         >failed
+      rejected-saved    RESET-REJECTED         >failed
+      rejected-revoked  RESET-REJECTED         >failed
+      throttled         RESET-THROTTLED        >failed
+      other             RESET-ANSWER           >failed
+   FINAL answered -
+   FINAL failed RESET-FAIL
+;DEFINE
+
+: RESET-RUN ( n -- ) {: p :}
+   p case
+     P-CLAUDE of p construct claude-reset-step freshening CLAUDE-RESET endof
+     P-CODEX of p construct codex-reset-step sending CODEX-RESET endof
+     E-SW-PROVIDER throw
+   endcase ;
+
 public
 
 EXPORT USED-PERCENT
@@ -1278,5 +1616,21 @@ EXPORT PROBE-CLEANUP
 
 \ the plan the provider named; length -1 when it named none
 : PROBED-PLAN$ ( -- ptr u8 n ) PLAN-NAMED PLAN-NAMED-U @ ;
+
+\ spends one limit reset of provider p's saved row r, whose usage holds the
+\ offer, live when the CLI is using it: RESET-OUTCOME is what the provider
+\ made of it and SDOC the login (renewed when PROBE-RENEWED?). E-SW-REMOTE
+\ with REMOTE-NOTE$ when the provider spent none, E-SW-NO-RESETS for a
+\ program kiba does not know, E-SW-JSON for a Claude row with no organization
+: REDEEM ( n n bool -- ) {: p r live :}
+   r DB-ROW-LOGIN$ live PROBE-BEGIN
+   p r RESET-PREPARE
+   p PROBE-PREPARE
+   [: p RESET-RUN ;] [: p PROBE-CLEANUP ;] finally ;
+
+: RESET-OUTCOME ( -- reset-outcome ) RESET-GOT @ ;
+
+\ why the last reset request spent nothing
+: REMOTE-NOTE$ ( -- ptr u8 n ) REMOTE-NOTE REMOTE-NOTE-U @ ;
 
 ;package

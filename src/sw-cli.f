@@ -1,4 +1,4 @@
-\ sw-cli.f - the kiba commands: status, usage, save, use, add, forget.
+\ sw-cli.f - the kiba commands: status, usage, save, use, add, forget, redeem.
 require ../src/sw-store.f
 require ../src/sw-run.f
 require ../src/sw-usage.f
@@ -14,6 +14,8 @@ package SW
 \ the switch E-SW-UNREPAIRED names: its provider and the name it installs
 variable UNREPAIRED-P
 create UNREPAIRED-NAME NAME-CAP allot   variable UNREPAIRED-NAME-U
+\ the account a redeem was asked to spend a reset of
+create REDEEM-NAME NAME-CAP allot   variable REDEEM-NAME-U
 
 public
 
@@ -21,6 +23,13 @@ public
    SB-RESET s" kiba: the " SB-APPEND UNREPAIRED-P @ PROVIDER$ SB-APPEND
    s"  switch to " SB-APPEND UNREPAIRED-NAME UNREPAIRED-NAME-U @ SB-APPEND
    s"  did not finish; nothing is probed or refreshed until a switch completes" SB-APPEND SB$ ;
+
+: NO-RESETS-REASON$ ( -- ptr u8 n )
+   SB-RESET s" kiba: no limit resets are available for " SB-APPEND
+   REDEEM-NAME REDEEM-NAME-U @ SB-APPEND SB$ ;
+
+: REMOTE-REASON$ ( -- ptr u8 n )
+   SB-RESET s" kiba: " SB-APPEND REMOTE-NOTE$ SB-APPEND SB$ ;
 
 \ CLAUDE-CONFIG$ builds through the same string builder, so it goes first
 : ORPHAN-REASON$ ( -- ptr u8 n )
@@ -48,6 +57,8 @@ public
    rc E-SW-DB = if SB-RESET s" kiba: the account database refused: " SB-APPEND DB-ERROR$ SB-APPEND SB$ exit then
    rc E-SW-DB-VERSION = if s" kiba: the account store is from a newer kiba; upgrade kiba" exit then
    rc E-SW-TURN-BUSY = if s" kiba: another kiba holds that provider's turn" exit then
+   rc E-SW-NO-RESETS = if NO-RESETS-REASON$ exit then
+   rc E-SW-REMOTE = if REMOTE-REASON$ exit then
    rc E-JSON-READ-STATE = if s" kiba: a login field is longer than kiba can hold" exit then
    rc E-STR-CAPACITY = if s" kiba: a path or name is too long" exit then
    rc E-FS-OPEN = if s" kiba: cannot open a login file" exit then
@@ -525,11 +536,40 @@ public
    p [: p a u USE-RUN ;] STORE-TURN
    p PROVIDER$ type s" : now " type a u type cr ;
 
+\ ---- redeem ---------------------------------------------------------------------
+\ One limit reset of a saved login is spent, then the login is probed again
+\ so its usage and offer show the result. Its name is live as usage decides
+\ it, so a live login's token is never refreshed; a refreshed one is saved
+\ whatever the request came to, since the refresh spent the old grant.
+: OFFERED? ( n -- bool )
+   DB-ROW-USAGE 0= if false exit then
+   DB-RESETS? 0= if false exit then
+   DB-RESETS-COUNT 0 > ;
+
+: REDEEM-SAVE ( n n -- ) {: p r :}
+   r LOGIN-CHANGED? 0= if exit then
+   r DB-ROW-NAME$ {: a u :}
+   [: p a u SDOC$ DB-SET-LOGIN ;] DB-WRITE ;
+
+: REDEEM-SPEND ( n n bool -- ) {: p r live :}
+   [: p r live REDEEM ;] [: p r REDEEM-SAVE ;] finally ;
+
+\ the live names are read over the row table, so the row is fetched again
+: REDEEM-RUN ( n ptr u8 n -- ) {: p a u :}
+   p a u DB-FETCH 0= if E-SW-NO-ACCOUNT throw then
+   0 OFFERED? 0= if E-SW-NO-RESETS throw then
+   p p LIVE-MIXED? LIVE-NAMES
+   a u LIVE-NAME? {: live :}
+   p a u DB-FETCH 0= if E-SW-NO-ACCOUNT throw then
+   p 0 live REDEEM-SPEND
+   p a u live PROBE-IN-TURN ;
+
 \ ---- add: the provider login inside a throwaway home ------------------------------
 \ The login command never sees the live login: it runs with its home
 \ variable pointing at a private directory under the store, so nothing is
 \ read, revoked, or replaced while a session is working. The new login is
-\ then saved under its own name; switching to it is a separate `use`.
+\ then saved under its own name and, once the throwaway home is gone, probed
+\ as a saved login; switching to it is a separate `use`.
 : LOGIN-HOME$ ( n -- ptr u8 n ) s" /login" PSUB$ ;
 
 : SITE$ ( n -- ptr u8 n )
@@ -584,10 +624,38 @@ create LINE-BUF 256 allot
 
 : CMD-ADD ( n ptr u8 n -- ) {: p e eu :}
    p CHECK-LOGIN-CLI
-   p [: p e eu ADD-TURN ;] STORE-TURN
+   p [: p e eu ADD-TURN
+      p LIVE-ROW$ false PROBE-IN-TURN ;] STORE-TURN
    p e eu .ADDED ;
 
 : LOGIN-HOME-PUBLIC$ ( n -- ptr u8 n ) LOGIN-HOME$ ;
+
+\ what the last redeem came to, for the account a u
+: REDEEMED$ ( ptr u8 n -- ptr u8 n ) {: a u :}
+   SB-RESET
+   RESET-OUTCOME MATCH reset-outcome
+      reset OF s" Limit reset for " SB-APPEND a u SB-APPEND ENDOF
+      not-limited OF a u SB-APPEND s"  is not at a limit; nothing was spent" SB-APPEND ENDOF
+      already-used OF s" That reset was already used" SB-APPEND ENDOF
+      no-credit OF s" No limit resets left for " SB-APPEND a u SB-APPEND ENDOF
+      cooldown OF
+         s" Limit resets are cooling down for " SB-APPEND a u SB-APPEND
+         s" ; try again later" SB-APPEND
+      ENDOF
+      ineligible OF a u SB-APPEND s"  cannot reset its limit" SB-APPEND ENDOF
+      unavailable OF
+         s" Limit resets are unavailable for " SB-APPEND a u SB-APPEND
+         s"  right now" SB-APPEND
+      ENDOF
+   ;MATCH
+   SB$ ;
+
+\ spends one limit reset of the saved login a u
+: CMD-REDEEM ( n ptr u8 n -- ) {: p a u :}
+   a u CHECK-NAME
+   a u REDEEM-NAME REDEEM-NAME-U NAME-CAP SPAN!
+   p [: p a u REDEEM-RUN ;] STORE-TURN
+   p PROVIDER$ type s" : " type a u REDEEMED$ type cr ;
 
 : CMD-FORGET ( n ptr u8 n -- ) {: p a u :}
    a u CHECK-NAME

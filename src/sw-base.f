@@ -32,6 +32,8 @@ public
 -100021 constant E-SW-ORPHAN-LIVE \ Claude credentials exist without a config naming them
 -100022 constant E-SW-UNREPAIRED  \ a switch began and did not finish
 -100023 constant E-SW-REPORTED    \ a command printed its failures already
+-100024 constant E-SW-NO-RESETS   \ the saved login's last probe offered no limit reset
+-100025 constant E-SW-REMOTE      \ a provider did not spend a limit reset; its note says why
 
 0 constant P-CLAUDE
 1 constant P-CODEX

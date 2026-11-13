@@ -9,6 +9,7 @@ package SW
    s\"        kiba use <claude|codex> <email>\n" ERR-TYPE
    s\"        kiba add <claude|codex> [name]\n" ERR-TYPE
    s\"        kiba forget <claude|codex> <email>\n" ERR-TYPE
+   s\"        kiba redeem <claude|codex> <email>\n" ERR-TYPE
    s\"        kiba usage [claude|codex]\n" ERR-TYPE ;
 
 : ARG$ ( n -- ptr u8 n )
@@ -48,6 +49,7 @@ package SW
    c cu s" use" STR= if 3 ARG-COUNT 1 ARG$ PROVIDER# 2 ARG$ CMD-USE exit then
    c cu s" add" STR= if DISPATCH-ADD exit then
    c cu s" forget" STR= if 3 ARG-COUNT 1 ARG$ PROVIDER# 2 ARG$ CMD-FORGET exit then
+   c cu s" redeem" STR= if 3 ARG-COUNT 1 ARG$ PROVIDER# 2 ARG$ CMD-REDEEM exit then
    E-SW-USAGE throw ;
 
 : RUN ( -- )
