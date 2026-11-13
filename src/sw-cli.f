@@ -85,6 +85,21 @@ private
    a u k ku STARTS-WITH? 0= if a u exit then
    a ku + u ku - ;
 
+\ ---- status: the read -------------------------------------------------------
+\ the bare reason the last READ-PROVIDER stopped on, taken as it is caught: a
+\ code's reason can name state a later caught error overwrites (TOO-MANY$).
+\ Every reason fits SB-CAP, where the longest are built.
+create STAT-REASON SB-CAP allot   variable STAT-REASON-U
+
+\ STATUS-READ of provider p, keeping its reason; empty when it read everything
+: READ-PROVIDER ( n -- )
+   STATUS-READ
+   0 STAT-REASON-U !
+   STATUS-ERROR 0= if exit then
+   STATUS-ERROR BARE-REASON$ STAT-REASON STAT-REASON-U SB-CAP SPAN! ;
+
+: STAT-REASON$ ( -- ptr u8 n ) STAT-REASON STAT-REASON-U @ ;
+
 \ ---- status: text -----------------------------------------------------------
 \ Each provider is rendered right after its read: the row table, ID-LIVE and
 \ the usage record hold that provider until the next store read.
@@ -106,12 +121,12 @@ private
    cr ;
 
 : .LIVE ( -- )
-   STATUS-ERROR 0<> if STATUS-ERROR REASON$ type cr exit then
+   STATUS-ERROR 0<> if STAT-REASON$ type cr exit then
    STATUS-LIVE? if ID-LIVE EMAIL$ type ID-LIVE PLAN$ .PLAN cr exit then
    s" no live login" type cr ;
 
 : .PROVIDER ( n -- ) {: p :}
-   p STATUS-READ
+   p READ-PROVIDER
    p PROVIDER$ type s" : " type .LIVE
    STATUS-ROWS 0 ?do p i .ACCOUNT loop ;
 
@@ -158,7 +173,7 @@ private
 
 : SNAP-ERROR ( -- )
    STATUS-ERROR 0= if exit then
-   ENC-COMMA s" error" ENC-KEY STATUS-ERROR BARE-REASON$ ENC-STR ;
+   ENC-COMMA s" error" ENC-KEY STAT-REASON$ ENC-STR ;
 
 : SNAP-AT ( -- )
    STATUS-AT 0= if drop exit then
@@ -172,7 +187,7 @@ private
    $7D ENC-C ;
 
 : SNAP-PROVIDER ( n -- ) {: p :}
-   p STATUS-READ
+   p READ-PROVIDER
    p 0 > if ENC-COMMA then
    $7B ENC-C
    s" accounts" ENC-KEY $5B ENC-C

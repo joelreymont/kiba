@@ -10,6 +10,7 @@ require src/lib/process.f
 require src/lib/spawn.f
 require src/lib/time.f
 require src/lib/test/stderr.f
+require src/lib/test/runner.f
 
 package SW-TEST
 using SW
@@ -1899,6 +1900,53 @@ variable UT-V
    CLAUDE-CONFIG$ s" {not json" WRITE-PRIVATE
    STATUS-JSON$ SNAP-ERROR-LIT$ T$= ;
 
+\ live Claude credentials whose plan is one byte past PLAN-CAP
+: CREDS-LONG$ ( -- ptr u8 n )
+   s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-l\",\"subscriptionType\":\"ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\"}}" ;
+
+create UT-SQL 2048 allot   variable UT-SQL-U
+
+: UT-SQL+ ( ptr u8 n -- ) {: a u :}
+   a UT-SQL UT-SQL-U @ + u BYTE-COPY
+   u UT-SQL-U +! ;
+
+\ n@x.test's stored usage note is 1100 bytes, past REC-NOTE-CAP
+: UT-LONG-NOTE ( -- )
+   0 UT-SQL-U !
+   s\" UPDATE account SET usage = '{\"fetchedAt\":1,\"limits\":[],\"note\":\"" UT-SQL+
+   1100 0 ?do s" n" UT-SQL+ loop
+   s\" \",\"state\":\"ok\"}' WHERE provider = 'claude' AND name = 'n@x.test'" UT-SQL+
+   UT-SQL UT-SQL-U @ s" test" DB-EXEC ;
+
+4096 constant UT-OUT-CAP
+create UT-OUT UT-OUT-CAP allot   create UT-OUT-ERR UT-OUT-CAP allot
+variable UT-OUT-U
+
+\ text status's stdout, run as the command runs it, with its own store open
+: UT-STATUS-TEXT$ ( -- ptr u8 n )
+   DB-CLOSE
+   [: false CMD-STATUS ;] s" HOME" GETENV
+   UT-OUT UT-OUT-CAP SPAN:MAKE UT-OUT-ERR UT-OUT-CAP SPAN:MAKE
+   GT-CAPTURE-ACTION {: outu:len erru:len rc:n :}
+   DB-OPEN
+   rc 0 T=
+   outu LEN>N UT-OUT-U !
+   UT-OUT UT-OUT-U @ ;
+
+\ the live read's reason is the one it stopped on, though decoding a row's
+\ usage overflows another buffer before the error is written
+: UT-STATUS-REASON ( -- )
+   CFG-A$ CREDS-A$ ID-SLOT CLAUDE-IDENTITY TTRUE
+   [: P-CLAUDE s" n@x.test" ID-SLOT CREDS-A$ OAUTH-A$ false DB-PUT ;] DB-WRITE
+   UT-LONG-NOTE
+   CLAUDE-CONFIG$ CFG-A$ WRITE-PRIVATE
+   CLAUDE-CREDS$ CREDS-LONG$ WRITE-PRIVATE
+   STATUS-JSON$ s\" \"error\":\"too many: bytes in a JSON string (limit 64)\"" CONTAINS? TTRUE
+   UT-STATUS-TEXT$ s\" claude: too many: bytes in a JSON string (limit 64)\n" CONTAINS? TTRUE
+   CLAUDE-CONFIG$ s" {not json" WRITE-PRIVATE
+   CLAUDE-CREDS$ CREDS-A$ WRITE-PRIVATE
+   [: P-CLAUDE s" n@x.test" DB-REMOVE ;] DB-WRITE ;
+
 \ a newer schema is refused and leaves the store closed
 : UT-DB-VERSION ( -- )
    s" PRAGMA user_version = 6" s" test" DB-EXEC
@@ -1923,6 +1971,7 @@ variable UT-V
    UT-DB-ROLLBACK
    UT-STATUS-JSON
    UT-STATUS-ERROR
+   UT-STATUS-REASON
    UT-DB-VERSION ;
 
 : UT-NAMES ( -- )
