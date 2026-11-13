@@ -1900,6 +1900,112 @@ create UT-LIST UT-LIST-CAP allot
    fd close
    UT-QUEUE-LEN 0 T= ;
 
+\ ---- every Codex probe outcome ------------------------------------------------
+\ a fake curl for the Codex outcomes: the usage call answers 429 to at-t,
+\ 200 to at-d2 and 401 to any other token; the token endpoint refuses
+\ rt-x with invalid_grant, answers rt-u without an access token and 503 to
+\ anything else; each call is logged with its token and request body
+: UT-OUTCOME-CURL ( -- )
+   s" curl"
+   s\" #!/bin/sh\nout=; auth=; url=; grant=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) case \"$2\" in @*) auth=$(/usr/bin/grep ^Authorization: \"${2#@}\");; esac; shift;; --data-binary) grant=$(/usr/bin/cat \"${2#@}\"); shift;; -X|-m|-w) shift;; *) url=$1;; esac; shift; done\necho \"$url $auth $grant\" >> \"$KIBA_TEST_LOG\"\ncode=200; body='{}'\ncase \"$url\" in\n*chatgpt.com/backend-api/wham/usage) case \"$auth\" in *at-t) code=429; body='{\"error\":{\"code\":\"rate_limited\"}}';; *at-d2) ;; *) code=401; body='{\"error\":{\"code\":\"token_expired\"}}';; esac;;\n*auth.openai.com/oauth/token) case \"$grant\" in *rt-x*) code=400; body='{\"error\":\"invalid_grant\"}';; *rt-u*) body='{\"refresh_token\":\"rt-u2\"}';; *) code=503; body='';; esac;;\n*) code=404;;\nesac\nprintf '%s' \"$body\" > \"$out\"\nprintf '%s' \"$code\"\n"
+   UT-WRITE-SCRIPT ;
+
+\ an API-key login whose tokens hold an access token but no id_token
+: AUTH-KEY-AT$ ( -- ptr u8 n )
+   s\" {\"auth_mode\":\"apikey\",\"OPENAI_API_KEY\":\"sk-k\",\"tokens\":{\"access_token\":\"at-k\",\"refresh_token\":\"rt-k\"}}" ;
+
+: AUTH-X$ ( -- ptr u8 n )
+   s\" {\"auth_mode\":\"chatgpt\",\"tokens\":{\"access_token\":\"at-x\",\"refresh_token\":\"rt-x\",\"account_id\":\"acct\"}}" ;
+
+\ a ChatGPT login with no refresh token
+: AUTH-M$ ( -- ptr u8 n )
+   s\" {\"auth_mode\":\"chatgpt\",\"tokens\":{\"access_token\":\"at-m\",\"account_id\":\"acct\"}}" ;
+
+: AUTH-U$ ( -- ptr u8 n )
+   s\" {\"auth_mode\":\"chatgpt\",\"tokens\":{\"access_token\":\"at-u\",\"refresh_token\":\"rt-u\",\"account_id\":\"acct\"}}" ;
+
+: AUTH-T$ ( -- ptr u8 n )
+   s\" {\"auth_mode\":\"chatgpt\",\"tokens\":{\"access_token\":\"at-t\",\"refresh_token\":\"rt-t\",\"account_id\":\"acct\"}}" ;
+
+\ usage codex run with row a u holding login l lu, the fakes' log marked
+\ before it
+: UT-OUTCOME-RUN ( ptr u8 n ptr u8 n -- ) {: a u l lu :}
+   P-CODEX a u l lu UT-PUT
+   UT-LOG-MARK
+   P-CODEX CMD-USAGE ;
+
+: UT-NOTE= ( ptr u8 n -- ) {: a u :}
+   DB-USAGE-NOTE$ a u T$= ;
+
+\ an API-key login without an id_token has no windows: nothing is called
+: UT-CODEX-API-KEY ( -- )
+   s" k@x.test" AUTH-KEY-AT$ UT-OUTCOME-RUN
+   P-CODEX s" k@x.test" UT-RECORD s" unknown" UT-STATE=
+   s" API-key login: no usage windows to read" UT-NOTE=
+   UT-LOG-NEW$ s" at-k" CONTAINS? TFALSE
+   UT-LOG-NEW$ s" rt-k" CONTAINS? TFALSE
+   P-CODEX s" k@x.test" CMD-FORGET ;
+
+\ the live login's 401 is reported, and its token is never refreshed
+: UT-CODEX-LIVE-401 ( -- )
+   UT-LOG-MARK
+   P-CODEX CMD-USAGE
+   P-CODEX s" c@x.test" UT-RECORD s" expired" UT-STATE=
+   s" access token rejected; run codex once to refresh it" UT-NOTE=
+   P-CODEX s" c@x.test" UT-LAST-LIVE 1 T=
+   UT-LOG-NEW$ s" Bearer at-c" CONTAINS? TTRUE
+   UT-LOG-NEW$ s" auth.openai.com/oauth/token" CONTAINS? TFALSE
+   CODEX-AUTH$ READ-FILE$ AUTH-C$ T$= ;
+
+\ a refresh refused after a 401 that did not say token_revoked is an
+\ expired login, not a revoked one
+: UT-CODEX-REFUSED ( -- )
+   s" x@x.test" AUTH-X$ UT-OUTCOME-RUN
+   P-CODEX s" x@x.test" UT-RECORD s" expired" UT-STATE=
+   s" access token rejected and the refresh was refused; log in again"
+   UT-NOTE=
+   UT-LOG-NEW$ s" rt-x" CONTAINS? TTRUE
+   P-CODEX s" x@x.test" CMD-FORGET ;
+
+\ a 401 on a saved login with no refresh token saved posts nothing
+: UT-CODEX-NO-GRANT ( -- )
+   s" m@x.test" AUTH-M$ UT-OUTCOME-RUN
+   P-CODEX s" m@x.test" UT-RECORD s" expired" UT-STATE=
+   s" access token rejected and no refresh token is saved; log in again"
+   UT-NOTE=
+   UT-LOG-NEW$ s" auth.openai.com/oauth/token" CONTAINS? TFALSE
+   P-CODEX s" m@x.test" CMD-FORGET ;
+
+\ a refresh answering 200 without an access token is an error; the login
+\ is kept as it was
+: UT-CODEX-NO-ACCESS ( -- )
+   s" u@x.test" AUTH-U$ UT-OUTCOME-RUN
+   P-CODEX s" u@x.test" UT-RECORD s" error" UT-STATE=
+   s" OpenAI's token endpoint answered 200" UT-NOTE=
+   P-CODEX s" u@x.test" AUTH-U$ UT-LOGIN=
+   P-CODEX s" u@x.test" CMD-FORGET ;
+
+\ a usage 429 is throttled, and earns no refresh
+: UT-CODEX-THROTTLED ( -- )
+   s" t@x.test" AUTH-T$ UT-OUTCOME-RUN
+   P-CODEX s" t@x.test" UT-RECORD s" throttled" UT-STATE=
+   s" OpenAI is rate limiting usage checks; try again later" UT-NOTE=
+   UT-LOG-NEW$ s" rt-t" CONTAINS? TFALSE
+   P-CODEX s" t@x.test" CMD-FORGET ;
+
+\ each outcome of a Codex probe that the shared fake curl never answers,
+\ read as kiba-mac's CodexProbe records it; the live c@x.test answers 401
+\ throughout
+: UT-CODEX-OUTCOMES ( -- )
+   UT-OUTCOME-CURL
+   UT-CODEX-API-KEY
+   UT-CODEX-LIVE-401
+   UT-CODEX-REFUSED
+   UT-CODEX-NO-GRANT
+   UT-CODEX-NO-ACCESS
+   UT-CODEX-THROTTLED
+   UT-FAKE-CURL ;
+
 : UT-MAIN ( -- )
    T-RESET
    ALLOC-BUFFERS
@@ -1953,6 +2059,7 @@ create UT-LIST UT-LIST-CAP allot
    UT-USAGE-REVOKED
    UT-ANSWER-READS
    UT-CLAUDE-OUTCOMES
+   UT-CODEX-OUTCOMES
    UT-LIVE-EXPIRED
    UT-MIXED-USAGE
    UT-USAGE-ISOLATION
