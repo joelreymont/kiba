@@ -81,7 +81,7 @@ checked Habu program; a thin Omarchy bar widget runs it.
   through `codex app-server` in a copied home: both rotate tokens the running
   CLI still holds.
 - Spawn interactive provider commands with fork plus `execve` (see
-  `RUN-INHERIT`), never the `spawn-*` primitives: those give the child its own
+  `RUN-STAGED`), never the `spawn-*` primitives: those give the child its own
   process group and a terminal read then stops it with SIGTTIN.
 - Credential files and account directories are written `0600`/`0700` and
   replaced atomically.
