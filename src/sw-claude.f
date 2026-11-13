@@ -1,5 +1,6 @@
-\ sw-claude.f - save and install Claude Code logins.
+\ sw-claude.f - Claude Code's live login: read, saved to slots, and written.
 require ../src/sw-identity.f
+require ../src/sw-db.f
 
 package SW
 
@@ -39,27 +40,6 @@ package SW
    OBJ$ OUT+
    s\" }" OUT+ ;
 
-\ the saved object replaces the live value of any kind, so a null left by a
-\ logout is overwritten rather than joined by a second key; a missing key is
-\ inserted and a missing file is created
-: BUILD-CONFIG ( -- )
-   CLAUDE-CONFIG$ FS:FILE? 0= if NEW-CONFIG exit then
-   CLAUDE-CONFIG$ CFG-BUF CFG-U READ-INTO 2drop
-   CFG$ OAUTH-KEY$ DOC-VALUE-SPAN? if SPLICE-CONFIG exit then
-   2drop CFG$ DOC-CLOSE INSERT-CONFIG ;
-
-: WRITE-CONFIG-LIVE ( -- )
-   CLAUDE-CONFIG$ DIRNAME ENSURE-PRIVATE
-   CLAUDE-CONFIG$ OUT$ WRITE-PRIVATE ;
-
-\ until the config rename lands nothing is replaced, so a failed first write
-\ takes its marker with it; after it the marker must stay
-: WRITE-CONFIG-MARKED ( -- )
-   [: WRITE-CONFIG-LIVE ;] catch {: rc :}
-   rc 0= if exit then
-   P-CLAUDE CLEAR-MARK
-   rc throw ;
-
 : CHECK-CREDS ( ptr u8 n -- ) {: d du :}
    d du CHECK-OBJECT
    d du s" claudeAiOauth" DOC-OBJ-SPAN? 0= if E-SW-JSON throw then 2drop ;
@@ -95,19 +75,90 @@ EXPORT CREDS-NAME$
    P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ FS:FILE? 0= if exit then
    P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ READ-SLOT$ ID-SLOT CLAUDE-PLAN ;
 
-\ the marker brackets the two live writes; see sw-io.f
-: CLAUDE-INSTALL ( ptr u8 n -- ) {: a u :}
-   P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ FS:FILE? 0= if E-SW-NO-ACCOUNT throw then
-   P-CLAUDE a u OAUTH-NAME$ SLOT-FILE$ FS:FILE? 0= if E-SW-NO-ACCOUNT throw then
-   P-CLAUDE a u OAUTH-NAME$ SLOT-FILE$ OBJ-BUF OBJ-U READ-INTO CHECK-OBJECT
-   a u CHECK-SLOT-EMAIL
-   BUILD-CONFIG
-   P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ READ-SLOT$ CHECK-CREDS
-   P-CLAUDE a u MARK-INSTALL
-   WRITE-CONFIG-MARKED
+\ ---- the live login over the store ----------------------------------------
+private
+
+\ The live config goes to CFG, length -1 when there is none, and the live
+\ credentials to FILE, length -1 likewise.
+
+\ false when there are no credentials; credentials without a config are some
+\ account's tokens and nothing says whose, so they are E-SW-ORPHAN-LIVE
+: CLAUDE-LIVE ( -- bool )
+   CLAUDE-CONFIG$ CFG-BUF CFG-U READ-OPT 2drop
+   CLAUDE-CREDS$ FILE-BUF FILE-U READ-OPT nip 0 < if false exit then
+   CFG-U @ 0 < if E-SW-ORPHAN-LIVE throw then
+   true ;
+
+\ ID-LIVE from the config's oauthAccount object plus the credentials' plan;
+\ answers the object's offset and length in CFG
+: CLAUDE-DECODE ( -- n n )
+   CFG$ OAUTH-KEY$ DOC-OBJ-SPAN {: off len :}
+   CFG-BUF off + len ID-LIVE CLAUDE-OAUTH-IDENTITY 0= if E-SW-JSON throw then
+   ID-LIVE EMAIL$ nip 0= if E-SW-JSON throw then
+   FILE$ ID-LIVE CLAUDE-PLAN
+   off len ;
+
+\ the login as one read: the credentials, and the profile the identity came
+\ from; false when there is no live login
+: CLAUDE-LIVE-LOGIN ( -- ptr u8 n ptr u8 n bool )
+   CLAUDE-LIVE 0= if FILE-BUF 0 FILE-BUF -1 false exit then
+   CLAUDE-DECODE {: off len :}
+   FILE$ CFG-BUF off + len true ;
+
+create MIXED-NAME NAME-CAP allot   variable MIXED-NAME-U
+
+: MIXED-NAME$ ( -- ptr u8 n ) MIXED-NAME MIXED-NAME-U @ ;
+
+\ an org on either side that is unknown matches
+: SAME-ORG? ( -- bool )
+   ID-LIVE ORG$ nip 0= if true exit then
+   0 DB-ROW-ORG$ nip 0= if true exit then
+   ID-LIVE ORG$ 0 DB-ROW-ORG$ STR= ;
+
+\ the installed row exists, the live config names another account, and the
+\ live credentials are still that row's login
+: OTHER-OVER-INSTALLED? ( -- bool )
+   P-CLAUDE DB-INSTALLED 0= if 2drop false exit then
+   MIXED-NAME MIXED-NAME-U NAME-CAP SPAN!
+   P-CLAUDE MIXED-NAME$ DB-FETCH 0= if false exit then
+   CLAUDE-DECODE 2drop
+   MIXED-NAME$ ID-LIVE EMAIL$ NAME-FOR-EMAIL? SAME-ORG? and if false exit then
+   FILE$ 0 DB-ROW-LOGIN$ STR= ;
+
+\ The live files are read first, so orphan credentials throw even while an
+\ install is pending. A pending install is mixed whatever the files hold.
+: CLAUDE-LIVE-MIXED? ( -- bool )
+   CLAUDE-LIVE {: pair :}
+   P-CLAUDE DB-PENDING nip nip if true exit then
+   pair 0= if false exit then
+   OTHER-OVER-INSTALLED? ;
+
+\ OUT = the live config with its top-level oauthAccount value, of any kind,
+\ replaced by OBJ; inserted before the closing brace when absent; a new
+\ document when there is no config
+: CLAUDE-SPLICED ( -- )
+   CFG-U @ 0 < if NEW-CONFIG exit then
+   CFG$ OAUTH-KEY$ DOC-VALUE-SPAN? if SPLICE-CONFIG exit then
+   2drop CFG$ DOC-CLOSE INSERT-CONFIG ;
+
+\ removes the file a config write would replace; nothing to do when absent
+: DROP-CONFIG ( -- )
+   CLAUDE-CONFIG$ WRITE-TARGET {: t tu :}
+   t tu FS:EXISTS? if t tu FS:REMOVE-TREE then ;
+
+\ makes the live config the document; length -1 removes it
+: PUT-CONFIG ( ptr u8 n -- ) {: d du :}
+   du 0 < if DROP-CONFIG exit then
+   CLAUDE-CONFIG$ DIRNAME ENSURE-PRIVATE
+   CLAUDE-CONFIG$ d du WRITE-PRIVATE ;
+
+: PUT-CREDS ( ptr u8 n -- ) {: d du :}
    CLAUDE-CREDS$ DIRNAME ENSURE-PRIVATE
-   CLAUDE-CREDS$ SDOC$ WRITE-PRIVATE
-   P-CLAUDE CLEAR-MARK
-   P-CLAUDE a u NOTE-INSTALLED ;
+   CLAUDE-CREDS$ d du WRITE-PRIVATE ;
+
+\ whether the live credentials read back as FILE, the bytes read before an
+\ install: a write that failed may still have replaced them
+: CREDS-BACK? ( -- bool )
+   CLAUDE-CREDS$ BACK-BUF BACK-U READ-OPT FILE$ SAME-OPT? ;
 
 ;package

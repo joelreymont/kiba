@@ -23,12 +23,14 @@ public
 -100009 constant E-SW-NO-CLI      \ a required command is not on PATH
 -100010 constant E-SW-BASE64      \ a JWT segment is not base64url
 -100011 constant E-SW-ENV         \ HOME is not set
--100012 constant E-SW-INTERRUPTED \ an earlier switch stopped between its two file writes
--100013 constant E-SW-MISMATCH    \ a saved file names a different account than its slot
+-100013 constant E-SW-MISMATCH    \ a saved login names a different account than its name
 -100015 constant E-SW-MIXED       \ the live Claude files name different accounts
 -100016 constant E-SW-DB          \ a SQLite call failed
 -100017 constant E-SW-DB-VERSION  \ the store is from a newer schema
 -100018 constant E-SW-TURN-BUSY   \ another kiba holds the provider's turn
+-100019 constant E-SW-UNRESTORED  \ an add's record of the live login waits to be put back
+-100020 constant E-SW-SUPERSEDED  \ another install claimed the pending marker first
+-100021 constant E-SW-ORPHAN-LIVE \ Claude credentials exist without a config naming them
 
 0 constant P-CLAUDE
 1 constant P-CODEX

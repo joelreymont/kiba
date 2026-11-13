@@ -166,49 +166,111 @@ create UT-PID 32 allot
    CLAUDE-CREDS$ CREDS-B$ WRITE-PRIVATE
    CODEX-AUTH$ AUTH-D$ WRITE-PRIVATE ;
 
-: UT-SAVED-NAMES ( -- )
-   P-CLAUDE LIST-ACCOUNTS ACCT# 2 T=
-   0 ACCT-NAME s" a@x.test" T$=
-   1 ACCT-NAME s" b@x.test" T$=
-   P-CODEX LIST-ACCOUNTS ACCT# 2 T=
-   0 ACCT-NAME s" c@x.test" T$=
-   1 ACCT-NAME s" d@x.test" T$= ;
+\ ---- saved logins in the account store -------------------------------------
+\ save, use and forget open the store themselves; a test opens it only to look
+: CREDS-A9$ ( -- ptr u8 n )
+   s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-a9\",\"refreshToken\":\"r-a9\",\"expiresAt\":4102444800000,\"scopes\":[\"user:inference\"],\"subscriptionType\":\"max\"}}" ;
 
-: UT-FLOW ( -- )
+: AUTH-C9$ ( -- ptr u8 n )
+   s\" {\"OPENAI_API_KEY\":null,\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImNAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicGx1cyIsImNoYXRncHRfYWNjb3VudF9pZCI6ImFjY3QifSwiZXhwIjoxfQ.c2ln\",\"access_token\":\"at-c9\",\"refresh_token\":\"rt-c\",\"account_id\":\"acct\"},\"last_refresh\":\"2026-09-14T07:11:36Z\"}" ;
+
+\ CFG-A with account B spliced in
+: CFG-AB$ ( -- ptr u8 n )
+   s\" {\"numStartups\":3,\"oauthAccount\":{\"accountUuid\":\"u2\",\"emailAddress\":\"b@x.test\"},\"projects\":{\"/x\":{\"allowedTools\":[]}}}" ;
+
+: CFG-ONLY-A$ ( -- ptr u8 n )
+   s\" {\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-a\",\"organizationName\":\"Org A\"}}" ;
+
+variable UT-N
+variable UT-SW0
+create UT-LOCKED-BUF 256 allot   variable UT-LOCKED-U
+create UT-REAL-BUF 256 allot     variable UT-REAL-U
+
+: UT-STORE ( [ -- ] -- ) {: body :}
+   DB-OPEN [: body execute ;] [: DB-CLOSE ;] finally ;
+
+: UT-COUNT-SWITCHES ( n -- ) {: p :}
+   s" SELECT count(*) FROM history WHERE provider = ? AND kind = 'switch'" s" test"
+   [: p PROVIDER$ DB-TEXT+ ;] [: 0 DB-COL-INT UT-N ! ;] DB-QUERY ;
+
+: UT-SWITCHES ( n -- n ) {: p :}
+   0 UT-N ! [: p UT-COUNT-SWITCHES ;] UT-STORE UT-N @ ;
+
+: UT-LOGIN= ( n ptr u8 n ptr u8 n -- ) {: p a u l lu :}
+   [: p a u DB-FETCH TTRUE 0 DB-ROW-LOGIN$ l lu T$= ;] UT-STORE ;
+
+: UT-FETCH ( n ptr u8 n -- ) {: p a u :} p a u DB-FETCH UT-N ! ;
+
+: UT-ROW? ( n ptr u8 n -- bool ) {: p a u :}
+   [: p a u UT-FETCH ;] UT-STORE UT-N @ ;
+
+: UT-INSTALLED= ( n ptr u8 n -- ) {: p a u :}
+   [: p DB-INSTALLED TTRUE a u T$= ;] UT-STORE ;
+
+: UT-PENDING-KEEP ( n -- ) DB-PENDING UT-N ! 2drop ;
+
+: UT-PENDING? ( n -- bool ) {: p :}
+   [: p UT-PENDING-KEEP ;] UT-STORE UT-N @ ;
+
+: UT-PENDING= ( n ptr u8 n -- ) {: p a u :}
+   [: p DB-PENDING TTRUE a u T$= ;] UT-STORE ;
+
+: UT-KEEP-NAME ( n -- ) {: p :}
+   p LIVE-IDENTITY TTRUE
+   p ID-LIVE DB-LIVE-NAME UT-BUF 256 SPAN-COPY nip UT-N ! ;
+
+\ the name DB-LIVE-NAME gives the live login now
+: UT-LIVE-NAME ( n -- ptr u8 n ) {: p :}
+   [: p UT-KEEP-NAME ;] UT-STORE UT-BUF UT-N @ ;
+
+: UT-NO-CREDS ( -- ) CLAUDE-CREDS$ FS:REMOVE-FILE ;
+
+: UT-STORE-SAVE ( -- )
    UT-LIVE-A
-   P-CLAUDE LIVE-IDENTITY TTRUE
-   ID-LIVE EMAIL$ s" a@x.test" T$=
+   P-CLAUDE UT-LIVE-NAME s" a@x.test" T$=
    -1 CMD-SAVE
-   P-CLAUDE LIST-ACCOUNTS ACCT# 1 T=
-   0 ACCT-NAME s" a@x.test" T$=
+   P-CLAUDE s" a@x.test" CREDS-A$ UT-LOGIN=
+   P-CODEX s" c@x.test" AUTH-C$ UT-LOGIN=
+   [: P-CLAUDE s" a@x.test" DB-FETCH TTRUE
+      0 DB-ROW-PROFILE$ OAUTH-A$ T$=
+      0 DB-ROW-PLAN$ s" max" T$= ;] UT-STORE
    UT-LIVE-B
+   P-CLAUDE UT-LIVE-NAME s" b@x.test" T$=
    -1 CMD-SAVE
-   UT-SAVED-NAMES
-   P-CLAUDE s" a@x.test" CMD-USE
-   CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
-   CLAUDE-CONFIG$ READ-FILE$ CFG-BA$ T$=
+   P-CLAUDE s" b@x.test" CREDS-B$ UT-LOGIN=
+   P-CODEX s" d@x.test" AUTH-D$ UT-LOGIN=
+   STORE$ FS:STAT-MODE $1FF and $1C0 T= ;
+
+\ the live login, its tokens refreshed since it was saved, is saved back
+\ before the second account is installed
+: UT-STORE-USE ( -- )
+   CLAUDE-CONFIG$ CFG-A$ WRITE-PRIVATE
+   CLAUDE-CREDS$ CREDS-A9$ WRITE-PRIVATE
+   P-CLAUDE s" b@x.test" CMD-USE
+   CLAUDE-CREDS$ READ-FILE$ CREDS-B$ T$=
+   CLAUDE-CONFIG$ READ-FILE$ CFG-AB$ T$=
    CLAUDE-CREDS$ FS:STAT-MODE $1FF and $180 T=
-   STORE$ FS:STAT-MODE $1FF and $1C0 T=
-   P-CLAUDE PROVIDER-DIR$ FS:STAT-MODE $1FF and $1C0 T=
-   P-CLAUDE s" a@x.test" SLOT-DIR$ FS:STAT-MODE $1FF and $1C0 T=
-   P-CLAUDE s" a@x.test" s" oauth-account.json" SLOT-FILE$ FS:STAT-MODE $1FF and $180 T=
-   P-CLAUDE LIVE-IDENTITY TTRUE
-   ID-LIVE EMAIL$ s" a@x.test" T$=
-   ID-LIVE PLAN$ s" max" T$=
-   P-CODEX s" c@x.test" CMD-USE
-   CODEX-AUTH$ READ-FILE$ AUTH-C$ T$=
-   P-CODEX LIVE-IDENTITY TTRUE
-   ID-LIVE EMAIL$ s" c@x.test" T$=
-   P-CLAUDE s" b@x.test" s" credentials.json" SLOT-FILE$ READ-FILE$ CREDS-B$ T$=
-   P-CODEX s" d@x.test" s" auth.json" SLOT-FILE$ READ-FILE$ AUTH-D$ T$=
+   CLAUDE-CONFIG$ FS:STAT-MODE $1FF and $180 T=
+   P-CLAUDE s" a@x.test" CREDS-A9$ UT-LOGIN=
+   P-CLAUDE s" b@x.test" UT-INSTALLED=
+   P-CLAUDE UT-PENDING? TFALSE
+   P-CLAUDE UT-SWITCHES 1 T=
+   P-CLAUDE LIVE-IDENTITY TTRUE ID-LIVE EMAIL$ s" b@x.test" T$=
    [: P-CLAUDE s" nobody@x" CMD-USE ;] E-SW-NO-ACCOUNT TTHROWSQ
-   P-CLAUDE s" b@x.test" CMD-FORGET
-   P-CLAUDE LIST-ACCOUNTS ACCT# 1 T=
-   [: P-CLAUDE s" b@x.test" CMD-FORGET ;] E-SW-NO-ACCOUNT TTHROWSQ
-   LOCK$ FS:DIR? TFALSE ;
+   P-CLAUDE UT-PENDING? TFALSE
+   P-CLAUDE UT-SWITCHES 1 T= ;
+
+: UT-STORE-USE-CODEX ( -- )
+   CODEX-AUTH$ AUTH-C9$ WRITE-PRIVATE
+   P-CODEX s" d@x.test" CMD-USE
+   CODEX-AUTH$ READ-FILE$ AUTH-D$ T$=
+   P-CODEX s" c@x.test" AUTH-C9$ UT-LOGIN=
+   P-CODEX s" d@x.test" UT-INSTALLED=
+   P-CODEX UT-PENDING? TFALSE
+   P-CODEX UT-SWITCHES 1 T= ;
 
 \ a second login under the same email but another organization gets its own
-\ slot, "a@x.test #2", and the active mark follows the organization
+\ name, "a@x.test #2"
 : CFG-A2$ ( -- ptr u8 n )
    s\" {\"oauthAccount\":{\"accountUuid\":\"u9\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-c\",\"organizationName\":\"Org C\"}}" ;
 
@@ -228,13 +290,10 @@ create UT-PID 32 allot
    CLAUDE-CONFIG$ CFG-A2$ WRITE-PRIVATE
    CLAUDE-CREDS$ CREDS-A2$ WRITE-PRIVATE
    P-CLAUDE CMD-SAVE
-   P-CLAUDE LIST-ACCOUNTS ACCT# 2 T=
-   0 ACCT-NAME s" a@x.test" T$=
-   1 ACCT-NAME s" a@x.test #2" T$=
-   P-CLAUDE s" a@x.test #2" s" credentials.json" SLOT-FILE$ READ-FILE$ CREDS-A2$ T$=
-   P-CLAUDE s" a@x.test" s" credentials.json" SLOT-FILE$ READ-FILE$ CREDS-A$ T$=
+   P-CLAUDE s" a@x.test #2" CREDS-A2$ UT-LOGIN=
+   P-CLAUDE s" a@x.test" CREDS-A9$ UT-LOGIN=
    P-CLAUDE s" a@x.test" CMD-USE
-   CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
+   CLAUDE-CREDS$ READ-FILE$ CREDS-A9$ T$=
    P-CLAUDE s" a@x.test #2" CMD-USE
    CLAUDE-CREDS$ READ-FILE$ CREDS-A2$ T$=
    P-CLAUDE LIVE-IDENTITY TTRUE ID-LIVE ORG$ s" org-c" T$=
@@ -243,80 +302,153 @@ create UT-PID 32 allot
    CLAUDE-CREDS$ CREDS-A2$ WRITE-PRIVATE
    P-CLAUDE CMD-SAVE
    P-CLAUDE CMD-SAVE
-   P-CLAUDE LIST-ACCOUNTS ACCT# 3 T=
-   1 ACCT-NAME s" a@x.test #2" T$=
-   2 ACCT-NAME s" a@x.test #3" T$=
+   P-CLAUDE s" a@x.test #3" CREDS-A2$ UT-LOGIN=
+   [: P-CLAUDE DB-LIST DB-ROW# 4 T= ;] UT-STORE
    P-CLAUDE s" a@x.test" CMD-USE
    P-CLAUDE s" a@x.test #2" CMD-FORGET
    P-CLAUDE s" a@x.test #3" CMD-FORGET ;
 
-\ install into a config that has no oauthAccount, an empty one, and none at all
+\ install into a config that has no oauthAccount, an empty one, and none at
+\ all; credentials beside a config naming no account are unreadable, so each
+\ starts from none
 : UT-INSTALL-INSERT ( -- )
+   UT-NO-CREDS
    CLAUDE-CONFIG$ CFG-NOAUTH$ WRITE-PRIVATE
    P-CLAUDE s" a@x.test" CMD-USE
    CLAUDE-CONFIG$ READ-FILE$ s\" {\"numStartups\":1,\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-a\",\"organizationName\":\"Org A\"}}" T$=
    P-CLAUDE LIVE-IDENTITY TTRUE ID-LIVE EMAIL$ s" a@x.test" T$=
+   UT-NO-CREDS
    CLAUDE-CONFIG$ CFG-EMPTY$ WRITE-PRIVATE
    P-CLAUDE s" a@x.test" CMD-USE
-   CLAUDE-CONFIG$ READ-FILE$ s\" {\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-a\",\"organizationName\":\"Org A\"}}" T$=
+   CLAUDE-CONFIG$ READ-FILE$ CFG-ONLY-A$ T$=
+   UT-NO-CREDS
    CLAUDE-CONFIG$ FS:REMOVE-FILE
    P-CLAUDE s" a@x.test" CMD-USE
-   CLAUDE-CONFIG$ READ-FILE$ s\" {\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-a\",\"organizationName\":\"Org A\"}}" T$=
+   CLAUDE-CONFIG$ READ-FILE$ CFG-ONLY-A$ T$=
    CLAUDE-CONFIG$ FS:STAT-MODE $1FF and $180 T=
+   UT-NO-CREDS
    CLAUDE-CONFIG$ s\" {\"a\":1,\"oauthAccount\":null,\"z\":2}" WRITE-PRIVATE
    P-CLAUDE s" a@x.test" CMD-USE
    CLAUDE-CONFIG$ READ-FILE$ s\" {\"a\":1,\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-a\",\"organizationName\":\"Org A\"},\"z\":2}" T$=
    P-CLAUDE LIVE-IDENTITY TTRUE ID-LIVE EMAIL$ s" a@x.test" T$=
+   UT-NO-CREDS
    CLAUDE-CONFIG$ s\" {\"oauthAccount\":\"gone\"}" WRITE-PRIVATE
    P-CLAUDE s" a@x.test" CMD-USE
-   CLAUDE-CONFIG$ READ-FILE$ s\" {\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-a\",\"organizationName\":\"Org A\"}}" T$= ;
+   CLAUDE-CONFIG$ READ-FILE$ CFG-ONLY-A$ T$=
+   CLAUDE-CREDS$ READ-FILE$ CREDS-A9$ T$= ;
 
-\ a config write that fails before its rename leaves no marker behind
+\ a config write that fails, with the old config unable to go back, leaves
+\ the install pending: save refuses, and the next install clears it
 : UT-FAILED-FIRST-WRITE ( -- )
    HOME$ $140 FS:CHMOD-MODE
    [: P-CLAUDE s" a@x.test" CMD-USE ;] E-FS-OPEN TTHROWSQ
    HOME$ $1C0 FS:CHMOD-MODE
-   P-CLAUDE INSTALLING? TFALSE
+   P-CLAUDE s" a@x.test" UT-PENDING=
+   [: P-CLAUDE CMD-SAVE ;] E-SW-MIXED TTHROWSQ
+   P-CLAUDE s" a@x.test" CMD-USE
+   P-CLAUDE UT-PENDING? TFALSE
    P-CLAUDE LIVE-IDENTITY TTRUE ID-LIVE EMAIL$ s" a@x.test" T$= ;
 
-\ an interrupted install: config already names B, credentials are still A's
-: UT-INTERRUPTED ( -- )
-   P-CLAUDE s" b@x.test" MARK-INSTALL
-   CLAUDE-CONFIG$ CFG-B$ WRITE-PRIVATE
-   CLAUDE-CREDS$ CREDS-A$ WRITE-PRIVATE
-   [: -1 CMD-SAVE ;] E-SW-INTERRUPTED TTHROWSQ
+\ credentials that cannot be read stop the switch before anything is written
+: UT-CREDS-DIR ( -- )
+   P-CLAUDE UT-SWITCHES UT-SW0 !
+   UT-NO-CREDS
+   CLAUDE-CREDS$ ENSURE-PRIVATE
+   [: P-CLAUDE s" b@x.test" CMD-USE ;] E-FS-IO TTHROWSQ
+   CLAUDE-CONFIG$ READ-FILE$ CFG-ONLY-A$ T$=
+   P-CLAUDE UT-PENDING? TFALSE
+   P-CLAUDE UT-SWITCHES UT-SW0 @ T=
+   CLAUDE-CREDS$ FS:REMOVE-DIR
+   CLAUDE-CREDS$ CREDS-A9$ WRITE-PRIVATE ;
+
+: UT-LOCKED$ ( -- ptr u8 n )
+   HOME$ {: h hu :}
+   SB-RESET h hu SB-APPEND s" /locked" SB-APPEND SB$ UT-LOCKED-BUF 256 SPAN-COPY ;
+
+: UT-REAL$ ( -- ptr u8 n )
+   UT-LOCKED$ {: l lu :}
+   SB-RESET l lu SB-APPEND s" /creds.json" SB-APPEND SB$ UT-REAL-BUF 256 SPAN-COPY ;
+
+\ live credentials readable through a link into a directory nothing can be
+\ written in: the config write succeeds, the credentials write fails
+: UT-LINK-CREDS ( -- )
+   UT-LOCKED$ ENSURE-PRIVATE
+   UT-REAL$ CREDS-A9$ WRITE-PRIVATE
+   UT-LOCKED$ $140 FS:CHMOD-MODE
+   UT-NO-CREDS
+   UT-REAL$ CLAUDE-CREDS$ FS:MAKE-SYMLINK ;
+
+: UT-UNLINK-CREDS ( -- )
+   CLAUDE-CREDS$ FS:REMOVE-FILE
+   UT-LOCKED$ $1C0 FS:CHMOD-MODE
+   UT-LOCKED$ FS:REMOVE-TREE
+   CLAUDE-CREDS$ CREDS-A9$ WRITE-PRIVATE ;
+
+\ the failed credentials write puts the old config back; with no install
+\ pending before, the files are known to be the pair from before, so the
+\ claim is cleared and nothing is recorded
+: UT-RESTORED ( -- )
+   P-CLAUDE UT-SWITCHES UT-SW0 !
+   UT-LINK-CREDS
+   [: P-CLAUDE s" b@x.test" CMD-USE ;] E-FS-OPEN TTHROWSQ
+   CLAUDE-CONFIG$ READ-FILE$ CFG-ONLY-A$ T$=
+   UT-REAL$ READ-FILE$ CREDS-A9$ T$=
+   P-CLAUDE UT-PENDING? TFALSE
+   P-CLAUDE UT-SWITCHES UT-SW0 @ T=
+   P-CLAUDE s" a@x.test" UT-INSTALLED=
+   UT-UNLINK-CREDS ;
+
+: UT-NOTE-PENDING ( -- )
+   [: P-CLAUDE s" a@x.test" DB-NOTE-PENDING 2drop ;] DB-WRITE ;
+
+\ with an install already pending the pair from before is unknown, so the
+\ throw between the config and credentials writes leaves the pending row:
+\ save refuses until an install completes
+: UT-REPAIR-PENDING ( -- )
+   [: UT-NOTE-PENDING ;] UT-STORE
+   UT-LINK-CREDS
+   [: P-CLAUDE s" b@x.test" CMD-USE ;] E-FS-OPEN TTHROWSQ
+   CLAUDE-CONFIG$ READ-FILE$ CFG-ONLY-A$ T$=
+   P-CLAUDE s" b@x.test" UT-PENDING=
+   [: P-CLAUDE CMD-SAVE ;] E-SW-MIXED TTHROWSQ
+   UT-UNLINK-CREDS
    P-CLAUDE s" a@x.test" CMD-USE
-   P-CLAUDE INSTALLING? TFALSE
-   P-CLAUDE s" b@x.test" s" credentials.json" SLOT-FILE$ FS:FILE? TFALSE
-   P-CLAUDE s" a@x.test" s" credentials.json" SLOT-FILE$ READ-FILE$ CREDS-A$ T$=
-   CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$= ;
+   P-CLAUDE UT-PENDING? TFALSE
+   CLAUDE-CREDS$ READ-FILE$ CREDS-A9$ T$= ;
+
+: UT-PUT-Z ( -- )
+   AUTH-C$ ID-SLOT CODEX-IDENTITY TTRUE
+   [: P-CODEX s" z@x.test" ID-SLOT AUTH-C$ UT-BUF -1 false DB-PUT ;] DB-WRITE ;
 
 : UT-MISMATCH ( -- )
-   P-CODEX s" z@x.test" SLOT-DIR$ ENSURE-PRIVATE
-   P-CODEX s" z@x.test" s" auth.json" SLOT-FILE$ AUTH-C$ WRITE-PRIVATE
+   [: UT-PUT-Z ;] UT-STORE
+   P-CODEX UT-SWITCHES UT-SW0 !
    [: P-CODEX s" z@x.test" CMD-USE ;] E-SW-MISMATCH TTHROWSQ
-   P-CODEX LIVE-IDENTITY TTRUE ID-LIVE EMAIL$ s" c@x.test" T$=
+   CODEX-AUTH$ READ-FILE$ AUTH-D$ T$=
+   P-CODEX UT-SWITCHES UT-SW0 @ T=
    P-CODEX s" z@x.test" CMD-FORGET ;
 
-\ a damaged slot still lists; installing it is refused
-: UT-DAMAGED-SLOT ( -- )
-   P-CLAUDE s" bad@x.test" SLOT-DIR$ ENSURE-PRIVATE
-   P-CLAUDE s" bad@x.test" s" credentials.json" SLOT-FILE$ s" garbage" WRITE-PRIVATE
-   P-CLAUDE s" bad@x.test" s" oauth-account.json" SLOT-FILE$ s\" {\"emailAddress\":\"bad@x.test\"}" WRITE-PRIVATE
-   P-CLAUDE LIST-ACCOUNTS ACCT# 2 T=
+: UT-PUT-BAD ( -- )
+   CFG-A$ CREDS-A$ ID-SLOT CLAUDE-IDENTITY TTRUE
+   [: P-CLAUDE s" bad@x.test" ID-SLOT s" garbage" s\" {\"emailAddress\":\"bad@x.test\"}" false DB-PUT ;] DB-WRITE ;
+
+\ a saved login that is not JSON is refused before anything is claimed
+: UT-DAMAGED-ROW ( -- )
+   [: UT-PUT-BAD ;] UT-STORE
    [: P-CLAUDE s" bad@x.test" CMD-USE ;] E-JSON-READ-MALFORMED TTHROWSQ
-   CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
+   CLAUDE-CREDS$ READ-FILE$ CREDS-A9$ T$=
+   P-CLAUDE UT-PENDING? TFALSE
    P-CLAUDE s" bad@x.test" CMD-FORGET ;
 
-\ API-key Codex logins are saved and restored under a fixed slot name
+\ API-key Codex logins are saved and restored under a fixed name
 : UT-API-KEY ( -- )
    CODEX-AUTH$ AUTH-KEY$ WRITE-PRIVATE
-   P-CODEX s" c@x.test" CMD-USE
-   P-CODEX s" api-key" s" auth.json" SLOT-FILE$ READ-FILE$ AUTH-KEY$ T$=
-   CODEX-AUTH$ READ-FILE$ AUTH-C$ T$=
+   P-CODEX s" d@x.test" CMD-USE
+   P-CODEX s" api-key" AUTH-KEY$ UT-LOGIN=
+   CODEX-AUTH$ READ-FILE$ AUTH-D$ T$=
    P-CODEX s" api-key" CMD-USE
    CODEX-AUTH$ READ-FILE$ AUTH-KEY$ T$=
-   P-CODEX s" c@x.test" CMD-USE
+   P-CODEX s" d@x.test" CMD-USE
    P-CODEX s" api-key" CMD-FORGET ;
 
 \ a symlinked live file stays a symlink; its target receives the new bytes
@@ -326,12 +458,78 @@ create UT-PID 32 allot
    CODEX-AUTH$ r ru FS:RENAME-FILE
    r ru CODEX-AUTH$ FS:MAKE-SYMLINK
    CODEX-AUTH$ FS:SYMLINK? TTRUE
-   P-CODEX s" d@x.test" CMD-USE
-   CODEX-AUTH$ FS:SYMLINK? TTRUE
-   r ru READ-FILE$ AUTH-D$ T$=
    P-CODEX s" c@x.test" CMD-USE
+   CODEX-AUTH$ FS:SYMLINK? TTRUE
+   r ru READ-FILE$ AUTH-C9$ T$=
+   P-CODEX s" d@x.test" CMD-USE
    CODEX-AUTH$ FS:REMOVE-FILE
    r ru CODEX-AUTH$ FS:RENAME-FILE ;
+
+\ a live config naming another account over credentials still identical to
+\ the installed row's is a mix: save refuses it, use skips saving it back
+: UT-MIXED-PAIR ( -- )
+   CLAUDE-CONFIG$ CFG-B$ WRITE-PRIVATE
+   [: P-CLAUDE CMD-SAVE ;] E-SW-MIXED TTHROWSQ
+   P-CLAUDE s" b@x.test" CMD-USE
+   CLAUDE-CREDS$ READ-FILE$ CREDS-B$ T$=
+   P-CLAUDE s" b@x.test" CREDS-B$ UT-LOGIN=
+   P-CLAUDE s" a@x.test" CREDS-A9$ UT-LOGIN=
+   P-CLAUDE CMD-SAVE
+   P-CLAUDE s" a@x.test" CMD-USE
+   CLAUDE-CONFIG$ READ-FILE$ CFG-BA$ T$= ;
+
+: UT-NOTE-ADDING ( -- ) [: P-CLAUDE CREDS-A$ DB-NOTE-ADDING ;] DB-WRITE ;
+: UT-CLEAR-ADDING ( -- ) [: P-CLAUDE DB-CLEAR-ADDING ;] DB-WRITE ;
+
+\ an add's record of the live login stops save and use
+: UT-UNRESTORED ( -- )
+   [: UT-NOTE-ADDING ;] UT-STORE
+   [: P-CLAUDE CMD-SAVE ;] E-SW-UNRESTORED TTHROWSQ
+   [: P-CLAUDE s" b@x.test" CMD-USE ;] E-SW-UNRESTORED TTHROWSQ
+   CLAUDE-CREDS$ READ-FILE$ CREDS-A9$ T$=
+   [: UT-CLEAR-ADDING ;] UT-STORE
+   E-SW-UNRESTORED REASON$ s" kiba: the live login waits" STARTS-WITH? TTRUE ;
+
+\ credentials without a config are nobody's: neither saved nor replaced
+: UT-ORPHAN ( -- )
+   CLAUDE-CONFIG$ FS:REMOVE-FILE
+   [: P-CLAUDE CMD-SAVE ;] E-SW-ORPHAN-LIVE TTHROWSQ
+   [: P-CLAUDE s" b@x.test" CMD-USE ;] E-SW-ORPHAN-LIVE TTHROWSQ
+   CLAUDE-CREDS$ READ-FILE$ CREDS-A9$ T$=
+   CLAUDE-CONFIG$ FS:FILE? TFALSE
+   E-SW-ORPHAN-LIVE REASON$ CLAUDE-CONFIG$ CONTAINS? TTRUE
+   CLAUDE-CONFIG$ CFG-BA$ WRITE-PRIVATE ;
+
+\ leaves no Claude row, so the store tests below start from an empty list
+: UT-STORE-FORGET ( -- )
+   P-CLAUDE s" b@x.test" CMD-FORGET
+   P-CLAUDE s" b@x.test" UT-ROW? TFALSE
+   P-CLAUDE s" a@x.test" UT-ROW? TTRUE
+   [: P-CLAUDE s" b@x.test" CMD-FORGET ;] E-SW-NO-ACCOUNT TTHROWSQ
+   P-CLAUDE s" a@x.test" CMD-FORGET
+   [: P-CLAUDE DB-LIST DB-ROW# 0 T= ;] UT-STORE ;
+
+\ usage and add still keep slot folders: claude a; codex c and d,
+\ with A and C live
+: UT-SLOT ( n -- ) dup LIVE-IDENTITY TTRUE SAVE-LIVE ;
+
+: UT-SEED-SLOTS ( -- )
+   UT-LIVE-B
+   P-CODEX UT-SLOT
+   CLAUDE-CONFIG$ CFG-BA$ WRITE-PRIVATE
+   CLAUDE-CREDS$ CREDS-A$ WRITE-PRIVATE
+   CODEX-AUTH$ AUTH-C$ WRITE-PRIVATE
+   P-CLAUDE UT-SLOT
+   P-CODEX UT-SLOT ;
+
+\ a damaged slot still lists
+: UT-DAMAGED-SLOT ( -- )
+   P-CLAUDE s" bad@x.test" SLOT-DIR$ ENSURE-PRIVATE
+   P-CLAUDE s" bad@x.test" s" credentials.json" SLOT-FILE$ s" garbage" WRITE-PRIVATE
+   P-CLAUDE s" bad@x.test" s" oauth-account.json" SLOT-FILE$ s\" {\"emailAddress\":\"bad@x.test\"}" WRITE-PRIVATE
+   P-CLAUDE LIST-ACCOUNTS ACCT# 2 T=
+   CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
+   P-CLAUDE s" bad@x.test" SLOT-DIR$ FS:REMOVE-TREE ;
 
 : UT-WRITE-SCRIPT ( ptr u8 n ptr u8 n -- ) {: n nu body bu :}
    HOME$ {: h hu :}
@@ -439,7 +637,7 @@ create UT-PID 32 allot
    P-CODEX s" y@x.test" SLOT-DIR$ FS:DIR? TTRUE
    P-CODEX s" y@x.test" LOAD-USAGE TTRUE STATE$ s" error" T$=
    P-CODEX s" y@x.test" s" auth.json" SLOT-FILE$ READ-FILE$ AUTH-Y$ T$=
-   P-CODEX s" y@x.test" CMD-FORGET
+   P-CODEX s" y@x.test" SLOT-DIR$ FS:REMOVE-TREE
    LOG$ READ-FILE$ s" argvheader Authorization" CONTAINS? TFALSE
    LOG$ READ-FILE$ s" hdrmode 600" CONTAINS? TTRUE
    s" /headers.txt" PSUB-PUBLIC$ FS:FILE? TFALSE
@@ -455,12 +653,9 @@ create UT-PID 32 allot
    l lu s" ua User-Agent: kiba" CONTAINS? TTRUE
    l lu s" ua User-Agent: codex-cli" CONTAINS? TTRUE
    s" /body.json" PSUB-PUBLIC$ FS:FILE? TFALSE
-   P-CODEX s" d@x.test" CMD-USE
-   P-CODEX s" d@x.test" LOAD-USAGE TTRUE LIM#@ 2 T=
-   P-CODEX s" c@x.test" CMD-USE
-   P-CLAUDE s" b@x.test" CMD-FORGET
-   P-CLAUDE s" e@x.test" CMD-FORGET
-   P-CLAUDE s" f@x.test" CMD-FORGET ;
+   P-CLAUDE s" b@x.test" SLOT-DIR$ FS:REMOVE-TREE
+   P-CLAUDE s" e@x.test" SLOT-DIR$ FS:REMOVE-TREE
+   P-CLAUDE s" f@x.test" SLOT-DIR$ FS:REMOVE-TREE ;
 
 \ the fake `claude` logs its argv and writes account B into CLAUDE_CONFIG_DIR
 : UT-FAKE-CLAUDE ( -- )
@@ -481,7 +676,7 @@ create UT-PID 32 allot
    HOME$ {: h hu :}
    SB-RESET h hu SB-APPEND s" /fail-login" SB-APPEND SB$ UT-BUF 256 SPAN-COPY {: f fu :}
    f fu s" x" FS:WRITE-ALL
-   P-CODEX s" c@x.test" CMD-USE
+   CODEX-AUTH$ AUTH-C$ WRITE-PRIVATE
    [: P-CODEX s" " CMD-ADD ;] E-SW-LOGIN TTHROWSQ
    CODEX-AUTH$ READ-FILE$ AUTH-C$ T$=
    P-CODEX LOGIN-HOME-PUBLIC$ FS:DIR? TFALSE
@@ -501,8 +696,7 @@ create UT-PID 32 allot
    LOG$ READ-FILE$ {: l lu :}
    l lu s\" present\n" ENDS-WITH? TTRUE
    l lu s" /probe/login-codex/.codex" CONTAINS? TTRUE
-   l lu s" absent" CONTAINS? TFALSE
-   P-CODEX s" c@x.test" LOAD-USAGE TTRUE ;
+   l lu s" absent" CONTAINS? TFALSE ;
 
 \ a Claude add with an expected account prefills the email and saves under
 \ the name that actually came back, saying so when it differs
@@ -519,7 +713,7 @@ create UT-PID 32 allot
    P-CLAUDE LIVE-IDENTITY TTRUE ID-LIVE EMAIL$ s" a@x.test" T$=
    P-CLAUDE s" zz@x.test" CMD-ADD
    SAVED-NAME$ s" b@x.test" T$=
-   P-CLAUDE s" b@x.test" CMD-FORGET ;
+   P-CLAUDE s" b@x.test" SLOT-DIR$ FS:REMOVE-TREE ;
 
 \ the live account's expired token is reported, never sent
 : CREDS-A-OLD$ ( -- ptr u8 n )
@@ -549,7 +743,7 @@ create UT-PID 32 allot
 \ live login
 : UT-DAMAGED-LIVE-SLOT ( -- )
    P-CODEX s" c@x.test" s" auth.json" SLOT-FILE$ s" garbage" WRITE-PRIVATE
-   P-CODEX CMD-SAVE
+   P-CODEX UT-SLOT
    P-CODEX s" c@x.test" s" auth.json" SLOT-FILE$ READ-FILE$ AUTH-C$ T$= ;
 
 \ a damaged bare slot is not claimed by a login whose organization another
@@ -562,7 +756,7 @@ create UT-PID 32 allot
    P-CLAUDE LIVE-IDENTITY TTRUE
    P-CLAUDE LIVE-NAME s" a@x.test #2" T$=
    P-CLAUDE s" a@x.test" s" oauth-account.json" SLOT-FILE$ OAUTH-A$ WRITE-PRIVATE
-   P-CLAUDE s" a@x.test #2" CMD-FORGET
+   P-CLAUDE s" a@x.test #2" SLOT-DIR$ FS:REMOVE-TREE
    P-CLAUDE LIVE-IDENTITY TTRUE
    P-CLAUDE LIVE-NAME s" a@x.test" T$= ;
 
@@ -572,31 +766,15 @@ create UT-PID 32 allot
    LOCK$ {: l lu :}
    SB-RESET l lu SB-APPEND s" /pid" SB-APPEND SB$ UT-BUF 256 SPAN-COPY {: f fu :}
    f fu s" 999999999" WRITE-PRIVATE
-   P-CODEX CMD-SAVE
+   UT-NESTED
    LOCK$ FS:DIR? TFALSE
    LOCK$ ENSURE-PRIVATE
    SB-RESET getpid FMT:SB-U SB$ UT-PID 32 SPAN-COPY {: pt ptu :}
    f fu pt ptu WRITE-PRIVATE
    f fu READ-FILE$ pt ptu T$=
-   [: P-CODEX CMD-SAVE ;] E-SW-LOCKED TTHROWSQ
+   [: UT-NESTED ;] E-SW-LOCKED TTHROWSQ
    f fu FS:REMOVE-FILE
    LOCK$ FS:REMOVE-DIR ;
-
-\ a live config naming another account over credentials still identical to
-\ the installed slot's is a mix: save-back skips it, save refuses it
-: UT-MIXED-PAIR ( -- )
-   P-CLAUDE s" a@x.test" CMD-USE
-   CLAUDE-CONFIG$ CFG-B$ WRITE-PRIVATE
-   P-CLAUDE MIXED-PUBLIC? TTRUE
-   [: P-CLAUDE CMD-SAVE ;] E-SW-MIXED TTHROWSQ
-   P-CLAUDE s" b@x.test" SLOT-DIR$ ENSURE-PRIVATE
-   P-CLAUDE s" b@x.test" s" credentials.json" SLOT-FILE$ CREDS-B$ WRITE-PRIVATE
-   P-CLAUDE s" b@x.test" s" oauth-account.json" SLOT-FILE$ s\" {\"emailAddress\":\"b@x.test\",\"organizationUuid\":\"org-b\"}" WRITE-PRIVATE
-   P-CLAUDE s" b@x.test" CMD-USE
-   P-CLAUDE s" b@x.test" s" credentials.json" SLOT-FILE$ READ-FILE$ CREDS-B$ T$=
-   P-CLAUDE MIXED-PUBLIC? TFALSE
-   P-CLAUDE s" a@x.test" CMD-USE
-   P-CLAUDE s" b@x.test" CMD-FORGET ;
 
 \ ---- the SQLite store -------------------------------------------------------
 create UT-NUL 3 allot                 \ a login blob holding a NUL byte
@@ -813,15 +991,25 @@ create UT-LIST UT-LIST-CAP allot
    UT-READER-RECOVERS
    UT-DOC-CLOSE
    UT-LOCK
-   UT-FLOW
+   UT-STORE-SAVE
+   UT-STORE-USE
+   UT-STORE-USE-CODEX
    UT-SAME-EMAIL
    UT-INSTALL-INSERT
    UT-FAILED-FIRST-WRITE
-   UT-INTERRUPTED
+   UT-CREDS-DIR
+   UT-RESTORED
+   UT-REPAIR-PENDING
    UT-MISMATCH
-   UT-DAMAGED-SLOT
+   UT-DAMAGED-ROW
    UT-API-KEY
    UT-SYMLINK
+   UT-MIXED-PAIR
+   UT-UNRESTORED
+   UT-ORPHAN
+   UT-STORE-FORGET
+   UT-SEED-SLOTS
+   UT-DAMAGED-SLOT
    UT-STRAY-MARKERS
    UT-ADD
    UT-ADD-CLAUDE
@@ -832,7 +1020,6 @@ create UT-LIST UT-LIST-CAP allot
    UT-DAMAGED-LIVE-SLOT
    UT-DAMAGED-NOT-CLAIMED
    UT-STALE-LOCK
-   UT-MIXED-PAIR
    UT-NAMES
    UT-DB
    UT-TURN-ROUND

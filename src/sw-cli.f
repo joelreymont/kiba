@@ -4,18 +4,18 @@ require ../src/sw-run.f
 require ../src/sw-usage.f
 require ../src/sw-db.f
 require ../src/sw-status.f
+require ../src/sw-turn.f
+require src/lib/fsm.f
 require src/lib/fmt.f
 
 package SW
 
 create LNAME-BUF 256 allot    variable LNAME-U
-create NAME-BUF 256 allot     variable NAME-U
 variable CMD-P
 variable SCAN-RC                     \ 0, or why the provider could not be read
 variable SCAN-LIVE                   \ bool: the provider has a live login
 
 : LNAME$ ( -- ptr u8 n ) LNAME-BUF LNAME-U @ ;
-: NAME$ ( -- ptr u8 n ) NAME-BUF NAME-U @ ;
 
 \ ID-LIVE is who the provider is logged in as; LNAME$ the slot it saves to
 : LOAD-LIVE ( n -- bool ) {: p :}
@@ -48,6 +48,12 @@ public
    SB-RESET s" kiba: another kiba holds the store lock; remove " SB-APPEND
    l lu SB-APPEND s"  if it is stale" SB-APPEND SB$ ;
 
+\ CLAUDE-CONFIG$ builds through the same string builder, so it goes first
+: ORPHAN-REASON$ ( -- ptr u8 n )
+   CLAUDE-CONFIG$ {: c cu :}
+   SB-RESET s" kiba: Claude credentials exist but " SB-APPEND c cu SB-APPEND
+   s"  is missing: nothing is probed or switched until it names their account" SB-APPEND SB$ ;
+
 : REASON$ ( n -- ptr u8 n ) {: rc :}
    rc E-SW-PROVIDER = if s" kiba: provider must be claude or codex" exit then
    rc E-SW-NO-LIVE = if s" kiba: no live login to save" exit then
@@ -60,8 +66,10 @@ public
    rc E-SW-NO-CLI = if s" kiba: provider command is not on PATH" exit then
    rc E-SW-BASE64 = if s" kiba: id_token is not base64url" exit then
    rc E-SW-ENV = if s" kiba: HOME is not set" exit then
-   rc E-SW-INTERRUPTED = if s" kiba: an earlier switch was interrupted; run `kiba use` to finish it" exit then
-   rc E-SW-MISMATCH = if s" kiba: the saved file belongs to a different account than its folder name" exit then
+   rc E-SW-MISMATCH = if s" kiba: the saved login belongs to a different account than its name" exit then
+   rc E-SW-UNRESTORED = if s" kiba: the live login waits to be put back after an add; a new add does it" exit then
+   rc E-SW-SUPERSEDED = if s" kiba: another Claude switch began before this one wrote anything; this one changed nothing" exit then
+   rc E-SW-ORPHAN-LIVE = if ORPHAN-REASON$ exit then
    rc E-SW-MIXED = if s" kiba: the live Claude files name different accounts; switch to an account to repair them" exit then
    rc E-SW-DB = if SB-RESET s" kiba: the account database refused: " SB-APPEND DB-ERROR$ SB-APPEND SB$ exit then
    rc E-SW-DB-VERSION = if s" kiba: the account store is from a newer kiba; upgrade kiba" exit then
@@ -196,47 +204,69 @@ private
    if STATUS-JSON exit then
    STATUS-TEXT ;
 
-\ ---- save / use / add / forget ----------------------------------------------
+\ ---- save / use / forget ----------------------------------------------------
+\ Each opens the account store for itself and holds the provider's turn
+\ throughout; both are left on every path.
+: WITH-STORE ( [ -- ] -- ) {: body :}
+   DB-OPEN [: body execute ;] [: DB-CLOSE ;] finally ;
+
+: IN-TURN ( n [ -- ] -- ) {: p body :}
+   p TURN-ENTER [: body execute ;] [: p TURN-LEAVE ;] finally ;
+
+: STORE-TURN ( n [ -- ] -- ) {: p body :}
+   [: p body IN-TURN ;] WITH-STORE ;
+
 : .SAVED ( n -- ) {: p :}
-   p PROVIDER$ type s" : saved " type SAVED-NAME$ type cr ;
-
-: MIXED-KEEP ( n -- n ) {: p :}
-   CLAUDE-MIXED? if 1 exit then
-   0 ;
-
-\ a live file that cannot be read is not a mixed pair; the reader that
-\ needs it will say what is wrong
-: MIXED? ( n -- bool ) {: p :}
-   p P-CLAUDE <> if false exit then
-   p [: MIXED-KEEP ;] catch {: rc :}
-   rc 0<> if drop false exit then
-   0 > ;
+   p PROVIDER$ type
+   LIVE-ROW$ nip 0= if s" : no live login" type cr exit then
+   s" : saved " type LIVE-ROW$ type cr ;
 
 : SAVE-ONE ( n -- ) {: p :}
-   p INSTALLING? if E-SW-INTERRUPTED throw then
-   p MIXED? if E-SW-MIXED throw then
-   p LIVE-IDENTITY 0= if p PROVIDER$ type s" : no live login" type cr exit then
-   p SAVE-LIVE p .SAVED ;
+   p [: p SAVE-LIVE-ROW ;] STORE-TURN
+   p .SAVED ;
 
-: SAVE-LOCKED ( -- )
-   CMD-P @ 0 < if
-      0 begin dup P-COUNT < while dup SAVE-ONE 1+ repeat drop exit
-   then
-   CMD-P @ SAVE-ONE ;
+\ use's save-back: the live login is saved first so its refreshed tokens are
+\ kept, and noted as installed, since the live files hold its login. Mixed
+\ live files are left for the install to repair; any other failure stops
+\ the switch before anything is written, so no login is overwritten unsaved.
+ENUM back-state saving kept stopped ;ENUM
+ENUM back-input saved absent mixed refused ;ENUM
+variable BACK-RC
 
-\ the live login is saved back first so refreshed tokens are never lost;
-\ after an interrupted install, or when the live files disagree about the
-\ account, the pair is left alone: the next install repairs it
+: BACK-TRY ( n back-input -- n back-input )
+   drop dup SAVE-LIVE-ROW
+   LIVE-ROW$ nip 0= if construct back-input absent exit then
+   construct back-input saved ;
+
+: BACK-SENSE ( n -- back-input )
+   construct back-input refused [: BACK-TRY ;] catch
+   dup 0= if drop nip exit then
+   dup E-SW-MIXED = if drop 2drop construct back-input mixed exit then
+   BACK-RC ! 2drop construct back-input refused ;
+
+: BACK-NOTE ( n -- ) {: p :}
+   [: p LIVE-ROW$ 0 false DB-NOTE-INSTALLED ;] DB-WRITE ;
+
+: BACK-RETHROW ( n -- ) drop BACK-RC @ throw ;
+
+FSM:DEFINE SAVE-BACK-ROW ( n ) back-state back-input
+   IN saving BACK-SENSE
+      saved   BACK-NOTE  >kept
+      absent  -          >kept
+      mixed   -          >kept
+      refused -          >stopped
+   FINAL kept    -
+   FINAL stopped BACK-RETHROW
+;DEFINE
+
+: USE-RUN ( n ptr u8 n -- ) {: p a u :}
+   p construct back-state saving SAVE-BACK-ROW
+   p a u INSTALL ;
+
+\ usage's folder save-back: the live login goes to its slot so the slot's
+\ tokens are fresh before it is probed
 : SAVE-BACK ( n -- ) {: p :}
-   p INSTALLING? if exit then
-   p MIXED? if s" kiba: the live Claude files name different accounts; not saving them" ERR-NOTE exit then
    p LIVE-IDENTITY if p SAVE-LIVE then ;
-
-\ the account just installed is probed at once so its figures are current
-: USE-LOCKED ( -- )
-   CMD-P @ SAVE-BACK
-   CMD-P @ NAME$ INSTALL
-   CMD-P @ NAME$ true PROBE-SLOT ;
 
 : .PROBED ( n n -- ) {: p i :}
    p PROVIDER$ type s" : " type i ACCT-NAME type s"   " type
@@ -275,17 +305,10 @@ private
    dup 0 < if drop 0 begin dup P-COUNT < while dup USAGE-PROVIDER 1+ repeat drop exit then
    USAGE-PROVIDER ;
 
-: FORGET-LOCKED ( -- )
-   CMD-P @ NAME$ SLOT-DIR$ FS:DIR? 0= if E-SW-NO-ACCOUNT throw then
-   CMD-P @ NAME$ SLOT-DIR$ FS:REMOVE-TREE ;
-
 public
 
-: MIXED-PUBLIC? ( n -- bool ) MIXED? ;
-
 : CMD-STATUS ( bool -- ) {: json :}
-   DB-OPEN
-   [: json STATUS-SHOW ;] [: DB-CLOSE ;] finally ;
+   [: json STATUS-SHOW ;] WITH-STORE ;
 
 \ p < 0 probes every provider
 : CMD-USAGE ( n -- )
@@ -293,13 +316,13 @@ public
 
 \ p < 0 saves every provider
 : CMD-SAVE ( n -- )
-   CMD-P !
-   [: SAVE-LOCKED ;] WITH-LOCK ;
+   dup 0 < if drop 0 begin dup P-COUNT < while dup SAVE-ONE 1+ repeat drop exit then
+   SAVE-ONE ;
 
+\ saves the live login back, then makes the saved login live
 : CMD-USE ( n ptr u8 n -- ) {: p a u :}
    a u CHECK-NAME
-   p CMD-P !  a u NAME-BUF NAME-U 256 SPAN!
-   [: USE-LOCKED ;] WITH-LOCK
+   p [: p a u USE-RUN ;] STORE-TURN
    p PROVIDER$ type s" : now " type a u type cr ;
 
 \ ---- add: the provider login inside a throwaway home ------------------------------
@@ -375,8 +398,7 @@ variable LOGIN-RC
 
 : CMD-FORGET ( n ptr u8 n -- ) {: p a u :}
    a u CHECK-NAME
-   p CMD-P !  a u NAME-BUF NAME-U 256 SPAN!
-   [: FORGET-LOCKED ;] WITH-LOCK
+   p [: p a u FORGET-ROW ;] STORE-TURN
    p PROVIDER$ type s" : forgot " type a u type cr ;
 
 ;package

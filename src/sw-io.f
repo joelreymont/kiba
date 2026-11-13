@@ -19,9 +19,9 @@ TYPED-VARIABLE FILE-A ptr u8   variable FILE-U    \ the live credentials or auth
 TYPED-VARIABLE OBJ-A ptr u8    variable OBJ-U     \ an oauthAccount object or a JWT payload
 TYPED-VARIABLE TOK-A ptr u8    variable TOK-U     \ a raw id_token string
 TYPED-VARIABLE JSON-A ptr u8                      \ the JSON writer's output
-TYPED-VARIABLE SDOC-A ptr u8   variable SDOC-U    \ one saved slot's document
+TYPED-VARIABLE SDOC-A ptr u8   variable SDOC-U    \ one saved login's document
+TYPED-VARIABLE BACK-A ptr u8   variable BACK-U    \ the credentials read back after a failed install
 create TMP-BUF PATH-CAP allot   variable TMP-U
-create MARK-BUF PATH-CAP allot  variable MARK-U
 create LINK-BUF PATH-CAP allot  variable LINK-U
 create DEST-BUF PATH-CAP allot  variable DEST-U
 8 constant LINK-HOPS
@@ -90,7 +90,8 @@ public
    OBJ-A ALLOC-ONE
    TOK-A ALLOC-ONE
    JSON-A ALLOC-ONE
-   SDOC-A ALLOC-ONE ;
+   SDOC-A ALLOC-ONE
+   BACK-A ALLOC-ONE ;
 
 : CFG-BUF ( -- ptr u8 ) CFG-A @ ;
 : OUT-BUF ( -- ptr u8 ) OUT-A @ ;
@@ -99,12 +100,14 @@ public
 : TOK-BUF ( -- ptr u8 ) TOK-A @ ;
 : JSON-BUF ( -- ptr u8 ) JSON-A @ ;
 : SDOC-BUF ( -- ptr u8 ) SDOC-A @ ;
+: BACK-BUF ( -- ptr u8 ) BACK-A @ ;
 
 : CFG$ ( -- ptr u8 n ) CFG-BUF CFG-U @ ;
 : OUT$ ( -- ptr u8 n ) OUT-BUF OUT-U @ ;
 : FILE$ ( -- ptr u8 n ) FILE-BUF FILE-U @ ;
 : OBJ$ ( -- ptr u8 n ) OBJ-BUF OBJ-U @ ;
 : SDOC$ ( -- ptr u8 n ) SDOC-BUF SDOC-U @ ;
+: BACK$ ( -- ptr u8 n ) BACK-BUF BACK-U @ ;
 
 \ every JSON document kiba emits is built in JSON-BUF through one writer:
 \ JSON-OPEN starts a document and JSON:WRITTEN$ ends its chain with the bytes
@@ -116,6 +119,17 @@ TYPED-VARIABLE JSON-W JSON:writer
 : READ-INTO ( ptr u8 n ptr u8 ptr n -- ptr u8 n ) {: pa pu buf up :}
    pa pu buf BUF-CAP FS:READ-ALL up !
    buf up @ ;
+
+\ READ-INTO for a file that may be missing: length -1 when nothing is there;
+\ anything else that cannot be read throws
+: READ-OPT ( ptr u8 n ptr u8 ptr n -- ptr u8 n ) {: pa pu buf up :}
+   pa pu FS:EXISTS? 0= if -1 up ! buf -1 exit then
+   pa pu buf up READ-INTO ;
+
+\ two documents READ-OPT read, either of which may be missing
+: SAME-OPT? ( ptr u8 n ptr u8 n -- bool ) {: a u b v :}
+   u 0 < v 0 < or if u v = exit then
+   a u b v STR= ;
 
 : READ-FILE$ ( ptr u8 n -- ptr u8 n )
    FILE-BUF FILE-U READ-INTO ;
@@ -233,46 +247,5 @@ variable LOCK-DEPTH                     \ nested WITH-LOCK in one process
 : WITH-LOCK ( [ -- ] -- )
    LOCK-STORE
    [: RUN-LOCKED ;] [: UNLOCK-STORE ;] finally ;
-
-\ ---- what kiba installed last ------------------------------------------------
-\ <provider dir>/.installed names the slot whose files are live
-create INST-BUF PATH-CAP allot   variable INST-U
-create INSTNAME NAME-CAP allot      variable INSTNAME-U
-
-: INSTALLED-FILE$ ( n -- ptr u8 n )
-   PROVIDER-DIR$ {: d du :}
-   SB-RESET d du SB-APPEND s" /.installed" SB-APPEND
-   SB$ INST-BUF INST-U PATH!
-   INST-BUF INST-U @ ;
-
-: NOTE-INSTALLED ( n ptr u8 n -- ) {: p a u :}
-   p PROVIDER-DIR$ ENSURE-PRIVATE
-   p INSTALLED-FILE$ a u WRITE-PRIVATE ;
-
-: INSTALLED$ ( n -- ptr u8 n ) {: p :}
-   0 INSTNAME-U !
-   p INSTALLED-FILE$ FS:FILE? 0= if INSTNAME 0 exit then
-   p INSTALLED-FILE$ READ-FILE$ INSTNAME INSTNAME-U NAME-CAP 1- SPAN!
-   INSTNAME INSTNAME-U @ ;
-
-\ ---- install marker ---------------------------------------------------------
-\ A two-file install that stops between its writes leaves a live email and live
-\ tokens from different accounts. The marker names the account being installed
-\ so a later save-back does not copy one account's tokens into another's slot.
-: MARK-FILE$ ( n -- ptr u8 n )
-   PROVIDER-DIR$ {: d du :}
-   SB-RESET d du SB-APPEND s" /.installing" SB-APPEND
-   SB$ MARK-BUF MARK-U PATH!
-   MARK-BUF MARK-U @ ;
-
-: INSTALLING? ( n -- bool )
-   MARK-FILE$ FS:FILE? ;
-
-: MARK-INSTALL ( n ptr u8 n -- ) {: p a u :}
-   p PROVIDER-DIR$ ENSURE-PRIVATE
-   p MARK-FILE$ a u WRITE-PRIVATE ;
-
-: CLEAR-MARK ( n -- ) {: p :}
-   p INSTALLING? if p MARK-FILE$ FS:REMOVE-FILE then ;
 
 ;package
