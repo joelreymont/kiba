@@ -38,53 +38,83 @@ variable OUT-FD
 
 : DIGIT? ( n -- bool ) dup $30 >= swap $39 <= and ;
 
-variable FP-ACC
-variable FP-I
-variable FP-MULT
-variable FP-GOT
+\ A reading is a JSON number's spelling, -?d+(.d+)?([eE][+-]?d+)?, in percent
+\ (12.495 means 12.495%). Its whole percent is rounded once from those decimal
+\ digits, half away from zero, never through a binary float.
+$7FFFFFFFFFFFFFFF constant INT-MAX
 
-: FP-DIGIT-AT? ( ptr u8 n -- bool ) {: a u :}
-   FP-I @ u >= if false exit then
-   FP-I @ a + c@ DIGIT? ;
+variable MANT-START                 \ the mantissa's first digit
+variable MANT-POINT                 \ its decimal point; MANT-END when it has none
+variable MANT-END                   \ the index after its last digit
+variable EXP-VALUE                  \ the exponent, its magnitude held to a cap
 
-: FP-DIGIT@ ( ptr u8 -- n )
-   FP-I @ + c@ DIGIT ;
+: BYTE-IS? ( ptr u8 n n n -- bool ) {: a u at c :}
+   at u < if at a + c@ c = else false then ;
 
-$E8D4A51000 constant FP-MAX             \ 10^12: no percentage is larger
+\ the first index from at whose byte is not a digit
+: DIGIT-RUN ( ptr u8 n n -- n ) {: a u at :}
+   at begin dup u < if dup a + c@ DIGIT? else false then while 1+ repeat ;
 
-: FP-INTEGER ( ptr u8 n -- ) {: a u :}
-   begin a u FP-DIGIT-AT? while
-      FP-ACC @ 10 * a FP-DIGIT@ + FP-ACC !
-      FP-ACC @ FP-MAX > if -1 FP-I ! exit then
-      1 FP-I +!
-   repeat ;
+\ the value digits lo..hi-1 spell, held to cap
+: DIGIT-VALUE ( ptr u8 n n n -- n ) {: a lo hi cap :}
+   0 hi lo ?do 10 * a i + c@ DIGIT + cap min loop ;
 
-\ two fraction digits count; the third rounds, half up
-: FP-FRACTION ( ptr u8 n -- ) {: a u :}
-   100 FP-MULT ! 0 FP-GOT !
-   begin a u FP-DIGIT-AT? while
-      FP-MULT @ 10 / FP-MULT !
-      FP-MULT @ 0 > if FP-ACC @ FP-MULT @ a FP-DIGIT@ * + FP-ACC ! then
-      FP-MULT @ 0= FP-GOT @ 0= and if
-         a FP-DIGIT@ 5 >= if 1 FP-ACC +! then
-         1 FP-GOT !
-      then
-      1 FP-I +!
-   repeat ;
+\ the mantissa from index at; false when a side of its point has no digit
+: MANTISSA? ( ptr u8 n n -- bool ) {: a u at :}
+   at MANT-START !
+   a u at DIGIT-RUN {: q :}
+   q MANT-POINT ! q MANT-END !
+   q at = if false exit then
+   a u q $2E BYTE-IS? 0= if true exit then
+   a u q 1+ DIGIT-RUN {: m :}
+   m MANT-END !
+   m q 1+ > ;
 
-\ round(x * 100) for a decimal literal such as 0.5625 or 56.25; -1 when malformed
-: HUNDREDTHS ( ptr u8 n -- n ) {: a u :}
-   0 FP-ACC ! 0 FP-I !
-   a u FP-INTEGER
-   FP-I @ 0 <= if -1 exit then
-   FP-ACC @ 100 * FP-ACC !
-   FP-I @ u < if
-      FP-I @ a + c@ $2E <> if -1 exit then
-      1 FP-I +!
-      a u FP-FRACTION
-   then
-   FP-I @ u <> if -1 exit then
-   FP-ACC @ ;
+\ the exponent at index at, if any, into EXP-VALUE; the index after it, -1
+\ when malformed. Its magnitude is held to u + 20: past that a nonzero
+\ mantissa is past INT-MAX, or below 0.1, either way.
+: EXPONENT-AT ( ptr u8 n n -- n ) {: a u at :}
+   0 EXP-VALUE !
+   a u at $65 BYTE-IS? a u at $45 BYTE-IS? or 0= if at exit then
+   a u at 1+ $2D BYTE-IS? {: neg :}
+   a u at 1+ $2B BYTE-IS? neg or if at 2 + else at 1+ then {: lo :}
+   a u lo DIGIT-RUN {: hi :}
+   hi lo = if -1 exit then
+   a lo hi u 20 + DIGIT-VALUE neg if negate then EXP-VALUE !
+   hi ;
+
+\ mantissa digit k, counting from its first and skipping the point; 0 past its last
+: MANT-DIGIT ( ptr u8 n -- n ) {: a k :}
+   MANT-START @ k + dup MANT-POINT @ >= if 1+ then {: at :}
+   at MANT-END @ >= if 0 exit then
+   at a + c@ DIGIT ;
+
+\ acc * 10 + d; -1 once past INT-MAX
+: SHIFT-DIGIT ( n n -- n ) {: acc d :}
+   acc 0 < if -1 exit then
+   acc INT-MAX d - 10 / > if -1 exit then
+   acc 10 * d + ;
+
+: MANT-ZERO? ( ptr u8 -- bool ) {: a :}
+   true MANT-END @ MANT-START @ ?do a i + c@ dup $30 = swap $2E = or and loop ;
+
+\ the mantissa rounded to its first p digits, half up; -1 past INT-MAX
+: MANT-ROUNDED ( ptr u8 n -- n ) {: a p :}
+   0 p 0 ?do a i MANT-DIGIT SHIFT-DIGIT loop {: w :}
+   w 0 < if -1 exit then
+   p 0 < if w exit then
+   a p MANT-DIGIT 5 < if w exit then
+   w INT-MAX = if -1 exit then
+   w 1+ ;
+
+\ the whole percent reading a u spells, as kiba-mac's usedPercent gives it;
+\ -1 when it is malformed, below zero or past INT-MAX
+: USED-PERCENT ( ptr u8 n -- n ) {: a u :}
+   a u 0 $2D BYTE-IS? {: neg :}
+   a u neg if 1 else 0 then MANTISSA? 0= if -1 exit then
+   a u MANT-END @ EXPONENT-AT u <> if -1 exit then
+   neg a MANT-ZERO? 0= and if -1 exit then
+   a MANT-POINT @ MANT-START @ - EXP-VALUE @ + MANT-ROUNDED ;
 
 \ ---- one probe -------------------------------------------------------------------
 variable PROBE-AT                   \ epoch seconds the probe began: its fetchedAt
@@ -401,13 +431,13 @@ variable LINE-GAP                   \ bool: a separator run waits for the next s
 
 : BUCKET-PCT ( JSON:reader -- JSON:reader n )
    JSON:READ-TOKEN dup JSON:T-INT = swap JSON:T-FLOAT = or 0= if -1 exit then
-   JSON:READ-SPAN$ HUNDREDTHS ;
+   JSON:READ-SPAN$ USED-PERCENT ;
 
 : BUCKET-RESET ( JSON:reader -- JSON:reader ptr u8 n )
    JSON:READ-TOKEN JSON:T-STR <> if RESET-BUF 0 exit then
    RESET-BUF RESET-CAP JSON:READ-STR RESET-BUF swap ;
 
-\ one bucket object {utilization, resets_at} at key; hundredths and reset text
+\ one bucket object {utilization, resets_at} at key; whole percent and reset text
 : CLAUDE-BUCKET ( ptr u8 n ptr u8 n -- n ptr u8 n ) {: d du k ku :}
    d du OPEN-DOC ENTER-OBJECT
    k ku KEY-OBJECT 0= if JSON:READ-CLOSE -1 RESET-BUF 0 exit then
@@ -420,11 +450,6 @@ variable LINE-GAP                   \ bool: a separator run waits for the next s
    BUCKET-RESET {: r ru :}
    JSON:READ-CLOSE
    h r ru ;
-
-\ utilization is a percentage (37.0 means 37%); hundredths round half up
-: SCALED ( n -- n ) {: h :}
-   h 0 < if -1 exit then
-   h 50 + 100 / ;
 
 create SESSION-RESET RESET-CAP allot   variable SESSION-RESET-U
 create WEEKLY-RESET RESET-CAP allot    variable WEEKLY-RESET-U
@@ -484,7 +509,7 @@ variable SC-PCT
    SC-PCT @ 0 < if exit then
    SB-RESET SC-NAME SC-NAME-U @ SB-APPEND
    SC-WINDOW$ dup 0 > if $20 SB-APPEND-C SB-APPEND else 2drop then
-   SB$ SC-PCT @ SCALED SC-RESET SC-RESET-U @ DB-LIMIT+ ;
+   SB$ SC-PCT @ SC-RESET SC-RESET-U @ DB-LIMIT+ ;
 
 : SC-OBJECT ( JSON:reader -- JSON:reader )
    SC-ENTRY-RESET
@@ -516,8 +541,8 @@ variable SC-PCT
    d du s" seven_day_oauth_apps" CLAUDE-BUCKET {: wh0 r0 r0u :}
    wh0 0 < if d du s" seven_day" CLAUDE-BUCKET else wh0 r0 r0u then
    WEEKLY-RESET WEEKLY-RESET-U RESET-CAP SPAN! {: wh :}
-   sh 0 >= if SESSION-LABEL$ sh SCALED SESSION-RESET SESSION-RESET-U @ DB-LIMIT+ then
-   wh 0 >= if WEEKLY-LABEL$ wh SCALED WEEKLY-RESET WEEKLY-RESET-U @ DB-LIMIT+ then
+   sh 0 >= if SESSION-LABEL$ sh SESSION-RESET SESSION-RESET-U @ DB-LIMIT+ then
+   wh 0 >= if WEEKLY-LABEL$ wh WEEKLY-RESET WEEKLY-RESET-U @ DB-LIMIT+ then
    d du CLAUDE-SCOPED ;
 
 \ ---- the reset offer -------------------------------------------------------------
@@ -941,7 +966,7 @@ FSM:DEFINE CLAUDE-EXCHANGE ( n ) claude-step fresh-input
 : CODEX-WINDOW+ ( ptr u8 n ptr u8 n -- ) {: d du k ku :}
    d du k ku CODEX-WINDOW {: h secs at :}
    h 0 < if exit then
-   secs WINDOW-LABEL$ h SCALED at EPOCH>RESET$ DB-LIMIT+ ;
+   secs WINDOW-LABEL$ h at EPOCH>RESET$ DB-LIMIT+ ;
 
 : CODEX-LIMITS ( ptr u8 n -- ) {: d du :}
    d du s" primary_window" CODEX-WINDOW+
@@ -1155,7 +1180,7 @@ FSM:DEFINE CODEX-EXCHANGE ( n ) codex-step key-input
 
 public
 
-EXPORT HUNDREDTHS
+EXPORT USED-PERCENT
 
 \ the usage record's windows on one line
 : .LIMITS ( -- )

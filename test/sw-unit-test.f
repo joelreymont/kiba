@@ -563,18 +563,33 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
 : AUTH-Z$ ( -- ptr u8 n )
    s\" {\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-z\",\"refresh_token\":\"rt-z\",\"account_id\":\"acct\"}}" ;
 
+\ readings in percent, rounded once from their decimal spelling
 : UT-PCT ( -- )
-   s" 0.5625" HUNDREDTHS 56 T=
-   s" 56.25" HUNDREDTHS 5625 T=
-   s" 1" HUNDREDTHS 100 T=
-   s" 0.145" HUNDREDTHS 15 T=
-   s" 0.999" HUNDREDTHS 100 T=
-   s" 0" HUNDREDTHS 0 T=
-   s" 0.1" HUNDREDTHS 10 T=
-   s" x" HUNDREDTHS -1 T=
-   s" 0.5.1" HUNDREDTHS -1 T=
-   s" 99999999999999999999" HUNDREDTHS -1 T=
-   s" ." HUNDREDTHS -1 T= ;
+   s" 12.495" USED-PERCENT 12 T=
+   s" 12.5" USED-PERCENT 13 T=
+   s" 0" USED-PERCENT 0 T=
+   s" -0.5" USED-PERCENT -1 T=
+   s" -3" USED-PERCENT -1 T=
+   s" -0.0" USED-PERCENT 0 T=
+   s" 99.5" USED-PERCENT 100 T=
+   s" 0.4999" USED-PERCENT 0 T=
+   s" 1249.5e-2" USED-PERCENT 12 T=
+   s" 1.25E+1" USED-PERCENT 13 T=
+   s" 0.0049e3" USED-PERCENT 5 T=
+   s" 1e-999999999999999999999" USED-PERCENT 0 T=
+   s" 0e999999999999999999999" USED-PERCENT 0 T=
+   s" 1e999999999999999999999" USED-PERCENT -1 T=
+   s" 9223372036854775807" USED-PERCENT $7FFFFFFFFFFFFFFF T=
+   s" 9223372036854775807.5" USED-PERCENT -1 T=
+   s" 99999999999999999999" USED-PERCENT -1 T=
+   s" x" USED-PERCENT -1 T=
+   s" ." USED-PERCENT -1 T=
+   s" 1." USED-PERCENT -1 T=
+   s" .5" USED-PERCENT -1 T=
+   s" 0.5.1" USED-PERCENT -1 T=
+   s" 1e" USED-PERCENT -1 T=
+   s" -" USED-PERCENT -1 T=
+   s" " USED-PERCENT -1 T= ;
 
 : LOG$ ( -- ptr u8 n )
    s" KIBA_TEST_LOG" GETENV ;
@@ -625,6 +640,33 @@ create UT-ERR-PATH 256 allot   variable UT-ERR-U
 
 : UT-STATE= ( ptr u8 n -- ) {: a u :}
    DB-USAGE-STATE DB-STATE$ a u T$= ;
+
+\ a fake curl that answers each usage call with readings to round, chosen by
+\ the bearer token
+: UT-ROUNDING-CURL ( -- )
+   s" curl"
+   s\" #!/bin/sh\nout=; auth=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) case \"$2\" in @*) auth=$(/usr/bin/grep ^Authorization: \"${2#@}\");; esac; shift;; esac; shift; done\ncase \"$auth\" in\n*sk-r1) body='{\"five_hour\":{\"utilization\":12.495},\"seven_day_oauth_apps\":{\"utilization\":12.5},\"limits\":[{\"kind\":\"weekly_scoped\",\"scope\":{\"model\":{\"display_name\":\"A\"}},\"percent\":12.495},{\"kind\":\"weekly_scoped\",\"scope\":{\"model\":{\"display_name\":\"B\"}},\"percent\":12.5},{\"kind\":\"weekly_scoped\",\"scope\":{\"model\":{\"display_name\":\"C\"}},\"percent\":0},{\"kind\":\"weekly_scoped\",\"scope\":{\"model\":{\"display_name\":\"D\"}},\"percent\":-0.5}]}';;\n*sk-r2) body='{\"five_hour\":{\"utilization\":0},\"seven_day_oauth_apps\":{\"utilization\":-1},\"seven_day\":{\"utilization\":-0.4}}';;\n*at-r1) body='{\"rate_limit\":{\"primary_window\":{\"used_percent\":12.495,\"limit_window_seconds\":18000},\"secondary_window\":{\"used_percent\":12.5,\"limit_window_seconds\":604800}}}';;\n*at-r2) body='{\"rate_limit\":{\"primary_window\":{\"used_percent\":0,\"limit_window_seconds\":18000},\"secondary_window\":{\"used_percent\":-2,\"limit_window_seconds\":604800}}}';;\nesac\nprintf '%s' \"$body\" > \"$out\"\nprintf 200\n"
+   UT-WRITE-SCRIPT ;
+
+: UT-LIMIT= ( n ptr u8 n n -- ) {: i a u pct :}
+   i DB-LIMIT-LABEL$ a u T$=
+   i DB-LIMIT-PERCENT pct T= ;
+
+\ every caller rounds its reading once; a negative one leaves its window out
+: UT-PCT-CALLERS ( -- )
+   UT-ROUNDING-CURL
+   P-CLAUDE s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-r1\"}}" false PROBE
+   s" ok" UT-STATE= DB-LIMIT# 5 T=
+   0 s" Session (5-hour)" 12 UT-LIMIT= 1 s" Weekly (7-day)" 13 UT-LIMIT=
+   2 s" A Weekly" 12 UT-LIMIT= 3 s" B Weekly" 13 UT-LIMIT=
+   4 s" C Weekly" 0 UT-LIMIT=
+   P-CLAUDE s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-r2\"}}" false PROBE
+   s" ok" UT-STATE= DB-LIMIT# 1 T= 0 s" Session (5-hour)" 0 UT-LIMIT=
+   P-CODEX s\" {\"tokens\":{\"access_token\":\"at-r1\"}}" false PROBE
+   s" ok" UT-STATE= DB-LIMIT# 2 T=
+   0 s" Session (5-hour)" 12 UT-LIMIT= 1 s" Weekly (7-day)" 13 UT-LIMIT=
+   P-CODEX s\" {\"tokens\":{\"access_token\":\"at-r2\"}}" false PROBE
+   s" ok" UT-STATE= DB-LIMIT# 1 T= 0 s" Session (5-hour)" 0 UT-LIMIT= ;
 
 : UT-PLAN= ( n ptr u8 n ptr u8 n -- ) {: p a u l lu :}
    [: p a u DB-FETCH TTRUE 0 DB-ROW-PLAN$ l lu T$= ;] UT-STORE ;
@@ -1229,6 +1271,7 @@ create UT-LIST UT-LIST-CAP allot
    UT-ADD-EMPTY
    UT-ADD-CLAUDE
    UT-PCT
+   UT-PCT-CALLERS
    UT-SCRATCH-APART
    UT-USAGE
    UT-USAGE-REFRESHED
