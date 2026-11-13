@@ -20,7 +20,6 @@ require src/lib/fsm.f
 require src/lib/task.f
 require src/lib/time.f
 require src/lib/fmt.f
-require src/lib/le.f
 require src/lib/string.f
 
 package SW
@@ -38,7 +37,6 @@ private
 10 constant PID-DIGITS
 20 constant COUNT-DIGITS
 STAMP-DIGITS PID-DIGITS + COUNT-DIGITS + 2 + constant ENTRY-LEN
-256 constant FSTAT-CAP           \ at least libc's struct stat
 $10000 constant LIST-CAP         \ the queue's names, one line each
 
 \ Linux's open flags, include/uapi/asm-generic/fcntl.h; arm64's
@@ -65,21 +63,11 @@ $80000 constant LINUX-O-CLOEXEC
 : PEEK-FLAGS ( -- n )
    O-NOFOLLOW LINUX-O-CLOEXEC or ;
 
-\ st_nlink of libc's struct stat: a u64 at 16 on x86-64, a u32 at 20 in the
-\ generic layout arm64 uses.
-: NLINK@ ( ptr u8 -- n )
-   HB-TARGET-LINUX-X86-64? if 16 + LE:U64@ exit then
-   20 + LE:U32@ ;
-
 \ Habu's portable `open` carries neither O_EXCL, O_NOFOLLOW nor O_CLOEXEC.
 PROCESS-SYMBOLS
 FUNCTION: TURN-OPEN-CALL open ( ptr u8 n n -- i32 ) 2 VARIADIC ;FUNCTION
-FUNCTION: TURN-FSTAT-CALL fstat ( n ptr u8 -- i32 )
-   1 FSTAT-CAP WRITES-BYTES
-;FUNCTION
 FUNCTION: TURN-UNLINK-CALL unlink ( ptr u8 -- i32 ) ;FUNCTION
 
-FSTAT-CAP BUFFER: FSTAT-BUF
 LIST-CAP SCRATCH-BUFFER: LIST-BUF
 create TURN-BUF PATH-CAP allot    variable TURN-U
 create QUEUE-BUF PATH-CAP allot   variable QUEUE-U
@@ -156,8 +144,7 @@ TICKETS-SHUT
    E-FS-OPEN throw ;
 
 : LINKED? ( n -- bool )
-   FSTAT-BUF TURN-FSTAT-CALL 0<> if E-FS-STAT throw then
-   FSTAT-BUF NLINK@ 0 > ;
+   >FD FS:FD-LINKS 0 > ;
 
 : SHUT ( ptr n -- ) {: cell:ptr :}
    cell @ 0 >= if cell @ close then
