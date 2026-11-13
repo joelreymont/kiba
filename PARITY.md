@@ -91,6 +91,11 @@ holds that.
 - **Widget**: the user's choice (2026-11-13). It is brought to parity with
   kiba-mac's app for machines that run Omarchy; on the spark the CLI is the
   only front end.
+- **Base64url**: the id_token payload is decoded with Habu's
+  `BASE64:DECODE-URL` (AGENTS.md, Rules), which also refuses unused low bits
+  that are not zero; kiba-mac's decoder accepts them. RFC 4648 section 3.5
+  requires conforming encoders to write them as zero, so a conforming id_token
+  decodes the same on both.
 - **Not part of parity**: a `usage --json` report, finding the login shell's
   PATH (a CLI run from a shell already has it), and any daemon or
   background switcher. The mod already schedules and picks.

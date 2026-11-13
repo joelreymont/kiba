@@ -5,6 +5,8 @@ require ../src/sw-io.f
 require src/lib/adt/option.f
 require src/lib/prelude.f
 require src/lib/string.f
+require src/lib/base64.f
+require src/lib/span.f
 
 package SW
 
@@ -117,6 +119,21 @@ public
    ;MATCH {: d2 :}
    r d2 ;
 
+private
+
+: PAD-END? ( ptr u8 n -- bool ) {: a u :}
+   u 0= if false exit then
+   a u + 1- c@ EQUALS = ;
+
+: UNPADDED ( ptr u8 n -- ptr u8 n )
+   2 0 do 2dup PAD-END? if 1- then loop ;
+
+public
+
+\ OBJ = the decoded JWT payload; up to two trailing `=` are dropped first, as
+\ kiba-mac's Base64URL allows them; the decoder's E-BASE64 codes reach callers
+: DECODE-PAYLOAD ( ptr u8 n -- ) UNPADDED OBJ-BUF BUF-CAP SPAN:MAKE BASE64:DECODE-URL OBJ-U ! ;
+
 \ isAPIKey: OPENAI_API_KEY is a non-empty string in a document JSONFields reads
 : CODEX-API-KEY? ( ptr u8 n -- bool ) {: d du :}
    d du FIELDS? 0= if false exit then
@@ -137,7 +154,7 @@ public
    d du CHECK-FIELDS
    d du s" tokens" s" id_token" TOK-BUF BUF-CAP DOC-STR2
    dup 0 < if drop d du id CODEX-API-IDENTITY exit then {: tu :}
-   TOK-BUF tu JWT-PAYLOAD OBJ-BUF BUF-CAP B64URL-DECODE OBJ-U !
+   TOK-BUF tu JWT-PAYLOAD DECODE-PAYLOAD
    OBJ$ CHECK-FIELDS
    OBJ$ s" email" id EMAIL-ROW EMAIL-CAP DOC-STR1
    dup 0 <= if E-SW-JSON throw then id ID-LENS LENS-EMAIL LEN!

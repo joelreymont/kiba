@@ -84,16 +84,28 @@ create UT-BUF 256 allot
 : CFG-EMPTY$ ( -- ptr u8 n ) s\" {}" ;
 : CFG-NOAUTH$ ( -- ptr u8 n ) s\" {\"numStartups\":1}" ;
 
+: UT-PAYLOAD= ( ptr u8 n ptr u8 n -- ) {: a u w wu :}
+   a u DECODE-PAYLOAD OBJ$ w wu T$= ;
+
+: UT-PAYLOAD-BAD ( ptr u8 n n -- ) {: a u code :}
+   [: a u DECODE-PAYLOAD ;] code TTHROWSQ ;
+
 : UT-B64 ( -- )
-   s" aGVsbG8" UT-BUF 256 B64URL-DECODE 5 T=
-   s" aGk" UT-BUF 256 B64URL-DECODE 2 T=
-   [: s" aGVsbG8hY" UT-BUF 256 B64URL-DECODE drop ;] E-SW-BASE64 TTHROWSQ
-   UT-BUF 5 s" hello" T$=
-   s" aGVsbG8=" UT-BUF 256 B64URL-DECODE 5 T=
-   s" -_8" UT-BUF 256 B64URL-DECODE 2 T=
-   UT-BUF c@ $FB T=
-   UT-BUF 1+ c@ $FF T=
-   [: s" a!b" UT-BUF 256 B64URL-DECODE drop ;] E-SW-BASE64 TTHROWSQ ;
+   s" aGVsbG8" s" hello" UT-PAYLOAD=
+   s" aGk" s" hi" UT-PAYLOAD=
+   s" aGVsbG8=" s" hello" UT-PAYLOAD=
+   s" aGk==" s" hi" UT-PAYLOAD=
+   s" -_8" DECODE-PAYLOAD OBJ$ nip 2 T=
+   OBJ-BUF c@ $FB T=
+   OBJ-BUF 1+ c@ $FF T=
+   s" aGVsbG8hY" E-BASE64-LENGTH UT-PAYLOAD-BAD
+   s" a!b" E-BASE64-CHAR UT-PAYLOAD-BAD
+   s" +_8" E-BASE64-CHAR UT-PAYLOAD-BAD
+   s" -/8" E-BASE64-CHAR UT-PAYLOAD-BAD
+   s" aGk=x" E-BASE64-LENGTH UT-PAYLOAD-BAD
+   s" aGk=aGk" E-BASE64-PAD UT-PAYLOAD-BAD
+   s" aGk===" E-BASE64-PAD UT-PAYLOAD-BAD
+   E-BASE64-LENGTH REASON$ s" kiba: id_token is not base64url" T$= ;
 
 : UT-JWT ( -- )
    s" aaa.bbb.ccc" JWT-PAYLOAD s" bbb" T$=
@@ -469,6 +481,24 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
    CLAUDE-CREDS$ FS:REMOVE-DIR
    CLAUDE-CREDS$ CREDS-A9$ WRITE-PRIVATE ;
 
+create UT-INNER-BUF 256 allot
+
+: UT-INNER$ ( -- ptr u8 n )
+   CLAUDE-CONFIG$ {: c cu :}
+   SB-RESET c cu SB-APPEND s" /keep.json" SB-APPEND SB$ UT-INNER-BUF 256 SPAN-COPY ;
+
+\ removing the config refuses a directory at its path and deletes nothing
+: UT-CONFIG-DIR ( -- )
+   CLAUDE-CONFIG$ READ-FILE$ CFG-ONLY-A$ T$=
+   CLAUDE-CONFIG$ FS:REMOVE-FILE
+   CLAUDE-CONFIG$ ENSURE-PRIVATE
+   UT-INNER$ CFG-A$ WRITE-PRIVATE
+   [: UT-BUF -1 PUT-CONFIG ;] E-FS-IO TTHROWSQ
+   CLAUDE-CONFIG$ FS:DIR? TTRUE
+   UT-INNER$ READ-FILE$ CFG-A$ T$=
+   CLAUDE-CONFIG$ FS:REMOVE-TREE
+   CLAUDE-CONFIG$ CFG-ONLY-A$ WRITE-PRIVATE ;
+
 : UT-LOCKED$ ( -- ptr u8 n )
    HOME$ {: h hu :}
    SB-RESET h hu SB-APPEND s" /locked" SB-APPEND SB$ UT-LOCKED-BUF 256 SPAN-COPY ;
@@ -635,6 +665,37 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
    CLAUDE-CONFIG$ {: c cu :}
    E-SW-ORPHAN-LIVE REASON$ c cu CONTAINS? TTRUE
    CLAUDE-CONFIG$ CFG-BA$ WRITE-PRIVATE ;
+
+create UT-DEEP 1024 allot
+create UT-WANT 16384 allot   variable UT-WANT-U
+
+\ a root under HOME whose .claude.json path is 1010 bytes; a slash every 200
+\ bytes keeps each name under NAME_MAX
+: UT-DEEP-ROOT$ ( -- ptr u8 n )
+   SB-RESET HOME$ SB-APPEND
+   989 HOME$ nip - 0 ?do i 200 mod 0= if [char] / else [char] a then SB-APPEND-C loop
+   SB$ UT-DEEP 1024 SPAN-COPY ;
+
+: UT-WANT+ ( ptr u8 n -- ) {: a u :}
+   a UT-WANT UT-WANT-U @ + u BYTE-COPY
+   u UT-WANT-U +! ;
+
+: UT-WANT$ ( -- ptr u8 n ) UT-WANT UT-WANT-U @ ;
+
+\ the orphan reason, longer than SB holds, names a 1010-byte config path whole
+: UT-ORPHAN-LONG ( -- )
+   UT-DEEP-ROOT$ {: r ru :}
+   r ru LOGIN-ROOT!
+   CLAUDE-CONFIG$ nip 1010 T=
+   CLAUDE-CREDS$ DIRNAME ENSURE-PRIVATE
+   CLAUDE-CREDS$ CREDS-A9$ WRITE-PRIVATE
+   [: P-CLAUDE LIVE-IDENTITY drop ;] E-SW-ORPHAN-LIVE TTHROWSQ
+   LOGIN-ROOT-CLEAR
+   0 UT-WANT-U !
+   s" kiba: Claude credentials exist but " UT-WANT+ r ru UT-WANT+ s" /.claude/.claude.json" UT-WANT+
+   s"  is missing: nothing is probed or switched until it names their account" UT-WANT+
+   E-SW-ORPHAN-LIVE REASON$ UT-WANT$ T$=
+   r HOME$ nip 200 + FS:REMOVE-TREE ;
 
 \ leaves no Claude row, so the store tests below start from an empty list
 : UT-STORE-FORGET ( -- )
@@ -2068,6 +2129,16 @@ create UT-SQL 2048 allot   variable UT-SQL-U
    s\" UPDATE account SET usage = '{\"fetchedAt\":1,\"limits\":[],\"note\":\"\",\"state\":\"subscription-lapsed\"}' WHERE provider = 'claude' AND name = 'n@x.test'" UT-SQL+
    UT-SQL UT-SQL-U @ s" test" DB-EXEC ;
 
+\ SQLite's message naming a 600-byte table reaches DB-ERROR$ and the reason whole
+: UT-DB-LONG-ERROR ( -- )
+   0 UT-SQL-U !   s" SELECT 1 FROM " UT-SQL+   600 0 ?do s" x" UT-SQL+ loop
+   0 UT-LONG-U !   s" kiba: the account database refused: " UT-LONG+
+   UT-LONG-U @ {: o :}
+   s" probe: no such table: " UT-LONG+   [char] x 600 UT-LONG-FILL
+   [: UT-SQL UT-SQL-U @ s" probe" DB-EXEC ;] E-SW-DB TTHROWSQ
+   DB-ERROR$ o UT-LONG$ T$=
+   E-SW-DB REASON$ 0 UT-LONG$ T$= ;
+
 4096 constant UT-OUT-CAP
 create UT-OUT UT-OUT-CAP allot   create UT-OUT-ERR UT-OUT-CAP allot
 variable UT-OUT-U
@@ -2082,14 +2153,6 @@ variable UT-OUT-U
    rc 0 T=
    outu LEN>N UT-OUT-U !
    UT-OUT UT-OUT-U @ ;
-
-create UT-WANT 16384 allot   variable UT-WANT-U
-
-: UT-WANT+ ( ptr u8 n -- ) {: a u :}
-   a UT-WANT UT-WANT-U @ + u BYTE-COPY
-   u UT-WANT-U +! ;
-
-: UT-WANT$ ( -- ptr u8 n ) UT-WANT UT-WANT-U @ ;
 
 \ both forms of status carry every one of a record's 200 windows
 : UT-STATUS-MANY ( -- )
@@ -2188,6 +2251,7 @@ create UT-LABEL 200 allot   create UT-RESET 100 allot
    UT-DB-PENDING
    UT-DB-ROLLBACK
    UT-DB-NESTED
+   UT-DB-LONG-ERROR
    UT-STATUS-JSON
    UT-STATUS-MANY
    UT-STATUS-ERROR
@@ -2561,6 +2625,7 @@ create UT-WRAP-BUF 1024 allot
    UT-INSTALL-INSERT
    UT-FAILED-FIRST-WRITE
    UT-CREDS-DIR
+   UT-CONFIG-DIR
    UT-RESTORED
    UT-REPAIR-PENDING
    UT-MISMATCH
@@ -2571,6 +2636,7 @@ create UT-WRAP-BUF 1024 allot
    UT-FAILED-WRITE
    UT-MIXED-PAIR
    UT-ORPHAN
+   UT-ORPHAN-LONG
    UT-ORPHAN-STOPS
    UT-UNNAMED-CLAUDE
    UT-UNNAMED-CODEX

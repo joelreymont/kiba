@@ -9,6 +9,7 @@ require src/lib/fs.f
 require src/lib/fs-mutate.f
 require src/lib/prelude.f
 require src/lib/string.f
+require src/lib/byte-buffer.f
 
 package SW
 
@@ -48,10 +49,10 @@ $2 $4 or $1000000 or constant SQL-FLAGS   \ READWRITE | CREATE | NOFOLLOW
 -1 constant SQL-TRANSIENT                 \ SQLite copies a bound value at once
 5000 constant SQL-BUSY-MS                 \ how long a call waits for another writer
 
-512 constant SQL-ERR-CAP
 4096 constant SQL-Z-CAP
 
-create SQL-ERR-BUF SQL-ERR-CAP allot   variable SQL-ERR-U
+\ SQLite's message can name a path of any length
+create SQL-ERR-BUF BUF:HDR-BYTES allot
 create SQL-Z-BUF SQL-Z-CAP allot       \ a NUL-terminated copy of exec's SQL
 variable SQL-H                         \ the connection
 variable SQL-STMT                      \ the open statement
@@ -59,20 +60,19 @@ variable SQL-OUT                       \ the cell an out-parameter fills
 variable SQL-ARG                       \ the next parameter's index, from 1
 PTR-VARIABLE SQL-OP-A   variable SQL-OP-U   \ what the open statement reports as
 
-: SQL-ERR+ ( ptr u8 n -- ) {: a u :}
-   SQL-ERR-CAP SQL-ERR-U @ - u min {: k :}
-   a SQL-ERR-BUF SQL-ERR-U @ + k BYTE-COPY
-   SQL-ERR-U @ k + SQL-ERR-U ! ;
+: SQL-ERR-START ( -- ) SQL-ERR-BUF 64 BUF:N>BLEN BUF:RESET ;
+
+: SQL-ERR+ ( ptr u8 n -- ) BUF:N>BLEN SQL-ERR-BUF BUF:APPEND-SPAN ;
 
 : SQL-CSTR$ ( ptr u8 -- ptr u8 n ) dup ZLEN ;
 
 public
 
 \ the operation and SQLite's message behind the last E-SW-DB
-: DB-ERROR$ ( -- ptr u8 n ) SQL-ERR-BUF SQL-ERR-U @ ;
+: DB-ERROR$ ( -- ptr u8 n ) SQL-ERR-BUF BUF:SPAN$ BUF:BLEN>N ;
 
 : DB-THROW ( ptr u8 n ptr u8 n -- ) {: op ou msg mu :}
-   0 SQL-ERR-U !
+   SQL-ERR-START
    op ou SQL-ERR+ s" : " SQL-ERR+ msg mu SQL-ERR+
    E-SW-DB throw ;
 
@@ -108,12 +108,15 @@ public
 private
 
 \ ---- the connection ---------------------------------------------------------
-\ A handle that failed to open holds only its message: errstr when none.
+\ A handle that failed to open holds only its message, which closing it
+\ frees, so the message is copied first; errstr when there is no handle.
 : SQL-OPEN-FAIL ( ptr u8 n n n -- ) {: a u rc h :}
-   SB-RESET s" open " SB-APPEND a u SB-APPEND SB$
-   h 0= if rc SQL-ERRSTR-CALL else h SQL-ERRMSG-CALL then SQL-CSTR$
+   SQL-ERR-START
+   s" open " SQL-ERR+ a u SQL-ERR+ s" : " SQL-ERR+
+   h 0= if rc SQL-ERRSTR-CALL else h SQL-ERRMSG-CALL then
+   SQL-CSTR$ SQL-ERR+
    h SQL-CLOSE-CALL drop
-   DB-THROW ;
+   E-SW-DB throw ;
 
 \ the fresh file goes 0600 before WAL mode makes -wal and -shm, which copy
 \ the database's mode

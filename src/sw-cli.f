@@ -28,24 +28,30 @@ variable UNREPAIRED-P
 create UNREPAIRED-NAME NAME-CAP allot   variable UNREPAIRED-NAME-U
 \ the account a redeem was asked to spend a reset of
 create REDEEM-NAME NAME-CAP allot   variable REDEEM-NAME-U
+\ the reason a builder below assembles: a reason can name a path of any length
+create REASON-TEXT BUF:HDR-BYTES allot
+
+: REASON-START ( -- ) REASON-TEXT 64 BUF:N>BLEN BUF:RESET ;
+: REASON+ ( ptr u8 n -- ) BUF:N>BLEN REASON-TEXT BUF:APPEND-SPAN ;
+: REASON-TEXT$ ( -- ptr u8 n ) REASON-TEXT BUF:SPAN$ BUF:BLEN>N ;
 
 public
 
 : UNREPAIRED-REASON$ ( -- ptr u8 n )
-   SB-RESET s" kiba: the " SB-APPEND UNREPAIRED-P @ PROVIDER$ SB-APPEND
-   s"  switch to " SB-APPEND UNREPAIRED-NAME UNREPAIRED-NAME-U @ SB-APPEND
-   s"  did not finish; nothing is probed or refreshed until a switch completes" SB-APPEND SB$ ;
+   REASON-START s" kiba: the " REASON+ UNREPAIRED-P @ PROVIDER$ REASON+
+   s"  switch to " REASON+ UNREPAIRED-NAME UNREPAIRED-NAME-U @ REASON+
+   s"  did not finish; nothing is probed or refreshed until a switch completes" REASON+ REASON-TEXT$ ;
 
 : NO-RESETS-REASON$ ( -- ptr u8 n )
-   SB-RESET s" kiba: no limit resets are available for " SB-APPEND
-   REDEEM-NAME REDEEM-NAME-U @ SB-APPEND SB$ ;
+   REASON-START s" kiba: no limit resets are available for " REASON+
+   REDEEM-NAME REDEEM-NAME-U @ REASON+ REASON-TEXT$ ;
 
 : REMOTE-REASON$ ( -- ptr u8 n )
-   SB-RESET s" kiba: " SB-APPEND REMOTE-NOTE$ SB-APPEND SB$ ;
+   REASON-START s" kiba: " REASON+ REMOTE-NOTE$ REASON+ REASON-TEXT$ ;
 
 : ORPHAN-REASON$ ( -- ptr u8 n )
-   SB-RESET s" kiba: Claude credentials exist but " SB-APPEND ORPHAN-CONFIG$ SB-APPEND
-   s"  is missing: nothing is probed or switched until it names their account" SB-APPEND SB$ ;
+   REASON-START s" kiba: Claude credentials exist but " REASON+ ORPHAN-CONFIG$ REASON+
+   s"  is missing: nothing is probed or switched until it names their account" REASON+ REASON-TEXT$ ;
 
 : REASON$ ( n -- ptr u8 n ) {: rc :}
    rc E-SW-PROVIDER = if s" kiba: provider must be claude or codex" exit then
@@ -54,15 +60,15 @@ public
    rc E-SW-NAME = if s" kiba: account name has unsafe characters" exit then
    rc E-SW-JSON = if s" kiba: a login file is missing an expected field" exit then
    rc E-SW-LOGIN = if s" kiba: provider login did not complete" exit then
-   rc E-SW-CAPACITY = if SB-RESET s" kiba: too many: " SB-APPEND TOO-MANY$ SB-APPEND SB$ exit then
+   rc E-SW-CAPACITY = if REASON-START s" kiba: too many: " REASON+ TOO-MANY$ REASON+ REASON-TEXT$ exit then
    rc E-SW-NO-CLI = if s" kiba: provider command is not on PATH" exit then
-   rc E-SW-BASE64 = if s" kiba: id_token is not base64url" exit then
+   rc E-BASE64-LAST >= rc E-BASE64-FIRST <= and if s" kiba: id_token is not base64url" exit then
    rc E-SW-ENV = if s" kiba: HOME is not set" exit then
    rc E-SW-MISMATCH = if s" kiba: the saved login belongs to a different account than its name" exit then
    rc E-SW-ORPHAN-LIVE = if ORPHAN-REASON$ exit then
    rc E-SW-UNREPAIRED = if UNREPAIRED-REASON$ exit then
    rc E-SW-MIXED = if s" kiba: the live Claude files name different accounts; switch to an account to repair them" exit then
-   rc E-SW-DB = if SB-RESET s" kiba: the account database refused: " SB-APPEND DB-ERROR$ SB-APPEND SB$ exit then
+   rc E-SW-DB = if REASON-START s" kiba: the account database refused: " REASON+ DB-ERROR$ REASON+ REASON-TEXT$ exit then
    rc E-SW-DB-VERSION = if s" kiba: the account store is from a newer kiba; upgrade kiba" exit then
    rc E-SW-TURN-BUSY = if s" kiba: another kiba holds that provider's turn" exit then
    rc E-SW-NO-RESETS = if NO-RESETS-REASON$ exit then
@@ -76,7 +82,7 @@ public
    rc E-JSON-READ-LAST >= rc E-JSON-READ-FIRST <= and if s" kiba: a login file is not valid JSON" exit then
    rc E-FS-LAST >= rc E-FS-FIRST <= and if s" kiba: a file operation failed" exit then
    rc E-PROC-LAST >= rc E-PROC-FIRST <= and if s" kiba: could not run a command" exit then
-   SB-RESET s" kiba: error code " SB-APPEND rc FMT:SB-INT SB$ ;
+   REASON-START s" kiba: error code " REASON+ rc FMT:INT$ REASON+ REASON-TEXT$ ;
 
 private
 
@@ -90,19 +96,18 @@ private
    a ku + u ku - ;
 
 \ ---- status: the read -------------------------------------------------------
-\ the bare reason the last READ-PROVIDER stopped on, taken as it is caught: a
-\ code's reason can name state a later caught error overwrites (TOO-MANY$).
-\ Every reason fits SB-CAP, where the longest are built.
-create STAT-REASON SB-CAP allot   variable STAT-REASON-U
+\ the bare reason the last READ-PROVIDER stopped on, copied as it is caught: a
+\ code's reason can name state a later caught error overwrites (TOO-MANY$)
+create STAT-REASON BUF:HDR-BYTES allot
 
 \ STATUS-READ of provider p, keeping its reason; empty when it read everything
 : READ-PROVIDER ( n -- )
    STATUS-READ
-   0 STAT-REASON-U !
+   STAT-REASON 64 BUF:N>BLEN BUF:RESET
    STATUS-ERROR 0= if exit then
-   STATUS-ERROR BARE-REASON$ STAT-REASON STAT-REASON-U SB-CAP SPAN! ;
+   STATUS-ERROR BARE-REASON$ BUF:N>BLEN STAT-REASON BUF:APPEND-SPAN ;
 
-: STAT-REASON$ ( -- ptr u8 n ) STAT-REASON STAT-REASON-U @ ;
+: STAT-REASON$ ( -- ptr u8 n ) STAT-REASON BUF:SPAN$ BUF:BLEN>N ;
 
 \ ---- status: text -----------------------------------------------------------
 \ Each provider is rendered right after its read: the row table, ID-LIVE and
@@ -393,7 +398,7 @@ ENUM turn-input ran refused ;ENUM
 variable USAGE-ASKED                \ epoch second the run began
 variable USAGE-ROW                  \ the row being probed
 variable USAGE-RC                   \ what the last failed step threw
-create BACK-ERR 1024 allot   variable BACK-ERR-U   \ the save-back error; empty when none
+create BACK-ERR BUF:HDR-BYTES allot   \ the save-back error; empty when none
 DYNAMIC-BUFFER FAULTS u8     variable FAULTS-U     \ the provider error; empty when none
 
 : FAULTS$ ( -- ptr u8 n ) 0 FAULTS FAULTS-U @ ;
@@ -474,7 +479,8 @@ DYNAMIC-BUFFER FAULTS u8     variable FAULTS-U     \ the provider error; empty w
    loop ;
 
 : NOTE-BACK ( n -- ) drop
-   BACK-RC @ BARE-REASON$ BACK-ERR BACK-ERR-U 1024 SPAN! ;
+   BACK-ERR 64 BUF:N>BLEN BUF:RESET
+   BACK-RC @ BARE-REASON$ BUF:N>BLEN BACK-ERR BUF:APPEND-SPAN ;
 
 : NOTE-MIXED ( n -- )
    E-SW-MIXED BACK-RC !
@@ -536,16 +542,17 @@ FSM:DEFINE USAGE-TURN ( n ) usage-turn turn-input
 \ the save-back error and the provider error each go to stderr as one line
 \ that starts with the provider; true when either did
 : .FAULTS ( n -- bool ) {: p :}
-   BACK-ERR-U @ 0 > {: back :}
+   BACK-ERR BUF:SPAN$ BUF:BLEN>N {: ba bu :}
+   bu 0 > {: back :}
    FAULTS-U @ 0 > {: faults :}
-   back if p PROVIDER$ ERR-PART s" : live login not saved: " ERR-PART BACK-ERR BACK-ERR-U @ ERR-NOTE then
+   back if p PROVIDER$ ERR-PART s" : live login not saved: " ERR-PART ba bu ERR-NOTE then
    faults if p PROVIDER$ ERR-PART s" : " ERR-PART FAULTS$ ERR-NOTE then
    back faults or ;
 
 \ true when provider p reported an error
 : USAGE-PROVIDER ( n -- bool ) {: p :}
    epoch-seconds USAGE-ASKED !
-   0 BACK-ERR-U ! FAULTS-RESET
+   BACK-ERR 64 BUF:N>BLEN BUF:RESET FAULTS-RESET
    p construct usage-turn entering USAGE-TURN
    p .FAULTS ;
 

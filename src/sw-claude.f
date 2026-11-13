@@ -126,16 +126,21 @@ create MIXED-NAME NAME-CAP allot   variable MIXED-NAME-U
    CFG$ OAUTH-KEY$ DOC-VALUE-SPAN? if SPLICE-CONFIG exit then
    2drop CFG$ DOC-CLOSE INSERT-CONFIG ;
 
-\ removes the file a config write would replace; nothing to do when absent
+\ removes the file a config write would replace; nothing to do when absent,
+\ E-FS-IO and nothing removed when a directory is there
 : DROP-CONFIG ( -- )
    CLAUDE-CONFIG$ WRITE-TARGET {: t tu :}
-   t tu FS:EXISTS? if t tu FS:REMOVE-TREE then ;
+   t tu FS:EXISTS? if t tu FS:REMOVE-FILE then ;
+
+public
 
 \ makes the live config the document; length -1 removes it
 : PUT-CONFIG ( ptr u8 n -- ) {: d du :}
    du 0 < if DROP-CONFIG exit then
    CLAUDE-CONFIG$ DIRNAME ENSURE-PRIVATE
    CLAUDE-CONFIG$ d du WRITE-PRIVATE ;
+
+private
 
 : PUT-CREDS ( ptr u8 n -- ) {: d du :}
    CLAUDE-CREDS$ DIRNAME ENSURE-PRIVATE

@@ -22,7 +22,6 @@ public
 -100007 constant E-SW-LOGIN       \ the provider login command failed
 -100008 constant E-SW-CAPACITY    \ a fixed buffer is too small
 -100009 constant E-SW-NO-CLI      \ a required command is not on PATH
--100010 constant E-SW-BASE64      \ a JWT segment is not base64url
 -100011 constant E-SW-ENV         \ HOME is not set
 -100013 constant E-SW-MISMATCH    \ a saved login names a different account than its name
 -100015 constant E-SW-MIXED       \ the live Claude files name different accounts
@@ -49,13 +48,8 @@ $3D constant EQUALS
      E-SW-PROVIDER throw
    endcase ;
 
-: ERR-TYPE ( ptr u8 n -- ) {: a u :}
-   2 a u write u <> if E-FS-IO throw then ;
-
-: ERR-LINE ( ptr u8 n -- )
-   ERR-TYPE s\" \n" ERR-TYPE ;
-
-\ a diagnostic that must not turn a degraded result into a failure
+\ a diagnostic whose refused write must not change the outcome: a degraded
+\ result stays one, and a failure keeps its exit code
 : ERR-PART ( ptr u8 n -- ) {: a u :}
    2 a u write drop ;
 
@@ -152,50 +146,5 @@ public
    i 0 < if a 0 exit then
    i 0= if a 1 exit then
    a i ;
-
-\ ---- base64url ------------------------------------------------------------
--1 constant B64-END             \ '=' padding: the payload is complete
--2 constant B64-BAD
-
-: B64-VALUE ( n -- n ) {: c :}
-   c $41 >= c $5A <= and if c $41 - exit then
-   c $61 >= c $7A <= and if c $61 - 26 + exit then
-   c $30 >= c $39 <= and if c $30 - 52 + exit then
-   c $2D = c $2B = or if 62 exit then
-   c $5F = c $2F = or if 63 exit then
-   c EQUALS = if B64-END exit then
-   B64-BAD ;
-
-variable B64-ACC
-variable B64-BITS
-variable B64-OUT
-
-\ six leftover bits mean one dangling character: no group has that length
-: B64-FINISH ( -- n )
-   B64-BITS @ 6 >= if E-SW-BASE64 throw then
-   B64-OUT @ ;
-
-: B64-PUSH ( n ptr u8 n -- ) {: v dst cap :}
-   B64-ACC @ $3FFFFFF and 6 lshift v or B64-ACC !
-   B64-BITS @ 6 + B64-BITS !
-   B64-BITS @ 8 >= if
-      B64-BITS @ 8 - B64-BITS !
-      B64-OUT @ cap >= if
-         s" bytes in a decoded base64url value" cap LIMIT$ TOO-MANY
-      then
-      B64-ACC @ B64-BITS @ rshift $FF and dst B64-OUT @ + c!
-      1 B64-OUT +!
-   then ;
-
-: B64URL-DECODE ( ptr u8 n ptr u8 n -- n ) {: src u dst cap :}
-   0 B64-ACC ! 0 B64-BITS ! 0 B64-OUT !
-   0 begin dup u < while
-      dup src + c@ B64-VALUE {: v :}
-      v B64-END = if drop B64-FINISH exit then
-      v B64-BAD = if E-SW-BASE64 throw then
-      v dst cap B64-PUSH
-      1+
-   repeat drop
-   B64-FINISH ;
 
 ;package

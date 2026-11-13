@@ -4,17 +4,18 @@ require ../src/sw-base.f
 require ../src/sw-io.f
 require src/lib/prelude.f
 require src/lib/string.f
+require src/lib/fd.f
 
 package SW
 
 : USAGE ( -- )
-   s\" usage: kiba status [--json]\n" ERR-TYPE
-   s\"        kiba save [claude|codex]\n" ERR-TYPE
-   s\"        kiba use <claude|codex> <email>\n" ERR-TYPE
-   s\"        kiba add <claude|codex> [name]\n" ERR-TYPE
-   s\"        kiba forget <claude|codex> <email>\n" ERR-TYPE
-   s\"        kiba redeem <claude|codex> <email>\n" ERR-TYPE
-   s\"        kiba usage [claude|codex]\n" ERR-TYPE ;
+   s\" usage: kiba status [--json]\n" ERR-PART
+   s\"        kiba save [claude|codex]\n" ERR-PART
+   s\"        kiba use <claude|codex> <email>\n" ERR-PART
+   s\"        kiba add <claude|codex> [name]\n" ERR-PART
+   s\"        kiba forget <claude|codex> <email>\n" ERR-PART
+   s\"        kiba redeem <claude|codex> <email>\n" ERR-PART
+   s\"        kiba usage [claude|codex]\n" ERR-PART ;
 
 : ARG$ ( n -- ptr u8 n )
    dup SCRIPT-ARGC >= if drop E-SW-USAGE throw then
@@ -73,15 +74,18 @@ package SW
    ALLOC-BUFFERS
    DISPATCH ;
 
-public
-
-: MAIN ( -- )
-   [: RUN ;] catch {: rc :}
+: FINISH ( n -- ) {: rc :}
    rc 0= if s" " 0 die then
    rc E-SW-USAGE = if USAGE s" " 64 die then
    rc E-SW-REPORTED = if s" " 1 die then
-   rc REASON$ ERR-LINE
+   rc REASON$ ERR-NOTE
    s" " 1 die ;
+
+public
+
+\ SIGPIPE is ignored for the run: a write to a pipe with no reader fails like
+\ any other write, and the commands kiba starts inherit the ignore
+: MAIN ( -- ) FD:STDERR [: [: RUN ;] catch FINISH ;] FD:WITH-NOSIGPIPE ;
 
 ;package
 
