@@ -277,19 +277,6 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
 : UT-PENDING? ( n -- bool ) {: p :}
    [: p UT-PENDING-KEEP ;] UT-STORE UT-N @ ;
 
-: UT-ADDING-KEEP ( n -- ) DB-ADDING UT-N ! 2drop ;
-
-: UT-ADDING? ( n -- bool ) {: p :}
-   [: p UT-ADDING-KEEP ;] UT-STORE UT-N @ ;
-
-\ plants an add's record of p's live login a u, as a store a Mac's add
-\ left holds one; kiba never writes it
-: UT-PLANT-ADDING ( n ptr u8 n -- ) {: p a u :}
-   SB-RESET s" INSERT INTO adding (provider, live, service) VALUES ('" SB-APPEND
-   p PROVIDER$ SB-APPEND s" ', CAST('" SB-APPEND
-   a u SB-APPEND s" ' AS BLOB), '')" SB-APPEND
-   SB$ s" test" DB-EXEC ;
-
 : UT-PENDING= ( n ptr u8 n -- ) {: p a u :}
    [: p DB-PENDING TTRUE a u T$= ;] UT-STORE ;
 
@@ -354,24 +341,21 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
       0 DB-ROW-NAME$ s" a@x.test" T$=
       1 DB-ROW-NAME$ s" b@x.test" T$= ;] UT-STORE ;
 
-\ Codex's installed, pending and adding reads answer their records and leave
-\ the Claude rows a caller listed
+\ Codex's installed and pending reads answer their records and leave the
+\ Claude rows a caller listed
 : UT-MARKS-READ ( -- )
    P-CLAUDE DB-LIST
    P-CODEX DB-INSTALLED TTRUE s" d@x.test" T$=
    P-CODEX DB-PENDING TTRUE s" c@x.test" T$=
-   P-CODEX DB-ADDING TTRUE AUTH-C9$ T$=
    DB-ROW# 2 T=
    0 DB-ROW-NAME$ s" a@x.test" T$=
    1 DB-ROW-NAME$ s" b@x.test" T$= ;
 
 \ notes the marks, reads them and clears them again in one transaction
 : UT-MARKS ( -- )
-   P-CODEX s" c@x.test" DB-NOTE-PENDING {: c cu :}
-   P-CODEX AUTH-C9$ UT-PLANT-ADDING
+   P-CODEX s" c@x.test" DB-NOTE-PENDING
    UT-MARKS-READ
-   P-CODEX DB-CLEAR-ADDING
-   P-CODEX c cu DB-CLEAR-PENDING ;
+   P-CODEX DB-CLEAR-PENDING ;
 
 : UT-READS-KEEP-ROWS ( -- ) [: [: UT-MARKS ;] DB-WRITE ;] UT-STORE ;
 
@@ -489,9 +473,8 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
    UT-LOCKED$ FS:REMOVE-TREE
    CLAUDE-CREDS$ CREDS-A9$ WRITE-PRIVATE ;
 
-\ the failed credentials write puts the old config back; with no install
-\ pending before, the files are known to be the pair from before, so the
-\ claim is cleared and nothing is recorded
+\ a failed credentials write puts the old config back; with no install
+\ pending before, the pair is known: the marker is cleared, nothing recorded
 : UT-RESTORED ( -- )
    UT-LINK-CREDS
    [: P-CLAUDE s" b@x.test" CMD-USE ;] E-FS-OPEN TTHROWSQ
@@ -502,7 +485,7 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
    UT-UNLINK-CREDS ;
 
 : UT-NOTE-PENDING ( -- )
-   [: P-CLAUDE s" a@x.test" DB-NOTE-PENDING 2drop ;] DB-WRITE ;
+   [: P-CLAUDE s" a@x.test" DB-NOTE-PENDING ;] DB-WRITE ;
 
 \ with an install already pending the pair from before is unknown, so the
 \ throw between the config and credentials writes leaves the pending row:
@@ -534,7 +517,7 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
    CFG-A$ CREDS-A$ ID-SLOT CLAUDE-IDENTITY TTRUE
    [: P-CLAUDE s" bad@x.test" ID-SLOT s" garbage" s\" {\"emailAddress\":\"bad@x.test\"}" false DB-PUT ;] DB-WRITE ;
 
-\ a saved login that is not JSON is refused before anything is claimed
+\ a saved login that is not JSON is refused before the install is noted
 : UT-DAMAGED-ROW ( -- )
    [: UT-PUT-BAD ;] UT-STORE
    [: P-CLAUDE s" bad@x.test" CMD-USE ;] E-JSON-READ-MALFORMED TTHROWSQ
@@ -549,9 +532,8 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
 : CREDS-Q$ ( -- ptr u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-q\",\"subscriptionType\":\"max\",\"subscriptionType\":\"pro\"}}" ;
 
-\ credentials whose claudeAiOauth repeats a key are saved with no plan, as
-\ planFromCreds reads them; their row is refused before anything is
-\ claimed, as ClaudeLive.prepare's JSONDoc refuses it
+\ a claudeAiOauth that repeats a key saves with no plan (planFromCreds) and
+\ is refused before the install is noted (ClaudeLive.prepare's JSONDoc)
 : UT-REPEATED-CREDS ( -- )
    CLAUDE-CONFIG$ CFG-Q$ WRITE-PRIVATE
    CLAUDE-CREDS$ CREDS-Q$ WRITE-PRIVATE
@@ -623,19 +605,6 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
    P-CLAUDE CMD-SAVE
    P-CLAUDE s" a@x.test" CMD-USE
    CLAUDE-CONFIG$ READ-FILE$ CFG-BA$ T$= ;
-
-: UT-NOTE-ADDING ( -- ) P-CLAUDE CREDS-A$ UT-PLANT-ADDING ;
-: UT-CLEAR-ADDING ( -- ) [: P-CLAUDE DB-CLEAR-ADDING ;] DB-WRITE ;
-
-\ an add's record of the live login stops save and use
-: UT-UNRESTORED ( -- )
-   [: UT-NOTE-ADDING ;] UT-STORE
-   [: P-CLAUDE CMD-SAVE ;] E-SW-UNRESTORED TTHROWSQ
-   [: P-CLAUDE s" b@x.test" CMD-USE ;] E-SW-UNRESTORED TTHROWSQ
-   CLAUDE-CREDS$ READ-FILE$ CREDS-A9$ T$=
-   [: UT-CLEAR-ADDING ;] UT-STORE
-   E-SW-UNRESTORED REASON$
-   s" kiba: the live claude login waits to be put back after an add; a new claude add does it" T$= ;
 
 \ credentials without a config are nobody's: neither saved nor replaced
 : UT-ORPHAN ( -- )
@@ -734,7 +703,6 @@ variable UT-LOG0
    l UT-LOG0 @ + lu UT-LOG0 @ - ;
 
 \ ---- usage on the store ------------------------------------------------------
-create UT-HELD 32 allot
 create UT-ERR-PATH 256 allot   variable UT-ERR-U
 
 \ the file a usage run's stderr is captured in, under the scratch HOME
@@ -1313,21 +1281,14 @@ create UT-OFF-PATH 256 allot
    [: UT-CLAUDE-B ;] UT-STORE
    P-CLAUDE s" b@x.test" CMD-FORGET ;
 
-\ an add clears a stale add record before its login, so save runs after it
-\ whether or not the login completes
-: UT-ADD-STALE ( -- )
+\ a Claude add whose login fails leaves save working
+: UT-ADD-FAILED ( -- )
    UT-FAKE-CLAUDE
-   [: P-CLAUDE CREDS-A$ UT-PLANT-ADDING ;] UT-STORE
-   P-CLAUDE s" " CMD-ADD
-   P-CLAUDE UT-ADDING? TFALSE
-   P-CLAUDE CMD-SAVE
-   P-CLAUDE s" b@x.test" CMD-FORGET
-   [: P-CLAUDE CREDS-A$ UT-PLANT-ADDING ;] UT-STORE
    s" /fail-login" UT-HOME-FILE$ {: f fu :}
    f fu s" x" FS:WRITE-ALL
    [: P-CLAUDE s" " CMD-ADD ;] E-SW-LOGIN TTHROWSQ
    f fu FS:REMOVE-FILE
-   P-CLAUDE UT-ADDING? TFALSE
+   P-CLAUDE LIVE-IDENTITY TTRUE ID-LIVE EMAIL$ s" a@x.test" T$=
    P-CLAUDE CMD-SAVE ;
 
 \ a's login with its access token expired
@@ -1409,12 +1370,9 @@ create UT-OFF-PATH 256 allot
    P-CLAUDE UT-LIVE-NAME s" a@x.test" T$=
    P-CLAUDE CMD-SAVE ;
 
-: UT-HOLD ( ptr u8 n -- ) {: c cu :}
-   cu 32 T= c UT-HELD 32 BYTE-COPY ;
-
 \ a pending install stops the probe before anything is probed or refreshed
 : UT-UNREPAIRED ( -- )
-   [: [: P-CLAUDE s" b@x.test" DB-NOTE-PENDING UT-HOLD ;] DB-WRITE ;] UT-STORE
+   [: [: P-CLAUDE s" b@x.test" DB-NOTE-PENDING ;] DB-WRITE ;] UT-STORE
    UT-CLAUDE-ONLY-A
    P-CLAUDE s" a@x.test" UT-AGE
    P-CLAUDE UT-USAGE-ERR
@@ -1423,7 +1381,7 @@ create UT-OFF-PATH 256 allot
    P-CLAUDE s" a@x.test" UT-PROBED? TFALSE
    E-SW-UNREPAIRED REASON$
    s" kiba: the claude switch to b@x.test did not finish; nothing is probed or refreshed until a switch completes" T$=
-   [: [: P-CLAUDE UT-HELD 32 DB-CLEAR-PENDING ;] DB-WRITE ;] UT-STORE
+   [: [: P-CLAUDE DB-CLEAR-PENDING ;] DB-WRITE ;] UT-STORE
    P-CLAUDE UT-PENDING? TFALSE ;
 
 \ a record the store refuses is reported under its account's name; the
@@ -1832,23 +1790,19 @@ create UT-REASON 512 allot
    [: P-CLAUDE s" r@x.test" CMD-REDEEM ;] e TTHROWSQ
    UT-LOG-NEW$ nip 0 T= ;
 
-\ a pending install, or an add's live login waiting to go back, leaves no
-\ saved name known not to be live: the redeem stops before it sends
+\ a pending install leaves no saved name known not to be live: the redeem
+\ stops before it sends
 : UT-REDEEM-BLOCKED ( -- )
    P-CLAUDE s" r@x.test" s" org-r" CREDS-R$ UT-PUT-ORG
    P-CLAUDE s" r@x.test" s" cedar_ember" s" w-reset" UT-OFFER
-   [: [: P-CLAUDE s" r@x.test" DB-NOTE-PENDING UT-HOLD ;] DB-WRITE ;] UT-STORE
+   [: [: P-CLAUDE s" r@x.test" DB-NOTE-PENDING ;] DB-WRITE ;] UT-STORE
    E-SW-UNREPAIRED UT-REDEEM-STOPS
-   [: [: P-CLAUDE UT-HELD 32 DB-CLEAR-PENDING ;] DB-WRITE ;] UT-STORE
-   [: s" INSERT INTO adding (provider, live, service) VALUES ('claude', NULL, '')" s" test" DB-EXEC ;] UT-STORE
-   E-SW-UNRESTORED UT-REDEEM-STOPS
-   [: s" DELETE FROM adding WHERE provider = 'claude'" s" test" DB-EXEC ;] UT-STORE
+   [: [: P-CLAUDE DB-CLEAR-PENDING ;] DB-WRITE ;] UT-STORE
    P-CLAUDE s" r@x.test" CREDS-R$ UT-LOGIN=
    P-CLAUDE s" r@x.test" CMD-FORGET ;
 
 \ ---- the SQLite store -------------------------------------------------------
 create UT-NUL 3 allot                 \ a login blob holding a NUL byte
-create UT-CLAIM 32 allot
 variable UT-V
 
 \ kiba-mac's JSONEncoder (.sortedKeys) bytes for one usage record
@@ -1864,7 +1818,7 @@ variable UT-V
 : UT-DB-OPEN ( -- )
    $61 UT-NUL c! 0 UT-NUL 1+ c! $62 UT-NUL 2 + c!
    DB-OPEN
-   s" PRAGMA user_version" UT-DB-INT 6 T= ;
+   s" PRAGMA user_version" UT-DB-INT 7 T= ;
 
 : UT-DB-PUT ( -- )
    CFG-A$ CREDS-A$ ID-SLOT CLAUDE-IDENTITY TTRUE
@@ -1905,16 +1859,13 @@ variable UT-V
    0 DB-ROW-USAGE TTRUE
    DB-USAGE-ENCODE USAGE-LIT$ T$= ;
 
-: KEEP-CLAIM ( ptr u8 n -- ) {: c cu :}
-   cu 32 T= c UT-CLAIM 32 BYTE-COPY ;
-
+\ a second note replaces the first; clearing leaves none
 : UT-DB-PENDING ( -- )
-   [: P-CLAUDE s" a@x.test" DB-NOTE-PENDING KEEP-CLAIM
-      P-CLAUDE UT-CLAIM 32 DB-OWNS? TTRUE ;] DB-WRITE
-   [: P-CLAUDE s" b@x.test" DB-NOTE-PENDING 2drop
-      P-CLAUDE UT-CLAIM 32 DB-OWNS? TFALSE
-      P-CLAUDE UT-CLAIM 32 DB-CLEAR-PENDING ;] DB-WRITE
-   P-CLAUDE DB-PENDING TTRUE s" b@x.test" T$= ;
+   [: P-CLAUDE s" a@x.test" DB-NOTE-PENDING ;] DB-WRITE
+   [: P-CLAUDE s" b@x.test" DB-NOTE-PENDING ;] DB-WRITE
+   P-CLAUDE DB-PENDING TTRUE s" b@x.test" T$=
+   [: P-CLAUDE DB-CLEAR-PENDING ;] DB-WRITE
+   P-CLAUDE DB-PENDING TFALSE 2drop ;
 
 : UT-DB-ROLLBACK ( -- )
    [: [: P-CLAUDE s" c@x.test" ID-SLOT CREDS-A$ UT-NUL -1 false DB-PUT
@@ -2019,26 +1970,39 @@ variable UT-OUT-U
    CLAUDE-CREDS$ CREDS-A$ WRITE-PRIVATE
    [: P-CLAUDE s" n@x.test" DB-REMOVE ;] DB-WRITE ;
 
-\ sixteen 64 KiB rows of a version 5 store's history
+\ a version 5 store: sixteen 64 KiB rows of history, an add record and a
+\ pending row under an install claim
 : UT-HISTORY-FILL ( -- )
    s" PRAGMA user_version = 5" s" test" DB-EXEC
    s" CREATE TABLE history (id INTEGER PRIMARY KEY, provider TEXT, details BLOB)"
    s" test" DB-EXEC
    s" CREATE INDEX history_provider ON history(provider, id)" s" test" DB-EXEC
    s" WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 16) INSERT INTO history (provider, details) SELECT 'claude', zeroblob(65536) FROM n"
-   s" test" DB-EXEC ;
+   s" test" DB-EXEC
+   s" CREATE TABLE adding (provider TEXT PRIMARY KEY, live BLOB, service TEXT NOT NULL) WITHOUT ROWID"
+   s" test" DB-EXEC
+   s" INSERT INTO adding VALUES ('claude', NULL, '')" s" test" DB-EXEC
+   s" DROP TABLE pending" s" test" DB-EXEC
+   s" CREATE TABLE pending (provider TEXT PRIMARY KEY, name TEXT NOT NULL, owner TEXT) WITHOUT ROWID"
+   s" test" DB-EXEC
+   s" INSERT INTO pending VALUES ('codex', 'p@x.test', 'c1')" s" test" DB-EXEC ;
 
-\ the next open drops the history and compacts the store: no page is free
+\ the next open drops the history, the add record and the claim and
+\ compacts the store: no page is free
 : UT-DB-COMPACT ( -- )
    UT-HISTORY-FILL
    DB-CLOSE DB-OPEN
    s" SELECT count(*) FROM sqlite_schema WHERE tbl_name = 'history'" UT-DB-INT 0 T=
-   s" PRAGMA user_version" UT-DB-INT 6 T=
-   s" PRAGMA freelist_count" UT-DB-INT 0 T= ;
+   s" SELECT count(*) FROM sqlite_schema WHERE tbl_name = 'adding'" UT-DB-INT 0 T=
+   s" SELECT count(*) FROM pragma_table_info('pending') WHERE name = 'owner'" UT-DB-INT 0 T=
+   P-CODEX DB-PENDING TTRUE s" p@x.test" T$=
+   s" PRAGMA user_version" UT-DB-INT 7 T=
+   s" PRAGMA freelist_count" UT-DB-INT 0 T=
+   [: P-CODEX DB-CLEAR-PENDING ;] DB-WRITE ;
 
 \ a newer schema is refused and leaves the store closed
 : UT-DB-VERSION ( -- )
-   s" PRAGMA user_version = 7" s" test" DB-EXEC
+   s" PRAGMA user_version = 8" s" test" DB-EXEC
    DB-CLOSE
    [: DB-OPEN ;] E-SW-DB-VERSION TTHROWSQ
    [: P-CLAUDE DB-LIST ;] E-SW-DB TTHROWSQ ;
@@ -2440,7 +2404,6 @@ create UT-WRAP-BUF 1024 allot
    UT-SYMLINK
    UT-FAILED-WRITE
    UT-MIXED-PAIR
-   UT-UNRESTORED
    UT-ORPHAN
    UT-ORPHAN-STOPS
    UT-UNNAMED-CLAUDE
@@ -2450,7 +2413,7 @@ create UT-WRAP-BUF 1024 allot
    UT-ADD
    UT-ADD-EMPTY
    UT-ADD-CLAUDE
-   UT-ADD-STALE
+   UT-ADD-FAILED
    UT-PCT
    UT-PCT-CALLERS
    UT-LONG-TOKEN

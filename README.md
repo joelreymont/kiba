@@ -102,10 +102,12 @@ absent when the provider said nothing about limit resets. `state` is one of:
   keeps the bare email, the next are `email #2`, `email #3`. A login is matched
   to its name by organization, never by position.
 - **Store**: one SQLite file, `$XDG_DATA_HOME/kiba/kiba.db` (default
-  `~/.local/share/kiba`), in kiba-mac's schema without its history: each
-  saved login and the live install records. Its directory is `0700`; every
-  write is a transaction. A store from a newer kiba is refused; an older one
-  loses its history table and is compacted on its next open.
+  `~/.local/share/kiba`), in kiba-mac's schema without its history or its
+  add record: each saved login and the live install records. kiba records no
+  usage readings or switches, and its add never touches the live files, so it
+  needs neither. Its directory is `0700`; every write is a transaction. A
+  store from a newer kiba is refused; an older one loses its history and add
+  record and is compacted on its next open.
 - **Turns**: every command but `status` holds its provider's turn, a lock
   shared by every kiba process, from start to end, network calls included.
   Waiters take it in the order they arrived and give up after two minutes;

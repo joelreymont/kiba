@@ -25,7 +25,8 @@ holds that.
   and the Omarchy widget (`plugin/kiba/`).
   - Commands: `status`, `save`, `usage`, `use`, `add`, `forget`, `redeem`
     (`src/kiba.f:46-52`).
-  - The store is kiba-mac's SQLite file without its history (`src/sw-db.f`),
+  - The store is kiba-mac's SQLite file without its history or its add
+    record (`src/sw-db.f`),
     through kiba's own libsqlite3 binding over Habu's FFI
     (`src/sw-sqlite.f`).
   - Every command but `status` holds its provider's turn across network
@@ -58,12 +59,15 @@ holds that.
   and runs the CLI; Qt holds no account logic
   (`plugin/kiba/Status.qml:98-120`).
 - **Store**: one SQLite file at `$XDG_DATA_HOME/kiba/kiba.db`, in
-  kiba-mac's schema without its history. There is no folder layout and no
-  converter.
+  kiba-mac's schema without its history or its add record; an older store
+  loses them and is compacted on its next open. Linux's add never touches
+  the live files, and the turn keeps installs from overlapping, so the
+  store keeps no add record and no install claim. There is no folder
+  layout and no converter.
 - **History**: the user's choice (2026-11-13). kiba records no usage
   readings and no switches: nothing on Linux read them, and they were 95%
   of the store. Opening a store that holds kiba-mac's `history` table drops
-  it and compacts the file (schema 6).
+  it and compacts the file.
 - **CLI**: kiba-mac's contract, whose `status --json` the mod reads. On the
   spark the CLI is the only front end, so it also carries every account
   action the app has: `save`, `add` (which also logs a row in again),

@@ -4,14 +4,13 @@
 \ runs inside DB-WRITE's transaction.
 require ../src/sw-sqlite.f
 require ../src/sw-identity.f
-require src/lib/entropy.f
 require src/lib/fsm.f
 require src/lib/fmt.f
 require src/lib/json.f
 
 package SW
 
-6 constant DB-VERSION            \ the schema this build writes
+7 constant DB-VERSION            \ the schema this build writes
 
 \ ---- SQL text ---------------------------------------------------------------
 1024 constant SQL-TEXT-CAP
@@ -413,9 +412,7 @@ private
    SQL-RESET s" CREATE TABLE IF NOT EXISTS live (provider TEXT PRIMARY KEY," SQL+
    s" installed TEXT NOT NULL, installed_at INTEGER) WITHOUT ROWID" SQL+ SCHEMA-RUN
    SQL-RESET s" CREATE TABLE IF NOT EXISTS pending (provider TEXT PRIMARY KEY," SQL+
-   s" name TEXT NOT NULL, owner TEXT) WITHOUT ROWID" SQL+ SCHEMA-RUN
-   SQL-RESET s" CREATE TABLE IF NOT EXISTS adding (provider TEXT PRIMARY KEY," SQL+
-   s" live BLOB, service TEXT NOT NULL) WITHOUT ROWID" SQL+ SCHEMA-RUN ;
+   s" name TEXT NOT NULL) WITHOUT ROWID" SQL+ SCHEMA-RUN ;
 
 variable FOUND-N
 variable FOUND-AT
@@ -433,30 +430,17 @@ variable STORE-VERSION               \ the user_version the last open read
    FOUND-N @ STORE-VERSION !
    FOUND-N @ DB-VERSION > if E-SW-DB-VERSION throw then ;
 
-\ adds a column an older store lacks, when the probe finds none
-: MIGRATE ( ptr u8 n ptr u8 n -- ) {: pa pu aa au :}
-   pa pu ROW-FOUND? if exit then
-   aa au s" schema" DB-EXEC ;
-
-\ A version 1 store's pending table lacks owner: its marker is owned by no
-\ install. A version 1 or 2 adding table lacks service; '' is the service
-\ every Linux item is filed under. Version 1 to 3 live rows lack the
-\ install time until the next install notes one.
-: MIGRATIONS ( -- )
-   s" SELECT 1 FROM pragma_table_info('pending') WHERE name = 'owner'"
-   s" ALTER TABLE pending ADD COLUMN owner TEXT" MIGRATE
-   s" SELECT 1 FROM pragma_table_info('adding') WHERE name = 'service'"
-   s" ALTER TABLE adding ADD COLUMN service TEXT NOT NULL DEFAULT ''" MIGRATE
-   s" SELECT 1 FROM pragma_table_info('live') WHERE name = 'installed_at'"
-   s" ALTER TABLE live ADD COLUMN installed_at INTEGER" MIGRATE ;
-
-\ a store a newer build wrote is refused untouched; the history table and
-\ its index, which only stores below version 6 hold, are dropped
+\ a store a newer build wrote is refused untouched; one below version 7
+\ loses kiba-mac's history, add record and install claim
 : SCHEMA ( -- )
    CHECK-VERSION
    ACCOUNT-TABLE MARKER-TABLES
    s" DROP TABLE IF EXISTS history" s" schema" DB-EXEC
-   MIGRATIONS ;
+   s" DROP TABLE IF EXISTS adding" s" schema" DB-EXEC
+   s" SELECT 1 FROM pragma_table_info('pending') WHERE name = 'owner'"
+   ROW-FOUND? if
+      s" ALTER TABLE pending DROP COLUMN owner" s" schema" DB-EXEC
+   then ;
 
 \ ---- the write transaction ---------------------------------------------------
 \ BEGIN IMMEDIATE moves idle to open, holding off every other writer; the
@@ -677,16 +661,6 @@ variable SAME
    TAKEN @ bit and 0= if FREE-K @ 0= if k FREE-K ! then exit then
    SAME @ bit and 0<> HIT-K @ 0= and if k HIT-K ! then ;
 
-DYNAMIC-BUFFER ADD-LIVE u8   variable ADD-LIVE-U
-
-\ keeps column 0 in ADD-LIVE; length -1 for NULL
-: ADDING-ROW ( -- )
-   0 DB-COL-BYTES {: a u :}
-   u 0 max {: size :}
-   size 1+ ADD-LIVE-RESERVE
-   a 0 ADD-LIVE size BYTE-COPY
-   u ADD-LIVE-U ! 1 FOUND-N ! ;
-
 \ E-SW-CAPACITY for an email whose every slot holds another org
 : FULL-SLOTS ( n -- ) {: id :}
    SB-RESET s" logins saved under " SB-APPEND id EMAIL$ SB-APPEND
@@ -724,16 +698,6 @@ public
    [: 0 DB-COL-INT FOUND-AT ! 1 FOUND-N ! ;] DB-QUERY
    FOUND-AT @ FOUND-N @ 0<> ;
 
-\ the live item an add's login may overwrite, as it was before the login ran
-\ (length -1 when there was none), read without touching the row table and
-\ lasting until the next DB-ADDING; false when no add is in flight
-: DB-ADDING ( n -- ptr u8 n bool )
-   {: p :}
-   0 FOUND-N ! 0 ADD-LIVE-U ! 1 ADD-LIVE-RESERVE
-   s" SELECT live FROM adding WHERE provider = ?" s" adding"
-   [: p PROVIDER$ DB-TEXT+ ;] [: ADDING-ROW ;] DB-QUERY
-   0 ADD-LIVE ADD-LIVE-U @ FOUND-N @ 0<> ;
-
 \ ---- writes, inside DB-WRITE ---------------------------------------------------
 private
 
@@ -754,19 +718,6 @@ private
    DB-NULL+ ;
 
 : NO-ACCOUNT ( -- ) DB-CHANGES 0= if E-SW-NO-ACCOUNT throw then ;
-
-create CLAIM-RAW 16 allot
-create CLAIM-BUF 32 allot
-
-\ 128 random bits as lowercase hex
-: NEW-CLAIM ( -- ptr u8 n )
-   CLAIM-RAW 16 ENTROPY:FILL
-   16 0 ?do
-      CLAIM-RAW i + c@ {: b :}
-      b 4 rshift HEX-C CLAIM-BUF i 2 * + c!
-      b 15 and HEX-C CLAIM-BUF i 2 * 1+ + c!
-   loop
-   CLAIM-BUF 32 ;
 
 public
 
@@ -812,33 +763,14 @@ public
       has if at DB-INT+ else DB-NULL+ then
    ;] TX-RUN ;
 
-\ records an install of the name as begun under a new claim, replacing any
-\ earlier marker; the claim lasts until the next one
-: DB-NOTE-PENDING ( n ptr u8 n -- ptr u8 n ) {: p a u :}
-   NEW-CLAIM {: c cu :}
-   SQL-RESET s" INSERT INTO pending (provider, name, owner) VALUES (?, ?, ?)" SQL+
-   s"  ON CONFLICT (provider) DO UPDATE SET" SQL+
-   s"  name = excluded.name, owner = excluded.owner" SQL+
-   SQL$ s" note pending" [:
-      p PROVIDER$ DB-TEXT+ a u DB-TEXT+ c cu DB-TEXT+
-   ;] TX-RUN
-   c cu ;
+\ records an install of the name as begun, replacing any earlier marker
+: DB-NOTE-PENDING ( n ptr u8 n -- ) {: p a u :}
+   SQL-RESET s" INSERT INTO pending (provider, name) VALUES (?, ?)" SQL+
+   s"  ON CONFLICT (provider) DO UPDATE SET name = excluded.name" SQL+
+   SQL$ s" note pending" [: p PROVIDER$ DB-TEXT+ a u DB-TEXT+ ;] TX-RUN ;
 
-\ whether the pending marker is still the one the claim noted
-: DB-OWNS? ( n ptr u8 n -- bool ) {: p c cu :}
-   s" owns pending" TX-CHECK
-   0 FOUND-N !
-   s" SELECT 1 FROM pending WHERE provider = ? AND owner = ?" s" owns pending"
-   [: p PROVIDER$ DB-TEXT+ c cu DB-TEXT+ ;] [: 1 FOUND-N ! ;] DB-QUERY
-   FOUND-N @ 0<> ;
-
-\ clears the claim's marker; nothing to do once another install replaced it
-: DB-CLEAR-PENDING ( n ptr u8 n -- ) {: p c cu :}
-   s" DELETE FROM pending WHERE provider = ? AND owner = ?" s" clear pending"
-   [: p PROVIDER$ DB-TEXT+ c cu DB-TEXT+ ;] TX-RUN ;
-
-: DB-CLEAR-ADDING ( n -- ) {: p :}
-   s" DELETE FROM adding WHERE provider = ?" s" clear adding"
+: DB-CLEAR-PENDING ( n -- ) {: p :}
+   s" DELETE FROM pending WHERE provider = ?" s" clear pending"
    [: p PROVIDER$ DB-TEXT+ ;] TX-RUN ;
 
 ;package

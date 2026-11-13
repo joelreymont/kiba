@@ -39,14 +39,6 @@ private
    P-CLAUDE = if CLAUDE-LIVE-MIXED? exit then
    false ;
 
-\ the provider whose add record E-SW-UNRESTORED names
-variable UNRESTORED-P
-
-\ E-SW-UNRESTORED while the store holds an add's record of the live login:
-\ until it goes back, the live files may hold tokens no saved name owns
-: REQUIRE-RESTORED ( n -- ) {: p :}
-   p DB-ADDING nip nip if p UNRESTORED-P ! E-SW-UNRESTORED throw then ;
-
 \ puts the live login under the name DB-LIVE-NAME gives its identity; one
 \ read serves both, so a login rewritten meanwhile cannot land under
 \ another's name
@@ -56,14 +48,11 @@ variable UNRESTORED-P
    p ID-LIVE DB-LIVE-NAME LIVE-ROW LIVE-ROW-U NAME-CAP SPAN!
    p LIVE-ROW$ ID-LIVE la lu pa pu false DB-PUT ;
 
-\ saves the live login under its name. E-SW-UNRESTORED or E-SW-MIXED, with
-\ nothing saved, while an add's record of the live login waits or the live
-\ Claude files name different accounts. The checks and the read run in the
-\ transaction that saves, so no half of another install is saved.
+\ E-SW-MIXED, saving nothing, while the live Claude files name different
+\ accounts; checked and read in the saving transaction, never mid-install
 : SAVE-LIVE-ROW ( n -- ) {: p :}
    0 LIVE-ROW-U !
-   [: p REQUIRE-RESTORED
-      p LIVE-MIXED? if E-SW-MIXED throw then
+   [: p LIVE-MIXED? if E-SW-MIXED throw then
       p PUT-LIVE ;] DB-WRITE ;
 
 \ E-SW-NO-ACCOUNT when there is no such saved login
@@ -73,12 +62,10 @@ variable UNRESTORED-P
 
 \ ---- installing a saved login ----------------------------------------------
 create SWAP-NAME NAME-CAP allot   variable SWAP-NAME-U
-create HELD-CLAIM 32 allot        variable HELD-CLAIM-U
 variable SWAP-SETTLED             \ bool: no install was pending before this one
 variable SWAP-RC                  \ what the failed live write threw
 
 : SWAP$ ( -- ptr u8 n ) SWAP-NAME SWAP-NAME-U @ ;
-: CLAIM$ ( -- ptr u8 n ) HELD-CLAIM HELD-CLAIM-U @ ;
 
 \ the completed install of the name, noted at the clock's time once the
 \ live files are written
@@ -106,20 +93,11 @@ variable SWAP-RC                  \ what the failed live write threw
    P-CLAUDE DB-PENDING nip nip 0= SWAP-SETTLED !
    CLAUDE-SPLICED ;
 
-\ The live writes run in one transaction that first checks the claim is
-\ still this install's. A failed write puts the earlier config back; the
-\ claim is cleared only when the live files are known to be the pair from
-\ before, and the write's throw comes once the transaction commits.
-ENUM swap-state owning configuring crediting restoring swapped broken ;ENUM
-ENUM own-input mine theirs ;ENUM
+\ A failed live write puts the earlier config back, clears the marker only
+\ when the pair from before is known, and is rethrown after the commit
+ENUM swap-state configuring crediting restoring swapped broken ;ENUM
 ENUM put-input wrote refused ;ENUM
 ENUM restore-input known unknown ;ENUM
-
-: SWAP-OWN ( n -- own-input ) {: p :}
-   p CLAIM$ DB-OWNS? if construct own-input mine exit then
-   construct own-input theirs ;
-
-: SWAP-SUPERSEDED ( n -- ) drop E-SW-SUPERSEDED throw ;
 
 : AFTER-TRY ( n put-input -- n put-input )
    drop OUT$ PUT-CONFIG construct put-input wrote ;
@@ -150,17 +128,12 @@ ENUM restore-input known unknown ;ENUM
    dup 0= if drop nip exit then
    drop 2drop construct restore-input unknown ;
 
-: SWAP-CLEAR ( n -- ) CLAIM$ DB-CLEAR-PENDING ;
-
-\ the installed name and time and the claim's end commit together
+\ the installed name and time and the marker's end commit together
 : SWAP-RECORD ( n -- ) {: p :}
    p SWAP$ NOTE-SWITCH
-   p CLAIM$ DB-CLEAR-PENDING ;
+   p DB-CLEAR-PENDING ;
 
 FSM:DEFINE SWAPPING ( n ) swap-state put-input
-   IN owning SWAP-OWN ( own-input )
-      mine    -                >configuring
-      theirs  SWAP-SUPERSEDED  >broken
    IN configuring SWAP-AFTER
       wrote   -                >crediting
       refused -                >restoring
@@ -168,34 +141,34 @@ FSM:DEFINE SWAPPING ( n ) swap-state put-input
       wrote   -                >swapped
       refused -                >restoring
    IN restoring SWAP-RESTORE ( restore-input )
-      known   SWAP-CLEAR       >broken
+      known   DB-CLEAR-PENDING >broken
       unknown -                >broken
    FINAL swapped SWAP-RECORD
    FINAL broken  -
 ;DEFINE
 
 \ The checks, the reads of what the install replaces and the splice end in
-\ the pending claim, committed before either live file changes.
-ENUM install-state claiming swapping installed failed ;ENUM
-ENUM claim-input claimed ;ENUM
+\ the pending marker, committed before either live file changes.
+ENUM install-state noting swapping installed failed ;ENUM
+ENUM note-input noted ;ENUM
 ENUM swap-input done broke ;ENUM
 
-: SWAP-NOTE ( n -- claim-input ) {: p :}
+: SWAP-NOTE ( n -- note-input ) {: p :}
    [: CLAUDE-PREPARE
-      p SWAP$ DB-NOTE-PENDING HELD-CLAIM HELD-CLAIM-U 32 SPAN! ;] DB-WRITE
-   construct claim-input claimed ;
+      p SWAP$ DB-NOTE-PENDING ;] DB-WRITE
+   construct note-input noted ;
 
 : SWAP-WRITE ( n -- swap-input ) {: p :}
    0 SWAP-RC !
-   [: p construct swap-state owning SWAPPING ;] DB-WRITE
+   [: p construct swap-state configuring SWAPPING ;] DB-WRITE
    SWAP-RC @ 0= if construct swap-input done exit then
    construct swap-input broke ;
 
 : SWAP-RETHROW ( n -- ) drop SWAP-RC @ throw ;
 
 FSM:DEFINE INSTALLING ( n ) install-state swap-input
-   IN claiming SWAP-NOTE ( claim-input )
-      claimed -             >swapping
+   IN noting SWAP-NOTE ( note-input )
+      noted -             >swapping
    IN swapping SWAP-WRITE
       done    -             >installed
       broke   -             >failed
@@ -203,13 +176,11 @@ FSM:DEFINE INSTALLING ( n ) install-state swap-input
    FINAL failed    SWAP-RETHROW
 ;DEFINE
 
-\ The row must exist (E-SW-NO-ACCOUNT), its profile name an email the name
-\ belongs to (E-SW-MISMATCH) and its login hold a claudeAiOauth object
-\ (E-SW-JSON). Any throw but a failed live write's, once the claim is noted,
-\ leaves it pending, which CLAUDE-LIVE-MIXED? then reports.
+\ E-SW-NO-ACCOUNT, E-SW-MISMATCH or E-SW-JSON for a row unfit to install;
+\ once noted, any throw but a failed live write's leaves the marker pending
 : CLAUDE-INSTALL ( ptr u8 n -- )
    SWAP-NAME SWAP-NAME-U NAME-CAP SPAN!
-   P-CLAUDE construct install-state claiming INSTALLING ;
+   P-CLAUDE construct install-state noting INSTALLING ;
 
 \ one transaction, so the row read is the row installed: it must exist
 \ (E-SW-NO-ACCOUNT) and name an email the name belongs to (E-SW-MISMATCH)

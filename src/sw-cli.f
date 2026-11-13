@@ -24,12 +24,6 @@ public
    s"  switch to " SB-APPEND UNREPAIRED-NAME UNREPAIRED-NAME-U @ SB-APPEND
    s"  did not finish; nothing is probed or refreshed until a switch completes" SB-APPEND SB$ ;
 
-: UNRESTORED-REASON$ ( -- ptr u8 n )
-   UNRESTORED-P @ PROVIDER$ {: a u :}
-   SB-RESET s" kiba: the live " SB-APPEND a u SB-APPEND
-   s"  login waits to be put back after an add; a new " SB-APPEND
-   a u SB-APPEND s"  add does it" SB-APPEND SB$ ;
-
 : NO-RESETS-REASON$ ( -- ptr u8 n )
    SB-RESET s" kiba: no limit resets are available for " SB-APPEND
    REDEEM-NAME REDEEM-NAME-U @ SB-APPEND SB$ ;
@@ -53,8 +47,6 @@ public
    rc E-SW-BASE64 = if s" kiba: id_token is not base64url" exit then
    rc E-SW-ENV = if s" kiba: HOME is not set" exit then
    rc E-SW-MISMATCH = if s" kiba: the saved login belongs to a different account than its name" exit then
-   rc E-SW-UNRESTORED = if UNRESTORED-REASON$ exit then
-   rc E-SW-SUPERSEDED = if s" kiba: another Claude switch began before this one wrote anything; this one changed nothing" exit then
    rc E-SW-ORPHAN-LIVE = if ORPHAN-REASON$ exit then
    rc E-SW-UNREPAIRED = if UNREPAIRED-REASON$ exit then
    rc E-SW-MIXED = if s" kiba: the live Claude files name different accounts; switch to an account to repair them" exit then
@@ -273,12 +265,8 @@ FSM:DEFINE SAVE-BACK-ROW ( n ) back-state back-input
 ;DEFINE
 
 \ ---- probing saved logins ----------------------------------------------------
-\ The saved names whose tokens the CLI is using: the live identity's name
-\ and, while the live Claude files are mixed, the installed name, whose
-\ tokens are still the live credentials. E-SW-UNRESTORED while an add's
-\ record of the live login waits; E-SW-UNREPAIRED while an install is
-\ pending: a failed repair may have left any saved login's tokens live, so
-\ no saved name is known not to be live until a switch completes.
+\ The saved names whose tokens the CLI is using: the live identity's, and
+\ the installed one's while the live Claude files are mixed
 create LIVE-A NAME-CAP allot   variable LIVE-A-U    \ -1 when none
 create LIVE-B NAME-CAP allot   variable LIVE-B-U    \ -1 when none
 
@@ -287,6 +275,8 @@ create LIVE-B NAME-CAP allot   variable LIVE-B-U    \ -1 when none
    a u UNREPAIRED-NAME UNREPAIRED-NAME-U NAME-CAP SPAN!
    E-SW-UNREPAIRED throw ;
 
+\ E-SW-UNREPAIRED while an install is pending: a failed repair may have
+\ left any saved login's tokens live
 : REQUIRE-REPAIRED ( n -- ) {: p :}
    p DB-PENDING {: a u pending :}
    pending if p a u UNREPAIRED then ;
@@ -297,7 +287,6 @@ create LIVE-B NAME-CAP allot   variable LIVE-B-U    \ -1 when none
 
 : LIVE-NAMES ( n bool -- ) {: p mixed :}
    -1 LIVE-A-U ! -1 LIVE-B-U !
-   p REQUIRE-RESTORED
    p LIVE-IDENTITY if p ID-LIVE DB-LIVE-NAME LIVE-A LIVE-A-U NAME-CAP SPAN! then
    p REQUIRE-REPAIRED
    mixed if p INSTALLED-LIVE then ;
@@ -377,11 +366,11 @@ create OLD-NAME NAME-CAP allot   variable OLD-NAME-U
 \ ---- usage --------------------------------------------------------------------
 \ Every saved login of one provider probed and recorded, inside its turn. A
 \ save-back failure is reported and the probe goes on; a provider whose turn
-\ cannot be taken, whose logins cannot be read, whose install is pending or
-\ whose add's live login waits to go back is not probed at all. The live
-\ login is probed as live, so its tokens are never refreshed; no outcome
-\ removes a login. When every saved login was probed after the second the
-\ run began, another holder's probe answered it while this one waited.
+\ cannot be taken, whose logins cannot be read or whose install is pending
+\ is not probed at all. The live login is probed as live, so its tokens are
+\ never refreshed; no outcome removes a login. When every saved login was
+\ probed after the second the run began, another holder's probe answered it
+\ while this one waited.
 ENUM usage-step checking saving listing listing-mixed probing reported failed ;ENUM
 ENUM check-input answered stale threw ;ENUM
 ENUM list-input listed threw ;ENUM
@@ -679,11 +668,6 @@ FSM:DEFINE ADD-STEPS ( n ) add-state sign-input
 : ADD-TURN ( n ptr u8 n -- ) {: p e eu :}
    [: p e eu ADD-RUN ;] [: p ADD-END ;] finally ;
 
-\ a store copied from a Mac can hold an add's record of the live login;
-\ kiba's add never touches the live files, so there is nothing to put back
-: ADD-SETTLE ( n -- ) {: p :}
-   [: p DB-CLEAR-ADDING ;] DB-WRITE ;
-
 : .ADDED ( n ptr u8 n -- ) {: p e eu :}
    p PROVIDER$ type s" : saved " type LIVE-ROW$ type
    eu 0 > LIVE-ROW$ e eu STR= 0= and if
@@ -693,8 +677,7 @@ FSM:DEFINE ADD-STEPS ( n ) add-state sign-input
 
 : CMD-ADD ( n ptr u8 n -- ) {: p e eu :}
    p CHECK-LOGIN-CLI
-   p [: p ADD-SETTLE
-      p e eu ADD-TURN
+   p [: p e eu ADD-TURN
       p LIVE-ROW$ false PROBE-IN-TURN ;] STORE-TURN
    p e eu .ADDED ;
 
