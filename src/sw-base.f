@@ -28,6 +28,7 @@ public
 -100015 constant E-SW-MIXED       \ the live Claude files name different accounts
 -100016 constant E-SW-DB          \ a SQLite call failed
 -100017 constant E-SW-DB-VERSION  \ the store is from a newer schema
+-100018 constant E-SW-TURN-BUSY   \ another kiba holds the provider's turn
 
 0 constant P-CLAUDE
 1 constant P-CODEX

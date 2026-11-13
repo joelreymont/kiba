@@ -1,7 +1,10 @@
 \ sw-unit-test.f - checked kiba tests.
 \ Run through test.sh: HOME, XDG_DATA_HOME, and PATH must point at a scratch tree.
 require ../src/kiba.f
+require ../src/sw-turn.f
 require src/lib/test.f
+require src/lib/fs-list.f
+require src/lib/fs-lock.f
 
 package SW-TEST
 using SW
@@ -720,6 +723,61 @@ variable UT-V
    SB-RESET d du SB-APPEND s" /auth.json" SB-APPEND SB$ FS:REMOVE-FILE
    P-CODEX s" c@x.test" s" sub" SLOT-FILE$ FS:REMOVE-TREE ;
 
+\ ---- the per-provider turn ---------------------------------------------------
+create UT-QUEUE PATH-CAP allot   variable UT-QUEUE-U
+create UT-TURN PATH-CAP allot    variable UT-TURN-U
+create UT-STALE PATH-CAP allot   variable UT-STALE-U
+1024 constant UT-LIST-CAP
+create UT-LIST UT-LIST-CAP allot
+
+: UT-TURN$ ( -- ptr u8 n )
+   STORE$ {: s su :}
+   SB-RESET s su SB-APPEND s" /turn-claude" SB-APPEND
+   SB$ UT-TURN UT-TURN-U PATH!
+   UT-TURN UT-TURN-U @ ;
+
+: UT-QUEUE$ ( -- ptr u8 n )
+   UT-TURN$ {: t tu :}
+   SB-RESET t tu SB-APPEND s" .queue" SB-APPEND
+   SB$ UT-QUEUE UT-QUEUE-U PATH!
+   UT-QUEUE UT-QUEUE-U @ ;
+
+\ an entry no waiter holds, sorting before any a waiter makes
+: UT-STALE$ ( -- ptr u8 n )
+   UT-QUEUE$ {: q qu :}
+   SB-RESET q qu SB-APPEND
+   s" /00000000000000000000-0000000001-00000000000000000000" SB-APPEND
+   SB$ UT-STALE UT-STALE-U PATH!
+   UT-STALE UT-STALE-U @ ;
+
+: UT-QUEUE-LEN ( -- n )
+   UT-QUEUE$ UT-LIST UT-LIST-CAP FS-LIST:NAMES ;
+
+: UT-TURN-ROUND ( -- )
+   P-CLAUDE TURN-ENTER
+   UT-QUEUE-LEN 0 T<>
+   P-CLAUDE TURN-LEAVE
+   UT-QUEUE-LEN 0 T= ;
+
+: UT-TURN-STALE ( -- )
+   UT-STALE$ s" " WRITE-PRIVATE
+   UT-STALE$ FS:FILE? TTRUE
+   P-CLAUDE TURN-ENTER
+   UT-STALE$ FS:FILE? TFALSE
+   P-CLAUDE TURN-LEAVE
+   UT-QUEUE-LEN 0 T= ;
+
+\ flock locks belong to the open file description, so a second open of the
+\ turn file in this process holds it against TURN-ENTER
+: UT-TURN-BUSY ( -- )
+   UT-TURN$ FS:>PATHZ open-rd {: fd :}
+   fd >FD FS-LOCK:TRY TTRUE
+   300 TURN-WAIT-MS !
+   [: P-CLAUDE TURN-ENTER ;] E-SW-TURN-BUSY TTHROWSQ
+   120000 TURN-WAIT-MS !
+   fd close
+   UT-QUEUE-LEN 0 T= ;
+
 : UT-MAIN ( -- )
    T-RESET
    ALLOC-BUFFERS
@@ -754,6 +812,9 @@ variable UT-V
    UT-MIXED-PAIR
    UT-NAMES
    UT-DB
+   UT-TURN-ROUND
+   UT-TURN-STALE
+   UT-TURN-BUSY
    T-REPORT ;
 
 UT-MAIN
