@@ -1551,9 +1551,9 @@ EXPORT USED-PERCENT
 \ the usage record's windows on one line
 : .LIMITS ( -- )
    DB-LIMIT# 0 ?do
-      i 0 > if s"  · " type then
-      i DB-LIMIT-LABEL$ type s"  " type
-      i DB-LIMIT-PERCENT FMT:.U s" %" type
+      i 0 > if s"  · " .TEXT then
+      i DB-LIMIT-LABEL$ .TEXT s"  " .TEXT
+      i DB-LIMIT-PERCENT SB-RESET FMT:SB-U SB$ .TEXT s" %" .TEXT
    loop ;
 
 \ a scratch path, for tests that check what is left on disk

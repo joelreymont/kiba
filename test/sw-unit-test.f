@@ -1058,6 +1058,56 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    P-CLAUDE s" t@x.test" [: UT-RENEWED-T ;] UT-ROW-LOGIN
    P-CLAUDE s" t@x.test" CMD-FORGET ;
 
+\ ---- stdout that refuses every write -----------------------------------------
+10 constant UT-SAVE-FD-MIN          \ the saved stdout lands clear of 0..2
+
+: UT-OPEN-FULL ( -- n )
+   s" /dev/full" FS:>PATHZ FS:O-WRONLY 0 open {: fd :}
+   fd 0 < if E-FS-OPEN throw then
+   fd ;
+
+\ fd 1 back from saved, which is then closed
+: UT-STDOUT-BACK ( n -- ) {: saved :}
+   saved FD:STDOUT FD>N dup2 FD:STDOUT FD>N T=
+   saved close-rc 0 T= ;
+
+\ the throw code of the action run with fd 1 on /dev/full, which refuses every
+\ write; the checks wait until fd 1 is back, so a failure's report is seen
+: UT-FULL-STDOUT ( [ -- ] -- n ) {: act :}
+   UT-OPEN-FULL {: full :}
+   FD:STDOUT FD>N FD:F-DUPFD-CLOEXEC UT-SAVE-FD-MIN fcntl {: saved :}
+   saved 0 < if full close-rc 0 T= E-FS-IO throw then
+   full FD:STDOUT FD>N dup2 {: on :}
+   full close-rc {: shut :}
+   on FD:STDOUT FD>N = if [: act execute ;] catch else 0 then {: rc :}
+   saved UT-STDOUT-BACK
+   on FD:STDOUT FD>N T=
+   shut 0 T=
+   rc ;
+
+: UT-OUTPUT-REFUSED-RUN ( -- )
+   [: P-CLAUDE CMD-USAGE ;] UT-FULL-STDOUT E-SW-OUTPUT T=
+   [: -1 CMD-USAGE ;] UT-FULL-STDOUT E-SW-OUTPUT T=
+   [: false CMD-STATUS ;] UT-FULL-STDOUT E-SW-OUTPUT T= ;
+
+\ stdout refusing the report fails the whole run, never one provider: usage
+\ for one provider or every one, and status. With the live Claude files
+\ mixed, stderr still gets the save-back fault each usage run collected
+: UT-OUTPUT-REFUSED ( -- )
+   P-CLAUDE s" t@x.test" CREDS-T$ UT-PUT
+   CLAUDE-CONFIG$ READ-FILE$ CFG-BA$ T$=
+   CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
+   CLAUDE-CONFIG$ CFG-B$ WRITE-PRIVATE
+   UT-ERR-PATH!
+   UT-ERR$ STDERR:CAPTURE
+   [: UT-OUTPUT-REFUSED-RUN ;] [: STDERR:;CAPTURE ;] finally
+   UT-ERR$ READ-FILE$
+   s\" claude: live login not saved: the live Claude files name different accounts; switch to an account to repair them\nclaude: live login not saved: the live Claude files name different accounts; switch to an account to repair them\n" T$=
+   CLAUDE-CONFIG$ CFG-BA$ WRITE-PRIVATE
+   CLAUDE-CREDS$ CREDS-A$ WRITE-PRIVATE
+   P-CLAUDE CMD-SAVE
+   P-CLAUDE s" t@x.test" CMD-FORGET ;
+
 \ each saved login UT-USAGE probes, every one there is
 : UT-USAGE-ROWS ( [ n ptr u8 n -- ] -- ) {: each :}
    [: P-CLAUDE DB-LIST DB-ROW# 4 T= P-CODEX DB-LIST DB-ROW# 3 T= ;] UT-STORE
@@ -2653,6 +2703,7 @@ create UT-WRAP-BUF 1024 allot
    UT-LONG-TOKEN
    UT-SCRATCH-APART
    UT-RENEWED-THROWS
+   UT-OUTPUT-REFUSED
    UT-USAGE
    UT-USAGE-REFRESHED
    UT-USAGE-REVOKED

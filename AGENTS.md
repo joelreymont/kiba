@@ -20,13 +20,13 @@ checked Habu program; a thin Omarchy bar widget runs it.
   stack-comment, and checker rules apply here unchanged.
 - All Forth lives in `package SW`, split one concern per file under `src/`:
   `sw-base.f` errors and byte helpers, `sw-paths.f` file locations, `sw-io.f`
-  buffers, the JSON writer and private writes, `sw-json.f` field access over
-  in-memory JSON, `sw-identity.f` who a login belongs to, `sw-claude.f` and
-  `sw-codex.f` the live files per provider, `sw-sqlite.f` the SQLite binding,
-  `sw-db.f` the account store, `sw-turn.f` the per-provider turn,
-  `sw-store.f` saving, installing and forgetting through the store,
-  `sw-status.f` the status read, `sw-run.f` provider commands in the
-  foreground, `sw-usage.f` usage probes and limit resets through `curl`,
+  buffers, the JSON writer, private writes and stdout writes, `sw-json.f`
+  field access over in-memory JSON, `sw-identity.f` who a login belongs to,
+  `sw-claude.f` and `sw-codex.f` the live files per provider, `sw-sqlite.f`
+  the SQLite binding, `sw-db.f` the account store, `sw-turn.f` the
+  per-provider turn, `sw-store.f` saving, installing and forgetting through
+  the store, `sw-status.f` the status read, `sw-run.f` provider commands in
+  the foreground, `sw-usage.f` usage probes and limit resets through `curl`,
   `sw-cli.f` the commands, `kiba.f` the entry and `MAIN`.
 - Library words come from the installed [Habu](https://github.com/joelreymont/habu),
   the one `hb` on `PATH` resolves to. `build.sh` and `test.sh` run its

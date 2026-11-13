@@ -1,4 +1,4 @@
-\ sw-io.f - runtime buffers, the JSON writer, and private file writes.
+\ sw-io.f - runtime buffers, the JSON writer, private file writes, and stdout writes.
 require ../src/sw-paths.f
 require ../src/sw-base.f
 require src/lib/memory.f
@@ -10,6 +10,7 @@ require src/lib/fmt.f
 require src/lib/error.f
 require src/lib/fs.f
 require src/lib/string.f
+require src/lib/fd.f
 
 package SW
 
@@ -85,6 +86,17 @@ create DEST-BUF PATH-CAP allot  variable DEST-U
    fd ;
 
 public
+
+\ stdout, where a refused or short write is E-SW-OUTPUT: the engine's type
+\ drops it, and a run whose output was lost must not exit 0
+: .TEXT ( ptr u8 n -- ) {: a u :}
+   FD:STDOUT a u FD:TRY-WRITE-FULL MATCH FD:wrote
+      all OF ENDOF
+      none OF E-SW-OUTPUT throw ENDOF
+      part OF E-SW-OUTPUT throw ENDOF
+   ;MATCH ;
+
+: .NL ( -- ) s\" \n" .TEXT ;
 
 \ mappings are process-local: MAIN allocates them, never build-time top level
 : ALLOC-BUFFERS ( -- )

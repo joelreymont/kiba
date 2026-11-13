@@ -73,6 +73,7 @@ public
    rc E-SW-TURN-BUSY = if s" kiba: another kiba holds that provider's turn" exit then
    rc E-SW-NO-RESETS = if NO-RESETS-REASON$ exit then
    rc E-SW-REMOTE = if REMOTE-REASON$ exit then
+   rc E-SW-OUTPUT = if s" kiba: could not write the output" exit then
    rc E-STR-CAPACITY = if s" kiba: a path or name is too long" exit then
    rc E-FS-OPEN = if s" kiba: cannot open a login file" exit then
    rc E-FS-IO = if s" kiba: a file read, write, or rename failed" exit then
@@ -114,29 +115,29 @@ create STAT-REASON BUF:HDR-BYTES allot
 \ the usage record hold that provider until the next store read.
 : .PLAN ( ptr u8 n -- ) {: a u :}
    u 0= if exit then
-   s"  (" type a u type s" )" type ;
+   s"  (" .TEXT a u .TEXT s" )" .TEXT ;
 
 : .FIGURES ( n -- ) {: p :}
    p FIGURES-TEXT {: a u :}
    u 0= if exit then
-   s"   " type a u type ;
+   s"   " .TEXT a u .TEXT ;
 
 : .ACCOUNT ( n n -- ) {: p i :}
-   i STATUS-ACTIVE? if s"   * " else s"     " then type
-   i DB-ROW-NAME$ type
+   i STATUS-ACTIVE? if s"   * " else s"     " then .TEXT
+   i DB-ROW-NAME$ .TEXT
    i DB-ROW-USAGE {: probed :}
    i probed SHOWN-PLAN$ .PLAN
    probed if p .FIGURES then
-   cr ;
+   .NL ;
 
 : .LIVE ( -- )
-   STATUS-ERROR 0<> if STAT-REASON$ type cr exit then
-   STATUS-LIVE? if ID-LIVE EMAIL$ type ID-LIVE PLAN$ .PLAN cr exit then
-   s" no live login" type cr ;
+   STATUS-ERROR 0<> if STAT-REASON$ .TEXT .NL exit then
+   STATUS-LIVE? if ID-LIVE EMAIL$ .TEXT ID-LIVE PLAN$ .PLAN .NL exit then
+   s" no live login" .TEXT .NL ;
 
 : .PROVIDER ( n -- ) {: p :}
    p READ-PROVIDER
-   p PROVIDER$ type s" : " type .LIVE
+   p PROVIDER$ .TEXT s" : " .TEXT .LIVE
    STATUS-ROWS 0 ?do p i .ACCOUNT loop ;
 
 : STATUS-TEXT ( -- )
@@ -219,7 +220,7 @@ public
 private
 
 : STATUS-JSON ( -- )
-   STATUS-JSON$ type cr ;
+   STATUS-JSON$ .TEXT .NL ;
 
 : STATUS-SHOW ( bool -- )
    if STATUS-JSON exit then
@@ -239,9 +240,9 @@ private
    [: p body IN-TURN ;] WITH-STORE ;
 
 : .SAVED ( n -- ) {: p :}
-   p PROVIDER$ type
-   LIVE-ROW$ nip 0= if s" : no live login" type cr exit then
-   s" : saved " type LIVE-ROW$ type cr ;
+   p PROVIDER$ .TEXT
+   LIVE-ROW$ nip 0= if s" : no live login" .TEXT .NL exit then
+   s" : saved " .TEXT LIVE-ROW$ .TEXT .NL ;
 
 : SAVE-ONE ( n -- ) {: p :}
    p [: p SAVE-LIVE-ROW ;] STORE-TURN
@@ -392,8 +393,8 @@ ENUM usage-step checking saving listing listing-mixed probing reported failed ;E
 ENUM check-input answered stale threw ;ENUM
 ENUM list-input listed threw ;ENUM
 ENUM probe-input recorded unrecorded finished ;ENUM
-ENUM usage-turn entering left ;ENUM
-ENUM turn-input ran refused ;ENUM
+ENUM usage-turn entering left lost ;ENUM
+ENUM turn-input ran refused unwritten ;ENUM
 
 variable USAGE-ASKED                \ epoch second the run began
 variable USAGE-ROW                  \ the row being probed
@@ -415,9 +416,9 @@ DYNAMIC-BUFFER FAULTS u8     variable FAULTS-U     \ the provider error; empty w
 
 \ provider p's account: its name, then its windows, or its note when none
 : .USAGE ( n ptr u8 n -- ) {: p a u :}
-   p PROVIDER$ type s" : " type a u type s"   " type
-   DB-LIMIT# 0= if DB-USAGE-NOTE$ type cr exit then
-   .LIMITS cr ;
+   p PROVIDER$ .TEXT s" : " .TEXT a u .TEXT s"   " .TEXT
+   DB-LIMIT# 0= if DB-USAGE-NOTE$ .TEXT .NL exit then
+   .LIMITS .NL ;
 
 \ every saved row holds a record fetched after the run began
 : ALL-PROBED? ( -- bool )
@@ -523,22 +524,6 @@ FSM:DEFINE USAGE-STEPS ( n ) usage-step check-input
    FINAL failed -
 ;DEFINE
 
-: USAGE-IN-TURN ( n -- n ) {: p :}
-   p [: p construct usage-step checking USAGE-STEPS ;] STORE-TURN
-   p ;
-
-: USAGE-TURN-SENSE ( n -- turn-input )
-   [: USAGE-IN-TURN ;] catch {: rc :} drop
-   rc 0= if construct turn-input ran exit then
-   rc USAGE-RC ! construct turn-input refused ;
-
-FSM:DEFINE USAGE-TURN ( n ) usage-turn turn-input
-   IN entering USAGE-TURN-SENSE
-      ran         -                >left
-      refused     NOTE-FAILURE     >left
-   FINAL left -
-;DEFINE
-
 \ the save-back error and the provider error each go to stderr as one line
 \ that starts with the provider; true when either did
 : .FAULTS ( n -- bool ) {: p :}
@@ -548,6 +533,29 @@ FSM:DEFINE USAGE-TURN ( n ) usage-turn turn-input
    back if p PROVIDER$ ERR-PART s" : live login not saved: " ERR-PART ba bu ERR-NOTE then
    faults if p PROVIDER$ ERR-PART s" : " ERR-PART FAULTS$ ERR-NOTE then
    back faults or ;
+
+: USAGE-IN-TURN ( n -- n ) {: p :}
+   p [: p construct usage-step checking USAGE-STEPS ;] STORE-TURN
+   p ;
+
+: USAGE-TURN-SENSE ( n -- turn-input )
+   [: USAGE-IN-TURN ;] catch {: rc :} drop
+   rc 0= if construct turn-input ran exit then
+   rc E-SW-OUTPUT = if construct turn-input unwritten exit then
+   rc USAGE-RC ! construct turn-input refused ;
+
+\ when stdout refused the report, stderr still gets what provider p collected
+: OUTPUT-LOST ( n -- )
+   .FAULTS drop E-SW-OUTPUT throw ;
+
+FSM:DEFINE USAGE-TURN ( n ) usage-turn turn-input
+   IN entering USAGE-TURN-SENSE
+      ran         -                >left
+      refused     NOTE-FAILURE     >left
+      unwritten   -                >lost
+   FINAL left -
+   FINAL lost OUTPUT-LOST
+;DEFINE
 
 \ true when provider p reported an error
 : USAGE-PROVIDER ( n -- bool ) {: p :}
@@ -562,7 +570,7 @@ public
    [: json STATUS-SHOW ;] WITH-STORE ;
 
 \ p < 0 probes every provider; once each has run, E-SW-REPORTED when any
-\ reported an error
+\ reported an error. A refused stdout write ends the run with E-SW-OUTPUT
 : CMD-USAGE ( n -- )
    dup 0 < if drop false P-COUNT 0 ?do i USAGE-PROVIDER or loop else USAGE-PROVIDER then
    if E-SW-REPORTED throw then ;
@@ -575,7 +583,7 @@ public
 \ saves the live login back, then makes the saved login live
 : CMD-USE ( n ptr u8 n -- ) {: p a u :}
    p [: p a u USE-RUN ;] STORE-TURN
-   p PROVIDER$ type s" : now " type a u type cr ;
+   p PROVIDER$ .TEXT s" : now " .TEXT a u .TEXT .NL ;
 
 \ ---- redeem ---------------------------------------------------------------------
 \ One limit reset of a saved login is spent, then the login is probed again
@@ -622,10 +630,10 @@ create LINE-BUF 256 allot
 \ the browser decides the account, so the user is told which one to be
 \ signed into, or reminded to pick one, and given the moment to arrange it
 : ADD-PAUSE ( n ptr u8 n -- ) {: p e eu :}
-   s" Sign in to " type
-   eu 0 > if e eu NAME-EMAIL type else s" the account to add" type then
-   s"  at " type p SITE$ type
-   s"  in your browser, then press Enter to continue: " type
+   s" Sign in to " .TEXT
+   eu 0 > if e eu NAME-EMAIL .TEXT else s" the account to add" .TEXT then
+   s"  at " .TEXT p SITE$ .TEXT
+   s"  in your browser, then press Enter to continue: " .TEXT
    0 LINE-BUF 256 read drop ;
 
 : ADD-BEGIN ( n -- ) {: p :}
@@ -688,11 +696,11 @@ FSM:DEFINE ADD-STEPS ( n ) add-state sign-input
    [: p e eu ADD-RUN ;] [: p ADD-END ;] finally ;
 
 : .ADDED ( n ptr u8 n -- ) {: p e eu :}
-   p PROVIDER$ type s" : saved " type LIVE-ROW$ type
+   p PROVIDER$ .TEXT s" : saved " .TEXT LIVE-ROW$ .TEXT
    eu 0 > LIVE-ROW$ e eu STR= 0= and if
-      s"  (you signed in to a different account than " type e eu type s" )" type
+      s"  (you signed in to a different account than " .TEXT e eu .TEXT s" )" .TEXT
    then
-   cr ;
+   .NL ;
 
 : CMD-ADD ( n ptr u8 n -- ) {: p e eu :}
    p CHECK-LOGIN-CLI
@@ -726,10 +734,10 @@ FSM:DEFINE ADD-STEPS ( n ) add-state sign-input
 : CMD-REDEEM ( n ptr u8 n -- ) {: p a u :}
    a u REDEEM-NAME REDEEM-NAME-U NAME-CAP SPAN!
    p [: p a u REDEEM-RUN ;] STORE-TURN
-   p PROVIDER$ type s" : " type a u REDEEMED$ type cr ;
+   p PROVIDER$ .TEXT s" : " .TEXT a u REDEEMED$ .TEXT .NL ;
 
 : CMD-FORGET ( n ptr u8 n -- ) {: p a u :}
    p [: p a u FORGET-ROW ;] STORE-TURN
-   p PROVIDER$ type s" : forgot " type a u type cr ;
+   p PROVIDER$ .TEXT s" : forgot " .TEXT a u .TEXT .NL ;
 
 ;package
