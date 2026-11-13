@@ -3,7 +3,7 @@ require ../src/sw-store.f
 require ../src/sw-run.f
 require ../src/sw-usage.f
 require ../src/sw-db.f
-require src/lib/json.f
+require ../src/sw-status.f
 require src/lib/fmt.f
 
 package SW
@@ -81,96 +81,120 @@ public
 private
 
 \ ---- status: text -----------------------------------------------------------
+\ Each provider is rendered right after its read: the row table, ID-LIVE and
+\ the usage record hold that provider until the next store read.
 : .PLAN ( ptr u8 n -- ) {: a u :}
    u 0= if exit then
    s"  (" type a u type s" )" type ;
 
-: .AGE ( -- )
-   USAGE-AT@ 0 < if exit then
-   epoch-seconds USAGE-AT@ - 60 / {: m :}
-   s"  (" type m FMT:.U s" m ago)" type ;
-
-: .USAGE ( n n -- ) {: p i :}
-   p i ACCT-NAME LOAD-USAGE 0= if exit then
-   s"   " type
-   LIM#@ 0= if NOTE$ type .AGE exit then
-   .LIMITS .AGE ;
+: .FIGURES ( n -- ) {: p :}
+   p FIGURES-TEXT {: a u :}
+   u 0= if exit then
+   s"   " type a u type ;
 
 : .ACCOUNT ( n n -- ) {: p i :}
-   p i ACCT-NAME SLOT-PLAN
-   i ACTIVE? if s"   * " else s"     " then type
-   i ACCT-NAME type ID-SLOT PLAN$ .PLAN
-   p i .USAGE cr ;
+   i STATUS-ACTIVE? if s"   * " else s"     " then type
+   i DB-ROW-NAME$ type
+   i DB-ROW-USAGE {: probed :}
+   i probed SHOWN-PLAN$ .PLAN
+   probed if p .FIGURES then
+   cr ;
 
 : .LIVE ( -- )
-   SCAN-RC @ 0<> if SCAN-RC @ REASON$ type cr exit then
-   SCAN-LIVE @ if ID-LIVE EMAIL$ type ID-LIVE PLAN$ .PLAN cr exit then
+   STATUS-ERROR 0<> if STATUS-ERROR REASON$ type cr exit then
+   STATUS-LIVE? if ID-LIVE EMAIL$ type ID-LIVE PLAN$ .PLAN cr exit then
    s" no live login" type cr ;
 
 : .PROVIDER ( n -- ) {: p :}
-   p SCAN-PROVIDER
+   p STATUS-READ
    p PROVIDER$ type s" : " type .LIVE
-   0 begin dup ACCT# < while p over .ACCOUNT 1+ repeat drop ;
+   STATUS-ROWS 0 ?do p i .ACCOUNT loop ;
 
 : STATUS-TEXT ( -- )
-   0 begin dup P-COUNT < while dup .PROVIDER 1+ repeat drop ;
+   P-COUNT 0 ?do i .PROVIDER loop ;
 
 \ ---- status: json -----------------------------------------------------------
-: JSON-LIVE ( ptr JSON:writer -- ptr JSON:writer )
-   s" live" JSON:WRITE-KEY
-   SCAN-LIVE @ 0= if JSON:WRITE-NULL exit then
-   JSON:WRITE-OBJECT-START
-   s" email" ID-LIVE EMAIL$ JSON:WRITE-FIELD-S JSON:WRITE-COMMA
-   s" plan" ID-LIVE PLAN$ JSON:WRITE-FIELD-S
-   JSON:WRITE-OBJECT-END ;
+\ kiba-mac's snapshot as its JSONEncoder writes it, keys sorted, members
+\ that are nil left out, and each limit given the percent left its figure
+\ shows. It is written with the usage record's encoder words into their
+\ buffer, which no store read touches.
+: ENC-BOOL ( bool -- )
+   if s" true" else s" false" then ENC+ ;
 
-: JSON-USAGE ( ptr JSON:writer n n -- ptr JSON:writer ) {: p i :}
-   s" usage" JSON:WRITE-KEY
-   p i ACCT-NAME LOAD-USAGE 0= if JSON:WRITE-NULL exit then
-   JSON:WRITE-OBJECT-START
-   s" fetchedAt" USAGE-AT@ 0 max JSON:WRITE-FIELD-U JSON:WRITE-COMMA
-   s" state" STATE$ JSON:WRITE-FIELD-S JSON:WRITE-COMMA
-   s" note" NOTE$ JSON:WRITE-FIELD-S JSON:WRITE-COMMA
-   s" limits" USAGE-LIMITS-RAW$ JSON:WRITE-FIELD-RAW
-   JSON:WRITE-OBJECT-END ;
+: SNAP-LIMIT ( n -- ) {: k :}
+   $7B ENC-C
+   s" label" ENC-KEY k DB-LIMIT-LABEL$ ENC-STR ENC-COMMA
+   k WINDOW-FIGURE if s" left" ENC-KEY ENC-INT ENC-COMMA else drop then
+   s" percent" ENC-KEY k DB-LIMIT-PERCENT ENC-INT ENC-COMMA
+   s" resetsAt" ENC-KEY k DB-LIMIT-RESETS$ ENC-STR
+   $7D ENC-C ;
 
-: JSON-ACCOUNT ( ptr JSON:writer n n -- ptr JSON:writer ) {: p i :}
-   i 0 > if JSON:WRITE-COMMA then
-   JSON:WRITE-OBJECT-START
-   s" email" i ACCT-NAME JSON:WRITE-FIELD-S JSON:WRITE-COMMA
-   p i ACCT-NAME SLOT-PLAN
-   s" plan" ID-SLOT PLAN$ JSON:WRITE-FIELD-S JSON:WRITE-COMMA
-   s" active" i ACTIVE? JSON:WRITE-FIELD-BOOL JSON:WRITE-COMMA
-   p i JSON-USAGE
-   JSON:WRITE-OBJECT-END ;
+\ ENC-TAIL writes the record's note, reset offer and state and closes it
+: SNAP-USAGE ( n -- ) {: p :}
+   p FIGURES
+   s" usage" ENC-KEY $7B ENC-C
+   s" fetchedAt" ENC-KEY DB-USAGE-AT ENC-INT ENC-COMMA
+   s" limits" ENC-KEY $5B ENC-C
+   DB-LIMIT# 0 ?do
+      i 0 > if ENC-COMMA then
+      i SNAP-LIMIT
+   loop
+   $5D ENC-C ENC-COMMA
+   ENC-TAIL ;
 
-: JSON-PROVIDER ( ptr JSON:writer n -- ptr JSON:writer ) {: p :}
-   p SCAN-PROVIDER
-   p 0 > if JSON:WRITE-COMMA then
-   JSON:WRITE-OBJECT-START
-   s" id" p PROVIDER$ JSON:WRITE-FIELD-S JSON:WRITE-COMMA
-   JSON-LIVE JSON:WRITE-COMMA
-   s" accounts" JSON:WRITE-KEY JSON:WRITE-ARRAY-START
-   ACCT# 0 ?do p i JSON-ACCOUNT loop
-   JSON:WRITE-ARRAY-END
-   SCAN-RC @ 0<> if JSON:WRITE-COMMA s" error" SCAN-RC @ REASON$ JSON:WRITE-FIELD-S then
-   JSON:WRITE-OBJECT-END ;
+: SNAP-ACCOUNT ( n n -- ) {: p i :}
+   i 0 > if ENC-COMMA then
+   $7B ENC-C
+   s" active" ENC-KEY i STATUS-ACTIVE? ENC-BOOL ENC-COMMA
+   s" name" ENC-KEY i DB-ROW-NAME$ ENC-STR ENC-COMMA
+   s" plan" ENC-KEY i DB-ROW-PLAN$ ENC-STR
+   i DB-ROW-USAGE if ENC-COMMA p SNAP-USAGE then
+   $7D ENC-C ;
+
+: SNAP-ERROR ( -- )
+   STATUS-ERROR 0= if exit then
+   ENC-COMMA s" error" ENC-KEY STATUS-ERROR REASON$ ENC-STR ;
+
+: SNAP-AT ( -- )
+   STATUS-AT 0= if drop exit then
+   ENC-COMMA s" installedAt" ENC-KEY ENC-INT ;
+
+: SNAP-LIVE ( -- )
+   STATUS-LIVE? 0= if exit then
+   ENC-COMMA s" live" ENC-KEY $7B ENC-C
+   s" email" ENC-KEY ID-LIVE EMAIL$ ENC-STR ENC-COMMA
+   s" plan" ENC-KEY ID-LIVE PLAN$ ENC-STR
+   $7D ENC-C ;
+
+: SNAP-PROVIDER ( n -- ) {: p :}
+   p STATUS-READ
+   p 0 > if ENC-COMMA then
+   $7B ENC-C
+   s" accounts" ENC-KEY $5B ENC-C
+   STATUS-ROWS 0 ?do p i SNAP-ACCOUNT loop
+   $5D ENC-C
+   SNAP-ERROR SNAP-AT SNAP-LIVE
+   ENC-COMMA s" provider" ENC-KEY p PROVIDER$ ENC-STR
+   $7D ENC-C ;
 
 public
 
+\ the snapshot of every provider, read from the open store
 : STATUS-JSON$ ( -- ptr u8 n )
-   JSON-OPEN
-   JSON:WRITE-OBJECT-START
-   s" providers" JSON:WRITE-KEY JSON:WRITE-ARRAY-START
-   P-COUNT 0 ?do i JSON-PROVIDER loop
-   JSON:WRITE-ARRAY-END
-   JSON:WRITE-OBJECT-END
-   JSON:WRITTEN$ ;
+   0 ENC-U !
+   $7B ENC-C s" providers" ENC-KEY $5B ENC-C
+   P-COUNT 0 ?do i SNAP-PROVIDER loop
+   $5D ENC-C $7D ENC-C
+   ENC$ ;
 
 private
 
 : STATUS-JSON ( -- )
    STATUS-JSON$ type cr ;
+
+: STATUS-SHOW ( bool -- )
+   if STATUS-JSON exit then
+   STATUS-TEXT ;
 
 \ ---- save / use / add / forget ----------------------------------------------
 : .SAVED ( n -- ) {: p :}
@@ -259,9 +283,9 @@ public
 
 : MIXED-PUBLIC? ( n -- bool ) MIXED? ;
 
-: CMD-STATUS ( bool -- )
-   if STATUS-JSON exit then
-   STATUS-TEXT ;
+: CMD-STATUS ( bool -- ) {: json :}
+   DB-OPEN
+   [: json STATUS-SHOW ;] [: DB-CLOSE ;] finally ;
 
 \ p < 0 probes every provider
 : CMD-USAGE ( n -- )

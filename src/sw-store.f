@@ -141,21 +141,6 @@ variable NAME-FREE                  \ first candidate that is free or damaged; 0
    NAME-FREE @ NAME-CANDIDATE!
    NAME-OUT NAME-OUT-U @ ;
 
-: SLOT-PLAN-RAW ( n ptr u8 n -- ) {: p a u :}
-   p case
-     P-CLAUDE of a u CLAUDE-SLOT-PLAN endof
-     P-CODEX of a u CODEX-SLOT-PLAN endof
-     E-SW-PROVIDER throw
-   endcase ;
-
-: SLOT-PLAN-KEEP ( n ptr u8 n -- n ptr u8 n ) {: p a u :}
-   p a u SLOT-PLAN-RAW p a u ;
-
-: WARN-SLOT ( ptr u8 n n -- ) {: a u rc :}
-   SB-RESET s" kiba: saved account " SB-APPEND a u SB-APPEND
-   s"  has an unreadable file (error " SB-APPEND rc FMT:SB-INT s" )" SB-APPEND
-   SB$ ERR-NOTE ;
-
 public
 
 \ The live pair is only trusted to belong together while it is what kiba
@@ -188,14 +173,6 @@ EXPORT LIVE-NAME
    p PROVIDER-DIR$ FS:DIR? 0= if exit then
    p PROVIDER-DIR$ [: NOTE-FILE ;] FS:WALK-FILES
    SORT-ACCOUNTS ;
-
-\ a slot with a damaged file still lists; only its plan is unknown.
-\ catch keeps only the depth, so the cells under the code are dropped unread.
-: SLOT-PLAN ( n ptr u8 n -- ) {: p a u :}
-   p a u [: SLOT-PLAN-KEEP ;] catch {: rc :} 2drop drop
-   rc 0= if exit then
-   ID-SLOT NO-IDENTITY
-   a u rc WARN-SLOT ;
 
 : LIVE-IDENTITY ( n -- bool )
    case

@@ -233,11 +233,8 @@ create UT-PID 32 allot
    1 ACCT-NAME s" a@x.test #2" T$=
    P-CLAUDE s" a@x.test #2" s" credentials.json" SLOT-FILE$ READ-FILE$ CREDS-A2$ T$=
    P-CLAUDE s" a@x.test" s" credentials.json" SLOT-FILE$ READ-FILE$ CREDS-A$ T$=
-   STATUS-JSON$ s\" \"email\":\"a@x.test #2\",\"plan\":\"team\",\"active\":true" CONTAINS? TTRUE
-   STATUS-JSON$ s\" \"email\":\"a@x.test\",\"plan\":\"max\",\"active\":false" CONTAINS? TTRUE
    P-CLAUDE s" a@x.test" CMD-USE
    CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
-   STATUS-JSON$ s\" \"email\":\"a@x.test\",\"plan\":\"max\",\"active\":true" CONTAINS? TTRUE
    P-CLAUDE s" a@x.test #2" CMD-USE
    CLAUDE-CREDS$ READ-FILE$ CREDS-A2$ T$=
    P-CLAUDE LIVE-IDENTITY TTRUE ID-LIVE ORG$ s" org-c" T$=
@@ -307,19 +304,9 @@ create UT-PID 32 allot
    P-CLAUDE s" bad@x.test" s" credentials.json" SLOT-FILE$ s" garbage" WRITE-PRIVATE
    P-CLAUDE s" bad@x.test" s" oauth-account.json" SLOT-FILE$ s\" {\"emailAddress\":\"bad@x.test\"}" WRITE-PRIVATE
    P-CLAUDE LIST-ACCOUNTS ACCT# 2 T=
-   P-CLAUDE 1 ACCT-NAME SLOT-PLAN ID-SLOT PLAN$ nip 0 T=
-   STATUS-JSON$ s\" \"email\":\"bad@x.test\",\"plan\":\"\",\"active\":false" CONTAINS? TTRUE
    [: P-CLAUDE s" bad@x.test" CMD-USE ;] E-JSON-READ-MALFORMED TTHROWSQ
    CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
    P-CLAUDE s" bad@x.test" CMD-FORGET ;
-
-\ one provider's broken live file leaves the other provider's status intact
-: UT-STATUS-ISOLATION ( -- )
-   CLAUDE-CONFIG$ s" {not json" WRITE-PRIVATE
-   STATUS-JSON$ s\" \"id\":\"claude\",\"live\":null,\"accounts\":[{\"email\":\"a@x.test\"" CONTAINS? TTRUE
-   STATUS-JSON$ s\" \"error\":\"kiba: a login file is not valid JSON\"" CONTAINS? TTRUE
-   STATUS-JSON$ s\" \"id\":\"codex\",\"live\":{\"email\":\"c@x.test\",\"plan\":\"plus\"}" CONTAINS? TTRUE
-   CLAUDE-CONFIG$ CFG-BA$ WRITE-PRIVATE ;
 
 \ API-key Codex logins are saved and restored under a fixed slot name
 : UT-API-KEY ( -- )
@@ -457,9 +444,6 @@ create UT-PID 32 allot
    LOG$ READ-FILE$ s" hdrmode 600" CONTAINS? TTRUE
    s" /headers.txt" PSUB-PUBLIC$ FS:FILE? TFALSE
    P-CLAUDE s" a@x.test" LOAD-USAGE TTRUE STATE$ s" ok" T$=
-   STATUS-JSON$ s\" \"state\":\"ok\"" CONTAINS? TTRUE
-   STATUS-JSON$ s\" \"usage\":{\"fetchedAt\":" CONTAINS? TTRUE
-   STATUS-JSON$ s\" \"limits\":[{\"label\":\"Session (5-hour)\",\"percent\":56," CONTAINS? TTRUE
    LOG$ READ-FILE$ {: l lu :}
    l lu s" https://platform.claude.com/v1/oauth/token" CONTAINS? TTRUE
    STORE$ {: s su :}
@@ -561,11 +545,10 @@ create UT-PID 32 allot
    P-CODEX s" c@x.test" LOAD-USAGE TTRUE STATE$ s" ok" T$=
    CLAUDE-CONFIG$ CFG-BA$ WRITE-PRIVATE ;
 
-\ a damaged slot with the live account's name neither hides the live login
-\ nor blocks saving it
+\ a damaged slot with the live account's name does not block saving the
+\ live login
 : UT-DAMAGED-LIVE-SLOT ( -- )
    P-CODEX s" c@x.test" s" auth.json" SLOT-FILE$ s" garbage" WRITE-PRIVATE
-   STATUS-JSON$ s\" \"id\":\"codex\",\"live\":{\"email\":\"c@x.test\"" CONTAINS? TTRUE
    P-CODEX CMD-SAVE
    P-CODEX s" c@x.test" s" auth.json" SLOT-FILE$ READ-FILE$ AUTH-C$ T$= ;
 
@@ -687,6 +670,45 @@ variable UT-V
          E-SW-LOGIN throw ;] DB-WRITE ;] E-SW-LOGIN TTHROWSQ
    P-CLAUDE s" c@x.test" DB-FETCH TFALSE ;
 
+\ kiba-mac's snapshot bytes: two saved Claude logins under one email, the
+\ live one in the second organization, and a live Codex login never saved
+: SNAP-LIT$ ( -- ptr u8 n )
+   s\" {\"providers\":[{\"accounts\":[{\"active\":false,\"name\":\"a@x.test\",\"plan\":\"max\",\"usage\":{\"fetchedAt\":1700000000,\"limits\":[{\"label\":\"Session (5-hour)\",\"left\":70,\"percent\":30,\"resetsAt\":\"2026-11-13T10:00:00Z\"},{\"label\":\"Weekly \\/ Opus\",\"percent\":-1,\"resetsAt\":\"\"}],\"note\":\"a\\/b \\\"q\\\"\\n\",\"resets\":{\"count\":2,\"grant\":\"g-1\",\"program\":\"cedar_ember\"},\"state\":\"throttled\"}},{\"active\":true,\"name\":\"a@x.test #2\",\"plan\":\"team\"}],\"installedAt\":1700000500,\"live\":{\"email\":\"a@x.test\",\"plan\":\"team\"},\"provider\":\"claude\"},{\"accounts\":[],\"live\":{\"email\":\"c@x.test\",\"plan\":\"plus\"},\"provider\":\"codex\"}]}" ;
+
+\ the same store once the Claude config is not JSON and c@x.test is saved
+: SNAP-ERROR-LIT$ ( -- ptr u8 n )
+   s\" {\"providers\":[{\"accounts\":[{\"active\":false,\"name\":\"a@x.test\",\"plan\":\"max\",\"usage\":{\"fetchedAt\":1700000000,\"limits\":[{\"label\":\"Session (5-hour)\",\"left\":70,\"percent\":30,\"resetsAt\":\"2026-11-13T10:00:00Z\"},{\"label\":\"Weekly \\/ Opus\",\"percent\":-1,\"resetsAt\":\"\"}],\"note\":\"a\\/b \\\"q\\\"\\n\",\"resets\":{\"count\":2,\"grant\":\"g-1\",\"program\":\"cedar_ember\"},\"state\":\"throttled\"}},{\"active\":false,\"name\":\"a@x.test #2\",\"plan\":\"team\"}],\"error\":\"kiba: a login file is not valid JSON\",\"installedAt\":1700000500,\"provider\":\"claude\"},{\"accounts\":[{\"active\":true,\"name\":\"c@x.test\",\"plan\":\"plus\"}],\"live\":{\"email\":\"c@x.test\",\"plan\":\"plus\"},\"provider\":\"codex\"}]}" ;
+
+: UT-STATUS-ROWS ( -- )
+   s" DELETE FROM account" s" test" DB-EXEC
+   s" DELETE FROM live" s" test" DB-EXEC
+   USAGE-LIT$ DB-USAGE-DECODE
+   CFG-A$ CREDS-A$ ID-SLOT CLAUDE-IDENTITY TTRUE
+   [: P-CLAUDE s" a@x.test" ID-SLOT CREDS-A$ OAUTH-A$ true DB-PUT ;] DB-WRITE
+   CFG-A2$ CREDS-A2$ ID-SLOT CLAUDE-IDENTITY TTRUE
+   [: P-CLAUDE s" a@x.test #2" ID-SLOT CREDS-A2$ UT-NUL -1 false DB-PUT
+      P-CLAUDE s" a@x.test #2" 1700000500 true DB-NOTE-INSTALLED ;] DB-WRITE ;
+
+\ the active mark follows the live organization
+: UT-STATUS-JSON ( -- )
+   UT-STATUS-ROWS
+   CLAUDE-CONFIG$ CFG-A2$ WRITE-PRIVATE
+   CLAUDE-CREDS$ CREDS-A2$ WRITE-PRIVATE
+   CODEX-AUTH$ AUTH-C$ WRITE-PRIVATE
+   STATUS-JSON$ SNAP-LIT$ T$=
+   CLAUDE-CONFIG$ CFG-A$ WRITE-PRIVATE
+   CLAUDE-CREDS$ CREDS-A$ WRITE-PRIVATE
+   STATUS-JSON$ s\" {\"active\":true,\"name\":\"a@x.test\",\"plan\":\"max\"" CONTAINS? TTRUE
+   STATUS-JSON$ s\" {\"active\":false,\"name\":\"a@x.test #2\"" CONTAINS? TTRUE ;
+
+\ an unreadable Claude login is Claude's error alone: its saved accounts and
+\ install time still show, and Codex reads as before
+: UT-STATUS-ERROR ( -- )
+   AUTH-C$ ID-SLOT CODEX-IDENTITY TTRUE
+   [: P-CODEX s" c@x.test" ID-SLOT AUTH-C$ UT-NUL -1 false DB-PUT ;] DB-WRITE
+   CLAUDE-CONFIG$ s" {not json" WRITE-PRIVATE
+   STATUS-JSON$ SNAP-ERROR-LIT$ T$= ;
+
 \ a newer schema is refused and leaves the store closed
 : UT-DB-VERSION ( -- )
    s" PRAGMA user_version = 6" s" test" DB-EXEC
@@ -701,6 +723,8 @@ variable UT-V
    UT-DB-USAGE
    UT-DB-PENDING
    UT-DB-ROLLBACK
+   UT-STATUS-JSON
+   UT-STATUS-ERROR
    UT-DB-VERSION ;
 
 : UT-NAMES ( -- )
@@ -796,7 +820,6 @@ create UT-LIST UT-LIST-CAP allot
    UT-INTERRUPTED
    UT-MISMATCH
    UT-DAMAGED-SLOT
-   UT-STATUS-ISOLATION
    UT-API-KEY
    UT-SYMLINK
    UT-STRAY-MARKERS
