@@ -5,6 +5,7 @@ require ../src/sw-claude.f
 require ../src/sw-codex.f
 require src/lib/fsm.f
 require src/lib/fmt.f
+require src/lib/byte-buffer.f
 
 package SW
 
@@ -111,13 +112,16 @@ private
       i DB-LIMIT-LABEL$ a u STR= i DB-LIMIT-PERCENT 0 >= and if i unloop exit then
    loop -1 ;
 
-\ each window gives at most one figure, so REC-LIM-MAX holds them all
-create FIG-LIMS REC-LIM-MAX cells allot    \ the window whose label a figure carries
-create FIG-LEFTS REC-LIM-MAX cells allot   \ whole percent left
+\ each window gives at most one figure, so FIGURES reserves DB-LIMIT# of each
+DYNAMIC-BUFFER FIG-LIMS n    \ the window whose label a figure carries
+DYNAMIC-BUFFER FIG-LEFTS n   \ whole percent left
 variable FIG-N
 
-: FIG-LIM ( n -- ptr n ) cells FIG-LIMS + ;
-: FIG-LEFT ( n -- ptr n ) cells FIG-LEFTS + ;
+: FIG-LIM ( n -- ptr n ) FIG-LIMS ;
+: FIG-LEFT ( n -- ptr n ) FIG-LEFTS ;
+
+create FIG-TEXT BUF:HDR-BYTES allot   \ FIGURES-TEXT's answer, which grows with the record
+: FIG-TEXT+ ( ptr u8 n -- ) BUF:N>BLEN FIG-TEXT BUF:APPEND-SPAN ;
 
 : FIG+ ( n n -- ) {: k left :}
    k FIG-N @ FIG-LIM ! left FIG-N @ FIG-LEFT !
@@ -213,6 +217,7 @@ public
 \ session, weekly, then every other window with a reading, for provider p
 : FIGURES ( n -- ) {: p :}
    0 FIG-N !
+   DB-LIMIT# dup FIG-LIMS-RESERVE FIG-LEFTS-RESERVE
    SESSION$ WINDOW WEEKLY$ WINDOW {: s w :}
    p s w SESSION-FIG+
    w 0 >= if w WINDOW-FIG+ then
@@ -231,11 +236,12 @@ public
 : FIGURES-TEXT ( n -- ptr u8 n ) {: p :}
    false ROW-STATE BLOCKED? if s" limit" exit then
    p FIGURES
-   SB-RESET
+   FIG-TEXT 64 BUF:N>BLEN BUF:RESET
    FIG-N @ 0 ?do
-      i 0 > if s"  · " SB-APPEND then
-      i FIG-LEFT @ FMT:SB-INT s" %" SB-APPEND
-   loop SB$ ;
+      i 0 > if s"  · " FIG-TEXT+ then
+      i FIG-LEFT @ FMT:INT$ FIG-TEXT+ s" %" FIG-TEXT+
+   loop
+   FIG-TEXT BUF:SPAN$ BUF:BLEN>N ;
 
 \ row i's plan as the panel shows it; probed when its usage is decoded
 : SHOWN-PLAN$ ( n bool -- ptr u8 n ) {: i probed :}

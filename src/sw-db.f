@@ -7,6 +7,7 @@ require ../src/sw-identity.f
 require src/lib/fsm.f
 require src/lib/fmt.f
 require src/lib/json.f
+require src/lib/byte-buffer.f
 
 package SW
 
@@ -33,31 +34,41 @@ public
 ENUM usage-state ok expired revoked error unknown unsubscribed throttled missing free ;ENUM
 private
 
-16 constant REC-LIM-MAX
-128 constant REC-LABEL-CAP
-64 constant REC-RESET-CAP
-1024 constant REC-NOTE-CAP
-128 constant REC-WORD-CAP
+\ The record's strings lie in REC-TEXT and its limits in REC-LIMS, one row
+\ each; both grow with the record.
+STRUCTURE lim DERIVE addr
+   FIELD label-off n FIELD label-len n FIELD pct n
+   FIELD reset-off n FIELD reset-len n
+;STRUCTURE
+create REC-TEXT BUF:HDR-BYTES allot
+DYNAMIC-BUFFER REC-LIMS lim
 
 variable REC-AT                            \ epoch seconds; 0 when never fetched
 TYPED-VARIABLE REC-STATE usage-state
-create REC-NOTE REC-NOTE-CAP allot         variable REC-NOTE-U
+variable REC-NOTE-AT   variable REC-NOTE-U
 variable REC-LIM-N
-create REC-LABELS REC-LIM-MAX REC-LABEL-CAP * allot
-create REC-LABEL-US REC-LIM-MAX cells allot
-create REC-PCTS REC-LIM-MAX cells allot    \ whole percent used; negative for no reading
-create REC-RESETS REC-LIM-MAX REC-RESET-CAP * allot
-create REC-RESET-US REC-LIM-MAX cells allot
 variable REC-OFFER                         \ 1 when the record holds a reset offer
 variable REC-COUNT
-create REC-PROGRAM REC-WORD-CAP allot      variable REC-PROGRAM-U
-create REC-GRANT REC-WORD-CAP allot        variable REC-GRANT-U
+variable REC-PROGRAM-AT   variable REC-PROGRAM-U
+variable REC-GRANT-AT     variable REC-GRANT-U
 
-: LABEL-ROW ( n -- ptr u8 ) REC-LABEL-CAP * REC-LABELS + ;
-: LABEL-U ( n -- ptr n ) cells REC-LABEL-US + ;
-: PCT-CELL ( n -- ptr n ) cells REC-PCTS + ;
-: RESET-ROW ( n -- ptr u8 ) REC-RESET-CAP * REC-RESETS + ;
-: RESET-U ( n -- ptr n ) cells REC-RESET-US + ;
+: REC-CLEAR ( -- ) REC-TEXT TEXTS-RESET ;
+: REC-SPAN$ ( n n -- ptr u8 n ) {: off u :} REC-TEXT off u TEXTS$ ;
+
+: LABEL-AT ( n -- ptr n ) REC-LIMS LIM-LABEL-OFF ;
+: LABEL-U ( n -- ptr n ) REC-LIMS LIM-LABEL-LEN ;
+: PCT-CELL ( n -- ptr n ) REC-LIMS LIM-PCT ;     \ whole percent used; negative for no reading
+: RESET-AT ( n -- ptr n ) REC-LIMS LIM-RESET-OFF ;
+: RESET-U ( n -- ptr n ) REC-LIMS LIM-RESET-LEN ;
+
+\ a limit whose label and reset REC-TEXT already holds
+: LIM-ROW+ ( n n n n n -- ) {: lo lu pct ro ru :}
+   REC-LIM-N @ {: i :}
+   i 1+ REC-LIMS-RESERVE
+   lo i LABEL-AT ! lu i LABEL-U !
+   pct i PCT-CELL !
+   ro i RESET-AT ! ru i RESET-U !
+   i 1+ REC-LIM-N ! ;
 
 public
 
@@ -77,38 +88,33 @@ public
 \ starts a record: no limits and no reset offer yet
 : DB-USAGE! ( n usage-state ptr u8 n -- ) {: at st a u :}
    at REC-AT ! st REC-STATE !
-   a u REC-NOTE REC-NOTE-U REC-NOTE-CAP SPAN!
+   REC-CLEAR a u REC-TEXT TEXTS-PUT REC-NOTE-U ! REC-NOTE-AT !
    0 REC-LIM-N ! 0 REC-OFFER ! ;
 
 \ label, percent used, reset instant
 : DB-LIMIT+ ( ptr u8 n n ptr u8 n -- ) {: la lu pct ra ru :}
-   REC-LIM-N @ {: i :}
-   i REC-LIM-MAX >= if
-      s" limits in a usage record" REC-LIM-MAX LIMIT$ TOO-MANY
-   then
-   la lu i LABEL-ROW i LABEL-U REC-LABEL-CAP SPAN!
-   pct i PCT-CELL !
-   ra ru i RESET-ROW i RESET-U REC-RESET-CAP SPAN!
-   i 1+ REC-LIM-N ! ;
+   la lu REC-TEXT TEXTS-PUT {: lo lu2 :}
+   ra ru REC-TEXT TEXTS-PUT {: ro ru2 :}
+   lo lu2 pct ro ru2 LIM-ROW+ ;
 
 \ resets available now, program, grant
 : DB-RESETS! ( n ptr u8 n ptr u8 n -- ) {: k pa pu ga gu :}
    k REC-COUNT !
-   pa pu REC-PROGRAM REC-PROGRAM-U REC-WORD-CAP SPAN!
-   ga gu REC-GRANT REC-GRANT-U REC-WORD-CAP SPAN!
+   pa pu REC-TEXT TEXTS-PUT REC-PROGRAM-U ! REC-PROGRAM-AT !
+   ga gu REC-TEXT TEXTS-PUT REC-GRANT-U ! REC-GRANT-AT !
    1 REC-OFFER ! ;
 
 : DB-USAGE-AT ( -- n ) REC-AT @ ;
 : DB-USAGE-STATE ( -- usage-state ) REC-STATE @ ;
-: DB-USAGE-NOTE$ ( -- ptr u8 n ) REC-NOTE REC-NOTE-U @ ;
+: DB-USAGE-NOTE$ ( -- ptr u8 n ) REC-NOTE-AT @ REC-NOTE-U @ REC-SPAN$ ;
 : DB-LIMIT# ( -- n ) REC-LIM-N @ ;
-: DB-LIMIT-LABEL$ ( n -- ptr u8 n ) {: i :} i LABEL-ROW i LABEL-U @ ;
+: DB-LIMIT-LABEL$ ( n -- ptr u8 n ) {: i :} i LABEL-AT @ i LABEL-U @ REC-SPAN$ ;
 : DB-LIMIT-PERCENT ( n -- n ) PCT-CELL @ ;
-: DB-LIMIT-RESETS$ ( n -- ptr u8 n ) {: i :} i RESET-ROW i RESET-U @ ;
+: DB-LIMIT-RESETS$ ( n -- ptr u8 n ) {: i :} i RESET-AT @ i RESET-U @ REC-SPAN$ ;
 : DB-RESETS? ( -- bool ) REC-OFFER @ 0<> ;
 : DB-RESETS-COUNT ( -- n ) REC-COUNT @ ;
-: DB-RESETS-PROGRAM$ ( -- ptr u8 n ) REC-PROGRAM REC-PROGRAM-U @ ;
-: DB-RESETS-GRANT$ ( -- ptr u8 n ) REC-GRANT REC-GRANT-U @ ;
+: DB-RESETS-PROGRAM$ ( -- ptr u8 n ) REC-PROGRAM-AT @ REC-PROGRAM-U @ REC-SPAN$ ;
+: DB-RESETS-GRANT$ ( -- ptr u8 n ) REC-GRANT-AT @ REC-GRANT-U @ REC-SPAN$ ;
 
 \ ---- the encoder ------------------------------------------------------------
 \ The bytes kiba-mac's JSONEncoder writes with .sortedKeys: keys in order, no
@@ -202,7 +208,7 @@ private
 TYPED-VARIABLE DEC-RD JSON:cursor
 PTR-VARIABLE DEC-A   variable DEC-U
 variable DEC-SEEN                          \ one bit per required key found
-create DEC-WORD 16 allot   variable DEC-WORD-U
+create DEC-WORD 16 allot   variable DEC-WORD-U     \ a longer word is no state
 
 : SEEN+ ( n -- ) DEC-SEEN @ or DEC-SEEN ! ;
 
@@ -212,8 +218,9 @@ create DEC-WORD 16 allot   variable DEC-WORD-U
 : DEC-INT ( JSON:reader -- JSON:reader n )
    JSON:T-INT DEC-NEXT JSON:READ-INT ;
 
-: DEC-STR ( JSON:reader ptr u8 ptr n n -- JSON:reader ) {: dst up cap :}
-   JSON:T-STR DEC-NEXT dst cap TEXT-INTO up ! ;
+\ the string decoded onto REC-TEXT; its offset and length
+: DEC-STR ( JSON:reader -- JSON:reader n n )
+   JSON:T-STR DEC-NEXT REC-TEXT TEXTS-READ ;
 
 : MEMBER? ( JSON:reader ptr u8 n -- JSON:reader bool ) JSON:READ-STR-EQ? ;
 
@@ -246,20 +253,20 @@ create DEC-WORD 16 allot   variable DEC-WORD-U
 : REQUIRE-SEEN ( n -- ) DEC-SEEN @ <> if E-SW-JSON throw then ;
 
 variable DLIM-PCT
-create DLIM-LABEL REC-LABEL-CAP allot   variable DLIM-LABEL-U
-create DLIM-RESET REC-RESET-CAP allot   variable DLIM-RESET-U
+variable DLIM-LABEL-AT   variable DLIM-LABEL-U
+variable DLIM-RESET-AT   variable DLIM-RESET-U
 
 : LIMIT-MEMBER ( JSON:reader -- JSON:reader )
-   s" label" MEMBER? if DLIM-LABEL DLIM-LABEL-U REC-LABEL-CAP DEC-STR 1 SEEN+ exit then
+   s" label" MEMBER? if DEC-STR DLIM-LABEL-U ! DLIM-LABEL-AT ! 1 SEEN+ exit then
    s" percent" MEMBER? if DEC-INT DLIM-PCT ! 2 SEEN+ exit then
-   s" resetsAt" MEMBER? if DLIM-RESET DLIM-RESET-U REC-RESET-CAP DEC-STR 4 SEEN+ exit then
+   s" resetsAt" MEMBER? if DEC-STR DLIM-RESET-U ! DLIM-RESET-AT ! 4 SEEN+ exit then
    SKIP-MEMBER ;
 
 : DEC-LIMIT ( JSON:reader -- JSON:reader )
    0 DEC-SEEN !
    [: LIMIT-MEMBER ;] DEC-MEMBERS
    7 REQUIRE-SEEN
-   DLIM-LABEL DLIM-LABEL-U @ DLIM-PCT @ DLIM-RESET DLIM-RESET-U @ DB-LIMIT+ ;
+   DLIM-LABEL-AT @ DLIM-LABEL-U @ DLIM-PCT @ DLIM-RESET-AT @ DLIM-RESET-U @ LIM-ROW+ ;
 
 : DEC-LIMITS ( JSON:reader -- JSON:reader )
    JSON:T-ARR DEC-NEXT
@@ -273,8 +280,8 @@ variable OFFER-COUNT
 
 : OFFER-MEMBER ( JSON:reader -- JSON:reader )
    s" count" MEMBER? if DEC-INT OFFER-COUNT ! 1 SEEN+ exit then
-   s" program" MEMBER? if REC-PROGRAM REC-PROGRAM-U REC-WORD-CAP DEC-STR 2 SEEN+ exit then
-   s" grant" MEMBER? if REC-GRANT REC-GRANT-U REC-WORD-CAP DEC-STR 4 SEEN+ exit then
+   s" program" MEMBER? if DEC-STR REC-PROGRAM-U ! REC-PROGRAM-AT ! 2 SEEN+ exit then
+   s" grant" MEMBER? if DEC-STR REC-GRANT-U ! REC-GRANT-AT ! 4 SEEN+ exit then
    SKIP-MEMBER ;
 
 \ null, like an absent key, is no offer
@@ -293,15 +300,16 @@ variable OFFER-COUNT
 : USAGE-MEMBER ( JSON:reader -- JSON:reader )
    s" fetchedAt" MEMBER? if DEC-INT REC-AT ! 1 SEEN+ exit then
    s" state" MEMBER? if
-      DEC-WORD DEC-WORD-U 16 DEC-STR NAMED-STATE REC-STATE ! 2 SEEN+ exit
+      JSON:T-STR DEC-NEXT DEC-WORD 16 TEXT-INTO DEC-WORD-U !
+      NAMED-STATE REC-STATE ! 2 SEEN+ exit
    then
-   s" note" MEMBER? if REC-NOTE REC-NOTE-U REC-NOTE-CAP DEC-STR 4 SEEN+ exit then
+   s" note" MEMBER? if DEC-STR REC-NOTE-U ! REC-NOTE-AT ! 4 SEEN+ exit then
    s" limits" MEMBER? if DEC-LIMITS 8 SEEN+ exit then
    s" resets" MEMBER? if DEC-OFFER exit then
    SKIP-MEMBER ;
 
 : DEC-RUN ( -- )
-   0 DEC-SEEN ! 0 REC-LIM-N ! 0 REC-OFFER !
+   0 DEC-SEEN ! 0 REC-LIM-N ! 0 REC-OFFER ! REC-CLEAR
    DEC-RD DEC-A @ DEC-U @ JSON:READ-INIT
    JSON:T-OBJ DEC-NEXT
    [: USAGE-MEMBER ;] DEC-MEMBERS

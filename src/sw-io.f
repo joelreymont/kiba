@@ -3,6 +3,7 @@ require ../src/sw-paths.f
 require src/lib/memory.f
 require src/lib/fs-mutate.f
 require src/lib/json.f
+require src/lib/byte-buffer.f
 require src/lib/span.f
 require src/lib/fmt.f
 
@@ -117,6 +118,22 @@ TYPED-VARIABLE JSON-W JSON:writer
 
 : JSON-OPEN ( -- ptr JSON:writer )
    JSON-W JSON-BUF BUF-CAP JSON:WRITE-OPEN ;
+
+\ strings named by offset and length, kept by appends that may move the
+\ bytes; TEXTS-RESET first, as an append to a fresh header never returns
+: TEXTS-RESET ( ptr a -- ) 64 BUF:N>BLEN BUF:RESET ;
+: TEXTS-END ( ptr a -- n ) BUF:LEN@ BUF:BLEN>N ;
+: TEXTS$ ( ptr a n n -- ptr u8 n ) {: t off u :} t BUF:SPAN$ drop off + u ;
+
+: TEXTS-PUT ( ptr u8 n ptr a -- n n ) {: s u t :}
+   t TEXTS-END {: off :}
+   s u BUF:N>BLEN t BUF:APPEND-SPAN
+   off u ;
+
+: TEXTS-READ ( JSON:reader ptr a -- JSON:reader n n ) {: t :}
+   t TEXTS-END {: off :}
+   t JSON:READ-STR-APPEND
+   off t TEXTS-END off - ;
 
 : READ-INTO ( ptr u8 n ptr u8 ptr n -- ptr u8 n ) {: pa pu buf up :}
    pa pu buf BUF-CAP FS:READ-ALL up !

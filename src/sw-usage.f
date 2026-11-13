@@ -20,13 +20,12 @@ require src/lib/entropy.f
 package SW
 
 $0A constant LF
-64 constant RESET-CAP               \ a window's reset instant, as the record holds it
 120 constant DETAIL-MAX             \ the longest server-supplied text a note carries
 20 constant HTTP-TIMEOUT-SEC
 
 create PROBE-BUF PATH-CAP allot  variable PROBE-U   \ <store>/probe-<provider>
 create PSUB-BUF PATH-CAP allot   variable PSUB-U    \ a file inside it
-create RESET-BUF RESET-CAP allot
+create DATE-BUF DATE:TIME-LEN allot   \ the UTC format fixes its length
 variable OUT-FD
 
 : SESSION-LABEL$ ( -- ptr u8 n ) s" Session (5-hour)" ;
@@ -408,46 +407,52 @@ variable LINE-GAP                   \ bool: a separator run waits for the next s
 : CLAUDE-UA$ ( -- ptr u8 n ) s" claude-cli/2.1.282 (external, cli)" ;
 : CREDS-KEY$ ( -- ptr u8 n ) s" claudeAiOauth" ;
 
+\ the answer's strings; each read resets it once what it held was recorded
+create SCAN-TEXT BUF:HDR-BYTES allot
+
+: SCAN-RESET ( -- ) SCAN-TEXT TEXTS-RESET ;
+: SCAN$ ( n n -- ptr u8 n ) {: off u :} SCAN-TEXT off u TEXTS$ ;
+: SCAN-C ( n -- ) SCAN-TEXT BUF:APPEND-BYTE ;
+
 : BUCKET-PCT ( JSON:reader -- JSON:reader n )
    JSON:READ-TOKEN NUMBER-TOKEN? 0= if -1 exit then
    JSON:READ-SPAN$ USED-PERCENT ;
 
-: BUCKET-RESET ( JSON:reader -- JSON:reader ptr u8 n )
-   JSON:READ-TOKEN JSON:T-STR <> if RESET-BUF 0 exit then
-   RESET-BUF RESET-CAP TEXT-INTO RESET-BUF swap ;
+: BUCKET-RESET ( JSON:reader -- JSON:reader n n )
+   JSON:READ-TOKEN JSON:T-STR <> if 0 0 exit then
+   SCAN-TEXT TEXTS-READ ;
 
-\ one bucket object {utilization, resets_at} at key; whole percent and reset text
-: CLAUDE-BUCKET ( ptr u8 n ptr u8 n -- n ptr u8 n ) {: d du k ku :}
+\ one bucket object {utilization, resets_at} at key; whole percent, and the
+\ reset text's offset and length in SCAN-TEXT
+: CLAUDE-BUCKET ( ptr u8 n ptr u8 n -- n n n ) {: d du k ku :}
    d du OPEN-DOC ENTER-OBJECT
-   k ku KEY-OBJECT 0= if JSON:READ-CLOSE -1 RESET-BUF 0 exit then
-   s" utilization" JSON:READ-FIND-KEY 0= if JSON:READ-CLOSE -1 RESET-BUF 0 exit then
+   k ku KEY-OBJECT 0= if JSON:READ-CLOSE -1 0 0 exit then
+   s" utilization" JSON:READ-FIND-KEY 0= if JSON:READ-CLOSE -1 0 0 exit then
    BUCKET-PCT {: h :}
    JSON:READ-CLOSE
    d du OPEN-DOC ENTER-OBJECT
    k ku KEY-OBJECT drop
-   s" resets_at" JSON:READ-FIND-KEY 0= if JSON:READ-CLOSE h RESET-BUF 0 exit then
+   s" resets_at" JSON:READ-FIND-KEY 0= if JSON:READ-CLOSE h 0 0 exit then
    BUCKET-RESET {: r ru :}
    JSON:READ-CLOSE
    h r ru ;
 
-create SESSION-RESET RESET-CAP allot   variable SESSION-RESET-U
-create WEEKLY-RESET RESET-CAP allot    variable WEEKLY-RESET-U
-
 \ ---- model-scoped windows -------------------------------------------------------
 \ the payload's `limits` list also carries per-model windows such as Fable's
 \ weekly allowance: {kind: weekly_scoped, scope: {model: {display_name}}}
-create SC-NAME 64 allot            variable SC-NAME-U
-create SC-KIND 32 allot            variable SC-KIND-U
-create SC-RESET RESET-CAP allot variable SC-RESET-U
+variable SC-NAME-AT    variable SC-NAME-U
+variable SC-RESET-AT   variable SC-RESET-U
+TYPED-VARIABLE SC-WIN-A ptr u8   variable SC-WIN-U   \ the window word the kind names
 variable SC-PCT
 
 : SC-ENTRY-RESET ( -- )
-   0 SC-NAME-U ! 0 SC-KIND-U ! 0 SC-RESET-U ! -1 SC-PCT ! ;
+   SCAN-RESET
+   0 SC-NAME-U ! 0 SC-RESET-U ! s" " SC-WIN-U ! SC-WIN-A ! -1 SC-PCT ! ;
 
-\ a string member's value into dst, its length into up; else skipped
-: SC-STR ( JSON:reader ptr u8 ptr n n -- JSON:reader ) {: dst up cap :}
+\ a string member's value onto SCAN-TEXT, named in atp and up; else skipped
+: SC-STR ( JSON:reader ptr n ptr n -- JSON:reader ) {: atp up :}
    JSON:READ-TOKEN JSON:T-STR <> if JSON:READ-SKIP-VALUE exit then
-   dst cap TEXT-INTO up ! ;
+   SCAN-TEXT TEXTS-READ up ! atp ! ;
 
 \ on the model object's opening brace: its display name
 : SC-MODEL ( JSON:reader -- JSON:reader )
@@ -455,7 +460,7 @@ variable SC-PCT
       JSON:READ-TOKEN JSON:T-KEY <> if E-SW-JSON throw then
       s" display_name" JSON:READ-STR-EQ? {: named :}
       JSON:READ-NEXT drop
-      named if SC-NAME SC-NAME-U 64 SC-STR else JSON:READ-SKIP-VALUE then
+      named if SC-NAME-AT SC-NAME-U SC-STR else JSON:READ-SKIP-VALUE then
    repeat ;
 
 \ on the scope value: an object with a model, or null
@@ -471,6 +476,18 @@ variable SC-PCT
 : SC-PERCENT ( JSON:reader -- JSON:reader )
    BUCKET-PCT SC-PCT ! JSON:READ-SKIP-VALUE ;
 
+\ the window word a kind names
+: SC-WINDOW$ ( ptr u8 n -- ptr u8 n ) {: a u :}
+   a u s" weekly" STARTS-WITH? if s" Weekly" exit then
+   a u s" five_hour" STARTS-WITH? if s" Session" exit then
+   a u s" session" STARTS-WITH? if s" Session" exit then
+   s" " ;
+
+\ on the kind's value: the window word it names; else skipped
+: SC-WINDOW-READ ( JSON:reader -- JSON:reader )
+   JSON:READ-TOKEN JSON:T-STR <> if JSON:READ-SKIP-VALUE exit then
+   SCAN-TEXT TEXTS-READ SCAN$ SC-WINDOW$ SC-WIN-U ! SC-WIN-A ! ;
+
 \ on a limits entry's key: the member it names, read
 : SC-MEMBER ( JSON:reader -- JSON:reader )
    s" kind" JSON:READ-STR-EQ? {: kind :}
@@ -478,26 +495,20 @@ variable SC-PCT
    s" percent" JSON:READ-STR-EQ? {: pct :}
    s" scope" JSON:READ-STR-EQ? {: scope :}
    JSON:READ-NEXT drop
-   kind if SC-KIND SC-KIND-U 32 SC-STR exit then
-   reset if SC-RESET SC-RESET-U RESET-CAP SC-STR exit then
+   kind if SC-WINDOW-READ exit then
+   reset if SC-RESET-AT SC-RESET-U SC-STR exit then
    pct if SC-PERCENT exit then
    scope if SC-SCOPE exit then
    JSON:READ-SKIP-VALUE ;
-
-: SC-WINDOW$ ( -- ptr u8 n )
-   SC-KIND SC-KIND-U @ s" weekly" STARTS-WITH? if s" Weekly" exit then
-   SC-KIND SC-KIND-U @ s" five_hour" STARTS-WITH? if s" Session" exit then
-   SC-KIND SC-KIND-U @ s" session" STARTS-WITH? if s" Session" exit then
-   s" " ;
 
 \ a window with a model becomes "<Model> Weekly"; unscoped ones are the
 \ session and weekly buckets already taken
 : SC-ENTRY+ ( -- )
    SC-NAME-U @ 0= if exit then
    SC-PCT @ 0 < if exit then
-   SB-RESET SC-NAME SC-NAME-U @ SB-APPEND
-   SC-WINDOW$ dup 0 > if $20 SB-APPEND-C SB-APPEND else 2drop then
-   SB$ SC-PCT @ SC-RESET SC-RESET-U @ DB-LIMIT+ ;
+   SC-NAME-AT @ SC-NAME-U @ SCAN$ SCAN-TEXT TEXTS-PUT drop {: lo :}
+   SC-WIN-A @ SC-WIN-U @ dup 0 > if $20 SCAN-C SCAN-TEXT TEXTS-PUT 2drop else 2drop then
+   lo SCAN-TEXT TEXTS-END lo - SCAN$ SC-PCT @ SC-RESET-AT @ SC-RESET-U @ SCAN$ DB-LIMIT+ ;
 
 : SC-OBJECT ( JSON:reader -- JSON:reader )
    SC-ENTRY-RESET
@@ -509,8 +520,7 @@ variable SC-PCT
 
 : SC-ARRAY ( JSON:reader -- JSON:reader )
    begin JSON:READ-NEXT JSON:T-ARR-END <> while
-      JSON:READ-TOKEN JSON:T-OBJ <> if E-SW-JSON throw then
-      SC-OBJECT
+      JSON:READ-TOKEN JSON:T-OBJ = if SC-OBJECT else JSON:READ-SKIP-VALUE then
    repeat ;
 
 : CLAUDE-SCOPED ( ptr u8 n -- ) {: d du :}
@@ -523,22 +533,34 @@ variable SC-PCT
 \ Session, then Weekly (seven_day_oauth_apps, else seven_day), then every
 \ model-scoped window; a window without a reading is left out
 : CLAUDE-LIMITS ( ptr u8 n -- ) {: d du :}
-   d du s" five_hour" CLAUDE-BUCKET SESSION-RESET SESSION-RESET-U RESET-CAP SPAN! {: sh :}
+   SCAN-RESET
+   d du s" five_hour" CLAUDE-BUCKET {: sh so su :}
    d du s" seven_day_oauth_apps" CLAUDE-BUCKET {: wh0 r0 r0u :}
-   wh0 0 < if d du s" seven_day" CLAUDE-BUCKET else wh0 r0 r0u then
-   WEEKLY-RESET WEEKLY-RESET-U RESET-CAP SPAN! {: wh :}
-   sh 0 >= if SESSION-LABEL$ sh SESSION-RESET SESSION-RESET-U @ DB-LIMIT+ then
-   wh 0 >= if WEEKLY-LABEL$ wh WEEKLY-RESET WEEKLY-RESET-U @ DB-LIMIT+ then
+   wh0 0 < if d du s" seven_day" CLAUDE-BUCKET else wh0 r0 r0u then {: wh wo wu :}
+   sh 0 >= if SESSION-LABEL$ sh so su SCAN$ DB-LIMIT+ then
+   wh 0 >= if WEEKLY-LABEL$ wh wo wu SCAN$ DB-LIMIT+ then
    d du CLAUDE-SCOPED ;
 
 \ ---- the reset offer -------------------------------------------------------------
 \ cedar_ember banks grants: the one named next_grant_id and its resets_left;
 \ else juniper_tide offers one reset a week while one is available
-create GRANT-NEXT REC-WORD-CAP allot   variable GRANT-NEXT-U
+variable GRANT-NEXT-AT   variable GRANT-NEXT-U   \ in SCAN-TEXT
 variable GRANT-SEEN                 \ bool: the grant named next was found
 variable GRANT-IS                   \ bool: the grant in hand is the one named next
 variable GRANT-HAS-LEFT             \ bool: the grant in hand says how many resets are left
 variable GRANT-LEFT
+
+: GRANT-NEXT$ ( -- ptr u8 n ) GRANT-NEXT-AT @ GRANT-NEXT-U @ SCAN$ ;
+
+\ cedar_ember's next_grant_id onto SCAN-TEXT; false when absent, null or not a string
+: GRANT-NEXT-READ ( ptr u8 n -- bool ) {: d du :}
+   SCAN-RESET
+   d du OPEN-DOC ENTER-OBJECT
+   s" cedar_ember" KEY-OBJECT 0= if JSON:READ-CLOSE false exit then
+   s" next_grant_id" JSON:READ-FIND-KEY 0= if JSON:READ-CLOSE false exit then
+   JSON:READ-TOKEN JSON:T-STR <> if JSON:READ-CLOSE false exit then
+   SCAN-TEXT TEXTS-READ GRANT-NEXT-U ! GRANT-NEXT-AT !
+   JSON:READ-CLOSE true ;
 
 : GRANT-MEMBER ( JSON:reader -- JSON:reader )
    JSON:READ-TOKEN JSON:T-KEY <> if E-SW-JSON throw then
@@ -546,7 +568,7 @@ variable GRANT-LEFT
    s" resets_left" JSON:READ-STR-EQ? {: leftk :}
    JSON:READ-NEXT drop
    JSON:READ-TOKEN {: t :}
-   idk t JSON:T-STR = and if GRANT-NEXT GRANT-NEXT-U @ JSON:READ-STR-EQ? GRANT-IS ! exit then
+   idk t JSON:T-STR = and if GRANT-NEXT$ JSON:READ-STR-EQ? GRANT-IS ! exit then
    leftk t NUMBER-TOKEN? and if WHOLE GRANT-HAS-LEFT ! GRANT-LEFT ! exit then
    JSON:READ-SKIP-VALUE ;
 
@@ -572,14 +594,12 @@ variable GRANT-LEFT
 
 : BANKED? ( ptr u8 n -- bool ) {: d du :}
    d du s" cedar_ember" s" eligible" TRUE2? 0= if false exit then
-   d du s" cedar_ember" s" next_grant_id" GRANT-NEXT REC-WORD-CAP DOC-STR2
-   dup 0 < if drop false exit then
-   GRANT-NEXT-U !
+   d du GRANT-NEXT-READ 0= if false exit then
    d du GRANTS-SCAN
    GRANT-SEEN @ 0<> GRANT-HAS-LEFT @ 0<> and ;
 
 : CLAUDE-RESETS ( ptr u8 n -- ) {: d du :}
-   d du BANKED? if GRANT-LEFT @ s" cedar_ember" GRANT-NEXT GRANT-NEXT-U @ DB-RESETS! exit then
+   d du BANKED? if GRANT-LEFT @ s" cedar_ember" GRANT-NEXT$ DB-RESETS! exit then
    d du s" juniper_tide" s" eligible" TRUE2? 0= if exit then
    d du s" juniper_tide" s" available" TRUE2? if 1 else 0 then
    s" juniper_tide" s" " DB-RESETS! ;
@@ -959,8 +979,8 @@ FSM:DEFINE CLAUDE-EXCHANGE ( n ) claude-step fresh-input
    WEEKLY-LABEL$ ;
 
 : EPOCH>RESET$ ( n -- ptr u8 n )
-   dup 0 <= if drop RESET-BUF 0 exit then
-   RESET-BUF RESET-CAP DATE:FORMAT-EPOCH-UTC ;
+   dup 0 <= if drop DATE-BUF 0 exit then
+   DATE-BUF DATE:TIME-LEN DATE:FORMAT-EPOCH-UTC ;
 
 : CODEX-WINDOW+ ( ptr u8 n ptr u8 n -- ) {: d du k ku :}
    d du k ku CODEX-WINDOW {: h secs at :}
@@ -1052,7 +1072,7 @@ ENUM retry-input no-token unreachable fine unreadable rejected throttled other ;
    b bu s" id_token" TOK-BUF BUF-CAP DOC-STR1 dup 0 >= if
       TOK-U ! TOKENS-KEY$ s" id_token" TOK-BUF TOK-U @ LITERAL$ CFG-SET2
    else drop then
-   s" last_refresh" PROBE-AT @ RESET-BUF RESET-CAP DATE:FORMAT-EPOCH-UTC LITERAL$ CFG-SET
+   s" last_refresh" PROBE-AT @ DATE-BUF DATE:TIME-LEN DATE:FORMAT-EPOCH-UTC LITERAL$ CFG-SET
    SPLICE-END ;
 
 : CODEX-RENEWED ( n -- codex-renew-input )
@@ -1208,17 +1228,16 @@ ENUM claude-reset-step freshening sending renewing resending answered failed ;EN
 ENUM codex-reset-step sending renewing renewing-revoked resending answered failed ;ENUM
 ENUM reset-reply no-token unreachable fine unknown unreadable rejected-live rejected-saved rejected-revoked throttled other ;ENUM
 
-1024 constant RESET-BODY-CAP
 TYPED-VARIABLE RESET-GOT reset-outcome
 create RESET-URL PATH-CAP allot              variable RESET-URL-U
-create RESET-BODY RESET-BODY-CAP allot       variable RESET-BODY-U
+create RESET-BODY BUF:HDR-BYTES allot
 create RESET-WORD TEXT-CAP allot             variable RESET-WORD-U
 create REMOTE-NOTE TEXT-CAP allot            variable REMOTE-NOTE-U
 create RID-RAW 16 allot
 create RID-BUF 36 allot
 
 : RESET-URL$ ( -- ptr u8 n ) RESET-URL RESET-URL-U @ ;
-: RESET-BODY$ ( -- ptr u8 n ) RESET-BODY RESET-BODY-U @ ;
+: RESET-BODY$ ( -- ptr u8 n ) RESET-BODY BUF:SPAN$ BUF:BLEN>N ;
 : RESET-WORD$ ( -- ptr u8 n ) RESET-WORD RESET-WORD-U @ ;
 : REMOTE! ( ptr u8 n -- ) REMOTE-NOTE REMOTE-NOTE-U TEXT-CAP SPAN! ;
 
@@ -1242,7 +1261,9 @@ create RID-BUF 36 allot
 \ the writer's text kept as the request body, which a refresh's own body
 \ would overwrite in the writer
 : BODY! ( ptr JSON:writer -- )
-   JSON:WRITTEN$ RESET-BODY RESET-BODY-U RESET-BODY-CAP SPAN! ;
+   JSON:WRITTEN$ {: a u :}
+   RESET-BODY 64 BUF:N>BLEN BUF:RESET
+   a u BUF:N>BLEN RESET-BODY BUF:APPEND-SPAN ;
 
 : BANKED-BODY ( ptr u8 n -- ) {: g gu :}
    REQUEST-ID$ {: id idu :}

@@ -773,6 +773,21 @@ create UT-ERR-PATH 256 allot   variable UT-ERR-U
    P-CODEX s\" {\"tokens\":{\"access_token\":\"at-r2\"}}" false PROBE
    s" ok" UT-STATE= DB-LIMIT# 1 T= 0 s" Session (5-hour)" 0 UT-LIMIT= ;
 
+\ a fake curl whose usage answer lists entries that are not objects, then one
+\ with a 65-byte model name and a 40-byte kind
+: UT-SCOPED-CURL ( -- )
+   s" curl"
+   s\" #!/bin/sh\nout=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) shift;; esac; shift; done\nprintf '%s' '{\"limits\":[1,\"x\",null,[{\"kind\":\"weekly\"}],{\"kind\":\"weekly_scoped_kkkkkkkkkkkkkkkkkkkkkkkkkk\",\"scope\":{\"model\":{\"display_name\":\"ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\"}},\"percent\":7,\"resets_at\":\"2026-09-22T13:00:00+00:00\"}]}' > \"$out\"\nprintf 200\n"
+   UT-WRITE-SCRIPT ;
+
+\ a non-object entry is skipped, and a long name and kind read whole
+: UT-SCOPED-LONG ( -- )
+   UT-SCOPED-CURL
+   P-CLAUDE s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-s1\"}}" false PROBE
+   s" ok" UT-STATE= DB-LIMIT# 1 T=
+   0 s" ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd Weekly" 7 UT-LIMIT=
+   0 DB-LIMIT-RESETS$ s" 2026-09-22T13:00:00+00:00" T$= ;
+
 \ a fake curl that logs the Authorization and ChatGPT-Account-Id lines of
 \ each call and answers it with one window
 : UT-LONG-CURL ( -- )
@@ -854,6 +869,7 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    DB-LIMIT# 3 T=
    0 DB-LIMIT-LABEL$ s" Session (5-hour)" T$=
    0 DB-LIMIT-PERCENT 56 T=
+   0 DB-LIMIT-RESETS$ s" 2026-09-15T14:00:00+00:00" T$=
    1 DB-LIMIT-PERCENT 100 T=
    1 DB-LIMIT-RESETS$ s" 2026-09-21T11:00:00+00:00" T$=
    2 DB-LIMIT-LABEL$ s" Fable Weekly" T$=
@@ -939,10 +955,10 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-t\",\"refreshToken\":\"r-t\",\"expiresAt\":2,\"scopes\":[\"user:inference\"],\"subscriptionType\":\"max\"}}" ;
 
 \ a fake curl that renews any Claude grant to sk-t-new, then answers its
-\ usage call with a model name too long to read; every other call gets {}
+\ usage call with a body past BUF-CAP; every other call gets {}
 : UT-RENEW-THROW-CURL ( -- )
    s" curl"
-   s\" #!/bin/sh\nout=; auth=; url=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) case \"$2\" in @*) auth=$(/usr/bin/grep ^Authorization: \"${2#@}\");; esac; shift;; --data-binary|-X|-m|-w) shift;; -*) ;; *) url=$1;; esac; shift; done\nbody='{}'\ncase \"$url\" in\n*platform.claude.com/v1/oauth/token) body='{\"access_token\":\"sk-t-new\",\"refresh_token\":\"r-t-new\",\"expires_in\":3600}';;\n*api.anthropic.com/api/oauth/usage*) case \"$auth\" in *sk-t-new) body='{\"limits\":[{\"kind\":\"weekly_scoped\",\"scope\":{\"model\":{\"display_name\":\"ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\"}},\"percent\":1}]}';; esac;;\nesac\nprintf '%s' \"$body\" > \"$out\"\nprintf 200\n"
+   s\" #!/bin/sh\nout=; auth=; url=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) case \"$2\" in @*) auth=$(/usr/bin/grep ^Authorization: \"${2#@}\");; esac; shift;; --data-binary|-X|-m|-w) shift;; -*) ;; *) url=$1;; esac; shift; done\nbody='{}'\ncase \"$url\" in\n*platform.claude.com/v1/oauth/token) body='{\"access_token\":\"sk-t-new\",\"refresh_token\":\"r-t-new\",\"expires_in\":3600}';;\n*api.anthropic.com/api/oauth/usage*) case \"$auth\" in *sk-t-new) /usr/bin/head -c 4194305 /dev/zero | /usr/bin/tr '\\0' ' ' > \"$out\"; printf 200; exit 0;; esac;;\nesac\nprintf '%s' \"$body\" > \"$out\"\nprintf 200\n"
    UT-WRITE-SCRIPT ;
 
 : UT-RENEWED-T ( ptr u8 n -- ) {: c cu :}
@@ -958,7 +974,7 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    P-CLAUDE s" t@x.test" CREDS-T$ UT-PUT
    P-CLAUDE CMD-USAGE
    P-CLAUDE s" t@x.test" UT-RECORD s" error" UT-STATE=
-   DB-USAGE-NOTE$ s" too many: bytes in a JSON string (limit 64)" T$=
+   DB-USAGE-NOTE$ s" a login file or path is too large" T$=
    P-CLAUDE s" t@x.test" [: UT-RENEWED-T ;] UT-ROW-LOGIN
    P-CLAUDE s" t@x.test" CMD-FORGET ;
 
@@ -1588,6 +1604,43 @@ create UT-AUTH-BUF 256 allot
    UT-LOG-NEW$ s" /api/organizations/a%2Fb%3Fc/reset_rate_limits " CONTAINS? TTRUE
    P-CLAUDE s" r@x.test" CMD-FORGET ;
 
+1100 constant UT-GRANT-U   \ bytes in UT-GRANT-CURL's grant id, all g
+
+\ a fake curl whose usage answer has each window's reset and banks two
+\ grants, the next one UT-GRANT-U bytes long; a reset logs its request body
+: UT-GRANT-CURL ( -- )
+   s" curl"
+   s\" #!/bin/sh\nout=; url=; grant=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) shift;; --data-binary) grant=$(/usr/bin/cat \"${2#@}\"); echo \"body $grant\" >> \"$KIBA_TEST_LOG\"; shift;; -X|-m|-w) shift;; *) url=$1;; esac; shift; done\ng=$(/usr/bin/head -c 1100 /dev/zero | /usr/bin/tr '\\0' g)\ncode=200; body='{}'\ncase \"$url\" in\n*api.anthropic.com/api/oauth/usage*) body='{\"five_hour\":{\"utilization\":10,\"resets_at\":\"2026-10-01T10:00:00+00:00\"},\"seven_day\":{\"utilization\":20,\"resets_at\":\"2026-10-07T10:00:00+00:00\"},\"limits\":[{\"kind\":\"weekly_scoped\",\"scope\":{\"model\":{\"display_name\":\"Fable\"}},\"percent\":30,\"resets_at\":\"2026-10-08T10:00:00+00:00\"}],\"cedar_ember\":{\"eligible\":true,\"next_grant_id\":\"'\"$g\"'\",\"grants\":[{\"id\":\"other\",\"resets_left\":9},{\"id\":\"'\"$g\"'\",\"resets_left\":2}]}}';;\n*api.anthropic.com/api/organizations/*/reset_rate_limits) body='{\"result\":\"reset\"}';;\n*) code=404;;\nesac\nprintf '%s' \"$body\" > \"$out\"\nprintf '%s' \"$code\"\n"
+   UT-WRITE-SCRIPT ;
+
+: CREDS-G$ ( -- ptr u8 n )
+   s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-g\",\"refreshToken\":\"r-g\",\"expiresAt\":4102444800000,\"subscriptionType\":\"max\"}}" ;
+
+\ a probe records each window's reset and the banked grant named next,
+\ whole; spending it sends that grant whole
+: UT-REDEEM-LONG-GRANT ( -- )
+   UT-GRANT-CURL
+   0 UT-LONG-U ! [char] g UT-GRANT-U UT-LONG-FILL
+   P-CLAUDE s" g@x.test" s" org-g" CREDS-G$ UT-PUT-ORG
+   P-CLAUDE CREDS-G$ false PROBE
+   s" ok" UT-STATE= DB-LIMIT# 3 T=
+   0 DB-LIMIT-RESETS$ s" 2026-10-01T10:00:00+00:00" T$=
+   1 DB-LIMIT-RESETS$ s" 2026-10-07T10:00:00+00:00" T$=
+   2 DB-LIMIT-RESETS$ s" 2026-10-08T10:00:00+00:00" T$=
+   DB-RESETS? TTRUE
+   DB-RESETS-COUNT 2 T=
+   DB-RESETS-PROGRAM$ s" cedar_ember" T$=
+   DB-RESETS-GRANT$ 0 UT-LONG$ T$=
+   [: [: P-CLAUDE s" g@x.test" UT-BUF -1 DB-SET-USAGE ;] DB-WRITE ;] UT-STORE
+   UT-LOG-MARK
+   P-CLAUDE s" g@x.test" CMD-REDEEM
+   s" g@x.test" REDEEMED$ s" Limit reset for g@x.test" T$=
+   UT-LONG-U @ {: o :}
+   s\" \"grant_id\":\"" UT-LONG+ [char] g UT-GRANT-U UT-LONG-FILL [char] " 1 UT-LONG-FILL
+   UT-LOG-NEW$ o UT-LONG$ CONTAINS? TTRUE
+   P-CLAUDE s" g@x.test" CMD-FORGET
+   UT-FAKE-CURL ;
+
 \ the live login's rejected token is its CLI's to refresh: no refresh is
 \ asked for and the login is left as it was
 : UT-REDEEM-LIVE ( -- )
@@ -1933,12 +1986,11 @@ create UT-SQL 2048 allot   variable UT-SQL-U
    a UT-SQL UT-SQL-U @ + u BYTE-COPY
    u UT-SQL-U +! ;
 
-\ n@x.test's stored usage note is 1100 bytes, past REC-NOTE-CAP
-: UT-LONG-NOTE ( -- )
+\ n@x.test's stored usage names a state that is none of the nine, longer
+\ than the decoder's state word holds
+: UT-ODD-STATE ( -- )
    0 UT-SQL-U !
-   s\" UPDATE account SET usage = '{\"fetchedAt\":1,\"limits\":[],\"note\":\"" UT-SQL+
-   1100 0 ?do s" n" UT-SQL+ loop
-   s\" \",\"state\":\"ok\"}' WHERE provider = 'claude' AND name = 'n@x.test'" UT-SQL+
+   s\" UPDATE account SET usage = '{\"fetchedAt\":1,\"limits\":[],\"note\":\"\",\"state\":\"subscription-lapsed\"}' WHERE provider = 'claude' AND name = 'n@x.test'" UT-SQL+
    UT-SQL UT-SQL-U @ s" test" DB-EXEC ;
 
 4096 constant UT-OUT-CAP
@@ -1956,12 +2008,42 @@ variable UT-OUT-U
    outu LEN>N UT-OUT-U !
    UT-OUT UT-OUT-U @ ;
 
+create UT-WANT 16384 allot   variable UT-WANT-U
+
+: UT-WANT+ ( ptr u8 n -- ) {: a u :}
+   a UT-WANT UT-WANT-U @ + u BYTE-COPY
+   u UT-WANT-U +! ;
+
+: UT-WANT$ ( -- ptr u8 n ) UT-WANT UT-WANT-U @ ;
+
+\ both forms of status carry every one of a record's 200 windows
+: UT-STATUS-MANY ( -- )
+   s\" {\"fetchedAt\":1,\"limits\":[],\"note\":\"\",\"state\":\"ok\"}" DB-USAGE-DECODE
+   200 0 ?do s" w" 1 s" r" DB-LIMIT+ loop
+   CFG-A$ CREDS-A$ ID-SLOT CLAUDE-IDENTITY TTRUE
+   [: P-CLAUDE s" m@x.test" ID-SLOT CREDS-A$ OAUTH-A$ true DB-PUT ;] DB-WRITE
+   0 UT-WANT-U ! s\" \"limits\":[" UT-WANT+
+   200 0 ?do
+      i 0 > if s" ," UT-WANT+ then
+      s\" {\"label\":\"w\",\"left\":99,\"percent\":1,\"resetsAt\":\"r\"}" UT-WANT+
+   loop
+   s" ]" UT-WANT+
+   STATUS-JSON$ UT-WANT$ CONTAINS? TTRUE
+   0 UT-WANT-U ! s" )  " UT-WANT+
+   200 0 ?do
+      i 0 > if s"  · " UT-WANT+ then
+      s" 99%" UT-WANT+
+   loop
+   s\" \n" UT-WANT+
+   UT-STATUS-TEXT$ UT-WANT$ CONTAINS? TTRUE
+   [: P-CLAUDE s" m@x.test" DB-REMOVE ;] DB-WRITE ;
+
 \ the live read's reason is the one it stopped on, though decoding a row's
 \ usage overflows another buffer before the error is written
 : UT-STATUS-REASON ( -- )
    CFG-A$ CREDS-A$ ID-SLOT CLAUDE-IDENTITY TTRUE
    [: P-CLAUDE s" n@x.test" ID-SLOT CREDS-A$ OAUTH-A$ false DB-PUT ;] DB-WRITE
-   UT-LONG-NOTE
+   UT-ODD-STATE
    CLAUDE-CONFIG$ CFG-A$ WRITE-PRIVATE
    CLAUDE-CREDS$ CREDS-LONG$ WRITE-PRIVATE
    STATUS-JSON$ s\" \"error\":\"too many: bytes in a JSON string (limit 64)\"" CONTAINS? TTRUE
@@ -2007,23 +2089,32 @@ variable UT-OUT-U
    [: DB-OPEN ;] E-SW-DB-VERSION TTHROWSQ
    [: P-CLAUDE DB-LIST ;] E-SW-DB TTHROWSQ ;
 
-\ a seventeenth limit is E-SW-CAPACITY, whose reason names what overflowed
-: UT-DB-TOO-MANY ( -- )
+create UT-LABEL 200 allot   create UT-RESET 100 allot
+
+\ seventeen limits with long labels and resets survive the record's codec
+: UT-DB-MANY ( -- )
+   200 0 ?do [char] l UT-LABEL i + c! loop
+   100 0 ?do [char] r UT-RESET i + c! loop
    s\" {\"fetchedAt\":1,\"limits\":[],\"note\":\"\",\"state\":\"ok\"}" DB-USAGE-DECODE
-   16 0 ?do s" w" 1 s" r" DB-LIMIT+ loop
-   [: s" w" 1 s" r" DB-LIMIT+ ;] E-SW-CAPACITY TTHROWSQ
-   E-SW-CAPACITY REASON$ s" kiba: too many: limits in a usage record (limit 16)" T$= ;
+   17 0 ?do UT-LABEL 200 i UT-RESET 100 DB-LIMIT+ loop
+   DB-USAGE-ENCODE DB-USAGE-DECODE
+   s" ok" UT-STATE= DB-LIMIT# 17 T=
+   17 0 ?do
+      i UT-LABEL 200 i UT-LIMIT=
+      i DB-LIMIT-RESETS$ UT-RESET 100 T$=
+   loop ;
 
 : UT-DB ( -- )
    UT-DB-OPEN
    UT-DB-PUT
    UT-DB-FETCH
    UT-DB-USAGE
-   UT-DB-TOO-MANY
+   UT-DB-MANY
    UT-DB-PENDING
    UT-DB-ROLLBACK
    UT-DB-NESTED
    UT-STATUS-JSON
+   UT-STATUS-MANY
    UT-STATUS-ERROR
    UT-STATUS-REASON
    UT-DB-COMPACT
@@ -2416,6 +2507,7 @@ create UT-WRAP-BUF 1024 allot
    UT-ADD-FAILED
    UT-PCT
    UT-PCT-CALLERS
+   UT-SCOPED-LONG
    UT-LONG-TOKEN
    UT-SCRATCH-APART
    UT-RENEWED-THROWS
@@ -2441,6 +2533,7 @@ create UT-WRAP-BUF 1024 allot
    UT-REDEEM-CLAUDE
    UT-REDEEM-RENEWED
    UT-REDEEM-SEGMENT
+   UT-REDEEM-LONG-GRANT
    UT-REDEEM-LIVE
    UT-REDEEM-CODEX
    UT-REDEEM-REVOKED
