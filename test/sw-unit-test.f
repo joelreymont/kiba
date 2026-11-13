@@ -762,21 +762,31 @@ create UT-HELD 32 allot
 
 \ `add` logs in inside a throwaway home: the live login stays where it is,
 \ the new login is saved under its name, and the home is gone afterwards.
-\ the fake `codex` records where it ran and writes AUTH-D on success
+\ the fake `codex` records where it ran and writes AUTH-D on success, or
+\ nothing when HOME holds empty-login
 : UT-FAKE-CODEX ( -- )
    s" codex"
-   s\" #!/bin/sh\necho \"codexhome $CODEX_HOME\" >> \"$KIBA_TEST_LOG\"\nif [ -e \"$HOME/.codex/auth.json\" ]; then echo present >> \"$KIBA_TEST_LOG\"; else echo absent >> \"$KIBA_TEST_LOG\"; fi\nif [ -e \"$HOME/fail-login\" ]; then exit 3; fi\nprintf '%s' '{\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d\",\"refresh_token\":\"rt-d\",\"account_id\":\"acct\"}}' > \"$CODEX_HOME/auth.json\"\n"
+   s\" #!/bin/sh\necho \"codexhome $CODEX_HOME\" >> \"$KIBA_TEST_LOG\"\nif [ -e \"$HOME/.codex/auth.json\" ]; then echo present >> \"$KIBA_TEST_LOG\"; else echo absent >> \"$KIBA_TEST_LOG\"; fi\nif [ -e \"$HOME/fail-login\" ]; then exit 3; fi\nif [ -e \"$HOME/empty-login\" ]; then exit 0; fi\nprintf '%s' '{\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d\",\"refresh_token\":\"rt-d\",\"account_id\":\"acct\"}}' > \"$CODEX_HOME/auth.json\"\n"
    UT-WRITE-SCRIPT ;
+
+\ HOME's file f, made or removed by the test to steer the fake codex
+: UT-HOME-FILE$ ( ptr u8 n -- ptr u8 n ) {: f fu :}
+   HOME$ {: h hu :}
+   SB-RESET h hu SB-APPEND f fu SB-APPEND SB$ UT-BUF 256 SPAN-COPY ;
+
+: UT-CODEX-ROWS ( -- n )
+   0 UT-N ! [: P-CODEX DB-LIST DB-ROW# UT-N ! ;] UT-STORE UT-N @ ;
 
 : UT-ADD ( -- )
    UT-FAKE-CODEX
-   HOME$ {: h hu :}
-   SB-RESET h hu SB-APPEND s" /fail-login" SB-APPEND SB$ UT-BUF 256 SPAN-COPY {: f fu :}
+   P-CODEX s" d@x.test" CMD-FORGET
+   s" /fail-login" UT-HOME-FILE$ {: f fu :}
    f fu s" x" FS:WRITE-ALL
    CODEX-AUTH$ AUTH-C$ WRITE-PRIVATE
    [: P-CODEX s" " CMD-ADD ;] E-SW-LOGIN TTHROWSQ
    CODEX-AUTH$ READ-FILE$ AUTH-C$ T$=
    P-CODEX LOGIN-HOME-PUBLIC$ FS:DIR? TFALSE
+   P-CODEX s" d@x.test" UT-ROW? TFALSE
    f fu FS:REMOVE-FILE
    HOME$ {: h2 h2u :}
    SB-RESET h2 h2u SB-APPEND s" /bin/codex" SB-APPEND SB$ UT-BUF 256 SPAN-COPY {: cx cxu :}
@@ -787,30 +797,50 @@ create UT-HELD 32 allot
    cxo cxou cx cxu FS:RENAME-FILE
    P-CODEX s" " CMD-ADD
    CODEX-AUTH$ READ-FILE$ AUTH-C$ T$=
-   P-CODEX s" d@x.test" s" auth.json" SLOT-FILE$ READ-FILE$ AUTH-D$ T$=
-   P-CODEX s" c@x.test" s" auth.json" SLOT-FILE$ READ-FILE$ AUTH-C$ T$=
+   P-CODEX s" d@x.test" AUTH-D$ UT-LOGIN=
+   P-CODEX s" c@x.test" AUTH-C9$ UT-LOGIN=
    P-CODEX LOGIN-HOME-PUBLIC$ FS:DIR? TFALSE
    LOG$ READ-FILE$ {: l lu :}
    l lu s\" present\n" ENDS-WITH? TTRUE
    l lu s" /probe/login-codex/.codex" CONTAINS? TTRUE
    l lu s" absent" CONTAINS? TFALSE ;
 
+\ a login that leaves nothing in the throwaway home saves nothing
+: UT-ADD-EMPTY ( -- )
+   UT-FAKE-CODEX
+   UT-CODEX-ROWS {: n :}
+   s" /empty-login" UT-HOME-FILE$ {: f fu :}
+   f fu s" x" FS:WRITE-ALL
+   [: P-CODEX s" " CMD-ADD ;] E-SW-NO-LIVE TTHROWSQ
+   f fu FS:REMOVE-FILE
+   UT-CODEX-ROWS n T=
+   P-CODEX LOGIN-HOME-PUBLIC$ FS:DIR? TFALSE
+   CODEX-AUTH$ READ-FILE$ AUTH-C$ T$= ;
+
+\ the new Claude row's login and profile
+: UT-CLAUDE-B ( -- )
+   P-CLAUDE s" b@x.test" DB-FETCH TTRUE
+   0 DB-ROW-LOGIN$ s\" \"accessToken\":\"sk-b" CONTAINS? TTRUE
+   0 DB-ROW-PROFILE$ s\" \"organizationUuid\":\"org-b\"" CONTAINS? TTRUE ;
+
 \ a Claude add with an expected account prefills the email and saves under
 \ the name that actually came back, saying so when it differs
 : UT-ADD-CLAUDE ( -- )
    UT-FAKE-CLAUDE
+   P-CLAUDE s" b@x.test" UT-ROW? TFALSE
    P-CLAUDE s" b@x.test" CMD-ADD
    LOG$ READ-FILE$ s" auth login --email b@x.test cfg=" CONTAINS? TTRUE
    LOG$ READ-FILE$ s" /probe/login-claude/.claude" CONTAINS? TTRUE
-   P-CLAUDE s" b@x.test" s" credentials.json" SLOT-FILE$ READ-FILE$ s\" \"accessToken\":\"sk-b" CONTAINS? TTRUE
-   P-CLAUDE s" b@x.test" s" oauth-account.json" SLOT-FILE$ READ-FILE$ s\" \"organizationUuid\":\"org-b\"" CONTAINS? TTRUE
+   [: UT-CLAUDE-B ;] UT-STORE
    CLAUDE-CONFIG$ READ-FILE$ CFG-BA$ T$=
    CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
    P-CLAUDE LOGIN-HOME-PUBLIC$ FS:DIR? TFALSE
    P-CLAUDE LIVE-IDENTITY TTRUE ID-LIVE EMAIL$ s" a@x.test" T$=
+   P-CLAUDE s" b@x.test" CMD-FORGET
    P-CLAUDE s" zz@x.test" CMD-ADD
-   SAVED-NAME$ s" b@x.test" T$=
-   P-CLAUDE s" b@x.test" SLOT-DIR$ FS:REMOVE-TREE ;
+   P-CLAUDE s" zz@x.test" UT-ROW? TFALSE
+   [: UT-CLAUDE-B ;] UT-STORE
+   P-CLAUDE s" b@x.test" CMD-FORGET ;
 
 \ the live account's expired token is reported, never sent
 : CREDS-A-OLD$ ( -- ptr u8 n )
@@ -1162,6 +1192,7 @@ create UT-LIST UT-LIST-CAP allot
    UT-DAMAGED-SLOT
    UT-STRAY-MARKERS
    UT-ADD
+   UT-ADD-EMPTY
    UT-ADD-CLAUDE
    UT-PCT
    UT-USAGE

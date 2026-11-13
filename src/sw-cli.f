@@ -1,4 +1,4 @@
-\ sw-cli.f - the kiba commands: status, save, use, add, forget.
+\ sw-cli.f - the kiba commands: status, usage, save, use, add, forget.
 require ../src/sw-store.f
 require ../src/sw-run.f
 require ../src/sw-usage.f
@@ -188,8 +188,9 @@ private
    STATUS-TEXT ;
 
 \ ---- save / use / forget ----------------------------------------------------
-\ Each opens the account store for itself and holds the provider's turn
-\ throughout; both are left on every path.
+\ Every command that changes or probes a provider's logins opens the account
+\ store for itself and holds the provider's turn throughout; both are left on
+\ every path.
 : WITH-STORE ( [ -- ] -- ) {: body :}
    DB-OPEN [: body execute ;] [: DB-CLOSE ;] finally ;
 
@@ -537,7 +538,6 @@ public
    s" chatgpt.com" ;
 
 create LINE-BUF 256 allot
-variable LOGIN-RC
 
 \ the browser decides the account, so the user is told which one to be
 \ signed into, or reminded to pick one, and given the moment to arrange it
@@ -560,36 +560,32 @@ variable LOGIN-RC
    LOGIN-ROOT-CLEAR
    p LOGIN-HOME$ FS:DIR? if p LOGIN-HOME$ FS:REMOVE-TREE then ;
 
-: LOGIN-KEEP ( n ptr u8 n -- n ptr u8 n ) {: p e eu :}
-   p e eu NAME-EMAIL LOGIN LOGIN-RC !
-   p e eu ;
+\ the new login is read from the throwaway home, which LOGIN-ROOT names,
+\ and saved under its name; E-SW-NO-LIVE when the login left none
+: ADD-IMPORT ( n -- ) {: p :}
+   0 LIVE-ROW-U !
+   [: p PUT-LIVE ;] DB-WRITE
+   LIVE-ROW$ nip 0= if E-SW-NO-LIVE throw then ;
 
-\ the new login is read from the throwaway home and saved under its name
-: ADD-SAVE-LOCKED ( -- )
-   CMD-P @ LIVE-IDENTITY 0= if E-SW-NO-LIVE throw then
-   CMD-P @ SAVE-LIVE ;
+: ADD-RUN ( n ptr u8 n -- ) {: p e eu :}
+   p ADD-BEGIN
+   p e eu ADD-PAUSE
+   p e eu NAME-EMAIL LOGIN 0<> if E-SW-LOGIN throw then
+   p ADD-IMPORT ;
 
-: ADD-SAVE ( -- )
-   [: ADD-SAVE-LOCKED ;] WITH-LOCK ;
+: ADD-TURN ( n ptr u8 n -- ) {: p e eu :}
+   [: p e eu ADD-RUN ;] [: p ADD-END ;] finally ;
 
 : .ADDED ( n ptr u8 n -- ) {: p e eu :}
-   p PROVIDER$ type s" : saved " type SAVED-NAME$ type
-   eu 0 > SAVED-NAME$ e eu STR= 0= and if
+   p PROVIDER$ type s" : saved " type LIVE-ROW$ type
+   eu 0 > LIVE-ROW$ e eu STR= 0= and if
       s"  (you signed in to a different account than " type e eu type s" )" type
    then
    cr ;
 
 : CMD-ADD ( n ptr u8 n -- ) {: p e eu :}
    p CHECK-LOGIN-CLI
-   p CMD-P !
-   p ADD-BEGIN
-   p e eu ADD-PAUSE
-   p e eu [: LOGIN-KEEP ;] catch {: rc :} drop 2drop
-   rc 0<> if p ADD-END rc throw then
-   LOGIN-RC @ 0<> if p ADD-END E-SW-LOGIN throw then
-   [: ADD-SAVE ;] catch {: src :}
-   src 0<> if p ADD-END src throw then
-   p ADD-END
+   p [: p e eu ADD-TURN ;] STORE-TURN
    p e eu .ADDED ;
 
 : LOGIN-HOME-PUBLIC$ ( n -- ptr u8 n ) LOGIN-HOME$ ;

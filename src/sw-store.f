@@ -179,7 +179,8 @@ private
 
 create LIVE-ROW NAME-CAP allot   variable LIVE-ROW-U
 
-\ the name the last SAVE-LIVE-ROW saved under; empty when there was no login
+\ the name PUT-LIVE last saved under; its callers empty it first, so it is
+\ empty when there was no login
 : LIVE-ROW$ ( -- ptr u8 n ) LIVE-ROW LIVE-ROW-U @ ;
 
 \ identity id from row r's email, org and plan
