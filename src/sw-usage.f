@@ -3,9 +3,8 @@
 \ calls run without the store lock; every slot write takes it briefly.
 require ../src/sw-store.f
 require ../src/sw-run.f
-require src/lib/time.f
 require src/lib/date.f
-require src/lib/json-write.f
+require src/lib/json.f
 
 package SW
 
@@ -25,9 +24,9 @@ variable LIM-N
 create NOTE-BUF 256 allot           variable NOTE-U
 variable USAGE-AT                   \ epoch seconds of the parsed usage record
 
-create PROBE-BUF FS-PATH-CAP allot  variable PROBE-U   \ <store>/probe
-create PSUB-BUF FS-PATH-CAP allot   variable PSUB-U    \ a file inside it
-create UFILE-BUF FS-PATH-CAP allot  variable UFILE-U   \ <slot>/usage.json
+create PROBE-BUF PATH-CAP allot  variable PROBE-U   \ <store>/probe
+create PSUB-BUF PATH-CAP allot   variable PSUB-U    \ a file inside it
+create UFILE-BUF PATH-CAP allot  variable UFILE-U   \ <slot>/usage.json
 create HDR-BUF HDR-CAP allot        variable HDR-U     \ one curl -H value
 create ACCT-ID-BUF 128 allot        variable ACCT-ID-U
 create VAL-BUF 4096 allot           variable VAL-U     \ a decoded response string
@@ -112,7 +111,7 @@ $E8D4A51000 constant FP-MAX             \ 10^12: no percentage is larger
    FP-I @ 0 <= if -1 exit then
    FP-ACC @ 100 * FP-ACC !
    FP-I @ u < if
-      FP-I @ a + c@ DOT <> if -1 exit then
+      FP-I @ a + c@ $2E <> if -1 exit then
       1 FP-I +!
       a u FP-FRACTION
    then
@@ -132,37 +131,37 @@ $E8D4A51000 constant FP-MAX             \ 10^12: no percentage is larger
 \ ---- our own usage file --------------------------------------------------------
 create KEY-BUF 64 allot
 
-: LIM-FIELD ( JR:reader ptr u8 n n -- JR:reader ) {: k ku i :}
-   JR:TOKEN {: t :}
-   k ku s" label" STR= t JR:T-STR = and if i LIM-LABEL-SLOT LIM-LABEL-CAP JR:STR i LIM-LABEL-U-CELL ! exit then
-   k ku s" resetsAt" STR= t JR:T-STR = and if i LIM-RESET-SLOT LIM-RESET-CAP JR:STR i LIM-RESET-U-CELL ! exit then
-   k ku s" percent" STR= t JR:T-INT = and if JR:INT i LIM-PCT-CELL ! exit then
-   JR:SKIP-VALUE ;
+: LIM-FIELD ( JSON:reader ptr u8 n n -- JSON:reader ) {: k ku i :}
+   JSON:READ-TOKEN {: t :}
+   k ku s" label" STR= t JSON:T-STR = and if i LIM-LABEL-SLOT LIM-LABEL-CAP JSON:READ-STR i LIM-LABEL-U-CELL ! exit then
+   k ku s" resetsAt" STR= t JSON:T-STR = and if i LIM-RESET-SLOT LIM-RESET-CAP JSON:READ-STR i LIM-RESET-U-CELL ! exit then
+   k ku s" percent" STR= t JSON:T-INT = and if JSON:READ-INT i LIM-PCT-CELL ! exit then
+   JSON:READ-SKIP-VALUE ;
 
-: LIM-OBJECT ( JR:reader -- JR:reader )
-   LIM-N @ LIM-MAX >= if JR:SKIP-VALUE exit then
+: LIM-OBJECT ( JSON:reader -- JSON:reader )
+   LIM-N @ LIM-MAX >= if JSON:READ-SKIP-VALUE exit then
    s" " -1 s" " LIM+
    LIM-N @ 1- {: i :}
-   begin JR:NEXT JR:T-OBJ-END <> while
-      JR:TOKEN JR:T-KEY <> if E-SW-JSON throw then
-      KEY-BUF 64 JR:STR {: ku :}
-      JR:NEXT drop
+   begin JSON:READ-NEXT JSON:T-OBJ-END <> while
+      JSON:READ-TOKEN JSON:T-KEY <> if E-SW-JSON throw then
+      KEY-BUF 64 JSON:READ-STR {: ku :}
+      JSON:READ-NEXT drop
       KEY-BUF ku i LIM-FIELD
    repeat ;
 
-: LIM-ARRAY ( JR:reader -- JR:reader )
-   begin JR:NEXT JR:T-ARR-END <> while
-      JR:TOKEN JR:T-OBJ <> if E-SW-JSON throw then
+: LIM-ARRAY ( JSON:reader -- JSON:reader )
+   begin JSON:READ-NEXT JSON:T-ARR-END <> while
+      JSON:READ-TOKEN JSON:T-OBJ <> if E-SW-JSON throw then
       LIM-OBJECT
    repeat ;
 
 : PARSE-USAGE-FILE ( ptr u8 n -- ) {: d du :}
    0 LIM-N !
    d du OPEN-DOC ENTER-OBJECT
-   s" limits" JR:FIND-KEY 0= if JR:CLOSE exit then
-   JR:TOKEN JR:T-ARR <> if JR:CLOSE exit then
+   s" limits" JSON:READ-FIND-KEY 0= if JSON:READ-CLOSE exit then
+   JSON:READ-TOKEN JSON:T-ARR <> if JSON:READ-CLOSE exit then
    LIM-ARRAY
-   JR:CLOSE ;
+   JSON:READ-CLOSE ;
 
 : USAGE-FILE$ ( n ptr u8 n -- ptr u8 n ) {: p a u :}
    p a u USAGE-NAME$ SLOT-FILE$ UFILE-BUF UFILE-U PATH!
@@ -170,29 +169,29 @@ create KEY-BUF 64 allot
 
 variable LIM-WRITTEN                \ limit objects already in the array
 
-: LIM-JSON ( ptr JSON-WRITE:writer n -- ptr JSON-WRITE:writer ) {: i :}
-   LIM-WRITTEN @ 0 > if JSON-WRITE:COMMA then
-   JSON-WRITE:OBJECT-START
-   s" label" i LIM-LABEL-SLOT i LIM-LABEL-U-CELL @ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
-   s" percent" i LIM-PCT-CELL @ JSON-WRITE:FIELD-U JSON-WRITE:COMMA
-   s" resetsAt" i LIM-RESET-SLOT i LIM-RESET-U-CELL @ JSON-WRITE:FIELD-S
-   JSON-WRITE:OBJECT-END
+: LIM-JSON ( ptr JSON:writer n -- ptr JSON:writer ) {: i :}
+   LIM-WRITTEN @ 0 > if JSON:WRITE-COMMA then
+   JSON:WRITE-OBJECT-START
+   s" label" i LIM-LABEL-SLOT i LIM-LABEL-U-CELL @ JSON:WRITE-FIELD-S JSON:WRITE-COMMA
+   s" percent" i LIM-PCT-CELL @ JSON:WRITE-FIELD-U JSON:WRITE-COMMA
+   s" resetsAt" i LIM-RESET-SLOT i LIM-RESET-U-CELL @ JSON:WRITE-FIELD-S
+   JSON:WRITE-OBJECT-END
    1 LIM-WRITTEN +! ;
 
 \ the table plus a note become the slot's usage.json; a window whose figure
 \ could not be read is left out rather than written as zero
 : WRITE-USAGE ( n ptr u8 n -- ) {: p a u :}
    JSON-OPEN
-   JSON-WRITE:OBJECT-START
-   s" fetchedAt" TIME:EPOCH-SECONDS JSON-WRITE:FIELD-U JSON-WRITE:COMMA
-   s" state" STATE-BUF STATE-U @ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
-   s" note" NOTE-BUF NOTE-U @ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
-   s" limits" JSON-WRITE:KEY JSON-WRITE:ARRAY-START
+   JSON:WRITE-OBJECT-START
+   s" fetchedAt" epoch-seconds JSON:WRITE-FIELD-U JSON:WRITE-COMMA
+   s" state" STATE-BUF STATE-U @ JSON:WRITE-FIELD-S JSON:WRITE-COMMA
+   s" note" NOTE-BUF NOTE-U @ JSON:WRITE-FIELD-S JSON:WRITE-COMMA
+   s" limits" JSON:WRITE-KEY JSON:WRITE-ARRAY-START
    0 LIM-WRITTEN !
    LIM-N @ 0 ?do i LIM-PCT-CELL @ 0 >= if i LIM-JSON then loop
-   JSON-WRITE:ARRAY-END
-   JSON-WRITE:OBJECT-END
-   JSON-WRITE:$ {: j ju :}
+   JSON:WRITE-ARRAY-END
+   JSON:WRITE-OBJECT-END
+   JSON:WRITTEN$ {: j ju :}
    p a u USAGE-FILE$ j ju WRITE-PRIVATE ;
 
 \ ---- scratch files ---------------------------------------------------------------
@@ -214,10 +213,10 @@ variable LIM-WRITTEN                \ limit objects already in the array
 : HEADERS$ ( -- ptr u8 n ) s" /headers.txt" PSUB$ ;
 
 : PROBE-CLEANUP ( -- )
-   BODY$ FILE? if BODY$ REMOVE-FILE then
-   CODE$ FILE? if CODE$ REMOVE-FILE then
-   REQ$ FILE? if REQ$ REMOVE-FILE then
-   HEADERS$ FILE? if HEADERS$ REMOVE-FILE then ;
+   BODY$ FS:FILE? if BODY$ FS:REMOVE-FILE then
+   CODE$ FS:FILE? if CODE$ FS:REMOVE-FILE then
+   REQ$ FS:FILE? if REQ$ FS:REMOVE-FILE then
+   HEADERS$ FS:FILE? if HEADERS$ FS:REMOVE-FILE then ;
 
 : PROBE-PREPARE ( -- )
    PROBE$ ENSURE-PRIVATE
@@ -288,19 +287,16 @@ variable LIM-WRITTEN                \ limit objects already in the array
    pid PID>N 0= if pathz argv EXEC-CURL then
    PROC-ARGV-RESET
    OUT-FD @ close
-   pid PROC-WAIT-RC MATCH result
-     ok OF ENDOF
-     err OF ENDOF
-   ;MATCH {: rc :}
+   pid PROCESS:WAIT PROCESS:STATUS>RC RC>N {: rc :}
    rc 0<> if -1 exit then
-   CODE$ FILE? 0= if -1 exit then
+   CODE$ FS:FILE? 0= if -1 exit then
    CODE$ OBJ-BUF OBJ-U READ-INTO STR>NUMBER? MATCH option
      none OF -1 ENDOF
      some OF ENDOF
    ;MATCH ;
 
 : BODY-READ ( -- ptr u8 n )
-   BODY$ FILE? 0= if OBJ-BUF 0 exit then
+   BODY$ FS:FILE? 0= if OBJ-BUF 0 exit then
    BODY$ OBJ-BUF OBJ-U READ-INTO ;
 
 \ the body bytes come from a finished JSON-OPEN chain
@@ -347,7 +343,7 @@ variable LIM-WRITTEN                \ limit objects already in the array
 
 \ a decoded string as a JSON string literal, in the writer buffer
 : LITERAL$ ( ptr u8 n -- ptr u8 n ) {: a u :}
-   JSON-OPEN a u JSON-WRITE:STRING JSON-WRITE:$ ;
+   JSON-OPEN a u JSON:WRITE-STRING JSON:WRITTEN$ ;
 
 : NUMBER$ ( n -- ptr u8 n )
    SB-RESET FMT:SB-INT SB$ ;
@@ -375,26 +371,26 @@ variable REFRESH-CODE               \ HTTP status of the last refresh request, -
 : CLAUDE-CLIENT-ID$ ( -- ptr u8 n ) s" 9d1c250a-e61b-44d9-88ed-5944d1962f5e" ;
 : CREDS-KEY$ ( -- ptr u8 n ) s" claudeAiOauth" ;
 
-: BUCKET-PCT ( JR:reader -- JR:reader n )
-   JR:TOKEN dup JR:T-INT = swap JR:T-FLOAT = or 0= if -1 exit then
-   JR:SPAN$ HUNDREDTHS ;
+: BUCKET-PCT ( JSON:reader -- JSON:reader n )
+   JSON:READ-TOKEN dup JSON:T-INT = swap JSON:T-FLOAT = or 0= if -1 exit then
+   JSON:READ-SPAN$ HUNDREDTHS ;
 
-: BUCKET-RESET ( JR:reader -- JR:reader ptr u8 n )
-   JR:TOKEN JR:T-STR <> if RESET-BUF 0 exit then
-   RESET-BUF LIM-RESET-CAP JR:STR RESET-BUF swap ;
+: BUCKET-RESET ( JSON:reader -- JSON:reader ptr u8 n )
+   JSON:READ-TOKEN JSON:T-STR <> if RESET-BUF 0 exit then
+   RESET-BUF LIM-RESET-CAP JSON:READ-STR RESET-BUF swap ;
 
 \ one bucket object {utilization, resets_at} at key; hundredths and reset text
 : CLAUDE-BUCKET ( ptr u8 n ptr u8 n -- n ptr u8 n ) {: d du k ku :}
    d du OPEN-DOC ENTER-OBJECT
-   k ku KEY-OBJECT 0= if JR:CLOSE -1 RESET-BUF 0 exit then
-   s" utilization" JR:FIND-KEY 0= if JR:CLOSE -1 RESET-BUF 0 exit then
+   k ku KEY-OBJECT 0= if JSON:READ-CLOSE -1 RESET-BUF 0 exit then
+   s" utilization" JSON:READ-FIND-KEY 0= if JSON:READ-CLOSE -1 RESET-BUF 0 exit then
    BUCKET-PCT {: h :}
-   JR:CLOSE
+   JSON:READ-CLOSE
    d du OPEN-DOC ENTER-OBJECT
    k ku KEY-OBJECT drop
-   s" resets_at" JR:FIND-KEY 0= if JR:CLOSE h RESET-BUF 0 exit then
+   s" resets_at" JSON:READ-FIND-KEY 0= if JSON:READ-CLOSE h RESET-BUF 0 exit then
    BUCKET-RESET {: r ru :}
-   JR:CLOSE
+   JSON:READ-CLOSE
    h r ru ;
 
 \ utilization is a percentage (37.0 means 37%); hundredths round half up
@@ -417,35 +413,35 @@ variable SC-PCT
    0 SC-NAME-U ! 0 SC-KIND-U ! 0 SC-RESET-U ! -1 SC-PCT ! ;
 
 \ on the model object's opening brace: its display name
-: SC-MODEL ( JR:reader -- JR:reader )
-   begin JR:NEXT JR:T-OBJ-END <> while
-      JR:TOKEN JR:T-KEY <> if E-SW-JSON throw then
-      KEY-BUF 64 JR:STR {: ku :}
-      JR:NEXT drop
+: SC-MODEL ( JSON:reader -- JSON:reader )
+   begin JSON:READ-NEXT JSON:T-OBJ-END <> while
+      JSON:READ-TOKEN JSON:T-KEY <> if E-SW-JSON throw then
+      KEY-BUF 64 JSON:READ-STR {: ku :}
+      JSON:READ-NEXT drop
       KEY-BUF ku s" display_name" STR= {: named :}
-      JR:TOKEN JR:T-STR = named and if
-         SC-NAME 64 JR:STR SC-NAME-U !
-      else JR:SKIP-VALUE then
+      JSON:READ-TOKEN JSON:T-STR = named and if
+         SC-NAME 64 JSON:READ-STR SC-NAME-U !
+      else JSON:READ-SKIP-VALUE then
    repeat ;
 
 \ on the scope value: an object with a model, or null
-: SC-SCOPE ( JR:reader -- JR:reader )
-   JR:TOKEN JR:T-OBJ <> if JR:SKIP-VALUE exit then
-   begin JR:NEXT JR:T-OBJ-END <> while
-      JR:TOKEN JR:T-KEY <> if E-SW-JSON throw then
-      KEY-BUF 64 JR:STR {: ku :}
-      JR:NEXT drop
+: SC-SCOPE ( JSON:reader -- JSON:reader )
+   JSON:READ-TOKEN JSON:T-OBJ <> if JSON:READ-SKIP-VALUE exit then
+   begin JSON:READ-NEXT JSON:T-OBJ-END <> while
+      JSON:READ-TOKEN JSON:T-KEY <> if E-SW-JSON throw then
+      KEY-BUF 64 JSON:READ-STR {: ku :}
+      JSON:READ-NEXT drop
       KEY-BUF ku s" model" STR= {: modelkey :}
-      JR:TOKEN JR:T-OBJ = modelkey and if SC-MODEL else JR:SKIP-VALUE then
+      JSON:READ-TOKEN JSON:T-OBJ = modelkey and if SC-MODEL else JSON:READ-SKIP-VALUE then
    repeat ;
 
-: SC-FIELD ( JR:reader ptr u8 n -- JR:reader ) {: k ku :}
-   JR:TOKEN {: t :}
-   k ku s" kind" STR= t JR:T-STR = and if SC-KIND 32 JR:STR SC-KIND-U ! exit then
-   k ku s" resets_at" STR= t JR:T-STR = and if SC-RESET LIM-RESET-CAP JR:STR SC-RESET-U ! exit then
-   k ku s" percent" STR= t JR:T-INT = t JR:T-FLOAT = or and if BUCKET-PCT SC-PCT ! exit then
+: SC-FIELD ( JSON:reader ptr u8 n -- JSON:reader ) {: k ku :}
+   JSON:READ-TOKEN {: t :}
+   k ku s" kind" STR= t JSON:T-STR = and if SC-KIND 32 JSON:READ-STR SC-KIND-U ! exit then
+   k ku s" resets_at" STR= t JSON:T-STR = and if SC-RESET LIM-RESET-CAP JSON:READ-STR SC-RESET-U ! exit then
+   k ku s" percent" STR= t JSON:T-INT = t JSON:T-FLOAT = or and if BUCKET-PCT SC-PCT ! exit then
    k ku s" scope" STR= if SC-SCOPE exit then
-   JR:SKIP-VALUE ;
+   JSON:READ-SKIP-VALUE ;
 
 : SC-WINDOW$ ( -- ptr u8 n )
    SC-KIND SC-KIND-U @ s" weekly" STARTS-WITH? if s" Weekly" exit then
@@ -462,28 +458,28 @@ variable SC-PCT
    SC-WINDOW$ dup 0 > if $20 SB-APPEND-C SB-APPEND else 2drop then
    SB$ SC-PCT @ SCALED SC-RESET SC-RESET-U @ LIM+ ;
 
-: SC-OBJECT ( JR:reader -- JR:reader )
+: SC-OBJECT ( JSON:reader -- JSON:reader )
    SC-ENTRY-RESET
-   begin JR:NEXT JR:T-OBJ-END <> while
-      JR:TOKEN JR:T-KEY <> if E-SW-JSON throw then
-      KEY-BUF 64 JR:STR {: ku :}
-      JR:NEXT drop
+   begin JSON:READ-NEXT JSON:T-OBJ-END <> while
+      JSON:READ-TOKEN JSON:T-KEY <> if E-SW-JSON throw then
+      KEY-BUF 64 JSON:READ-STR {: ku :}
+      JSON:READ-NEXT drop
       KEY-BUF ku SC-FIELD
    repeat
    SC-ENTRY+ ;
 
-: SC-ARRAY ( JR:reader -- JR:reader )
-   begin JR:NEXT JR:T-ARR-END <> while
-      JR:TOKEN JR:T-OBJ <> if E-SW-JSON throw then
+: SC-ARRAY ( JSON:reader -- JSON:reader )
+   begin JSON:READ-NEXT JSON:T-ARR-END <> while
+      JSON:READ-TOKEN JSON:T-OBJ <> if E-SW-JSON throw then
       SC-OBJECT
    repeat ;
 
 : CLAUDE-SCOPED ( ptr u8 n -- ) {: d du :}
    d du OPEN-DOC ENTER-OBJECT
-   s" limits" JR:FIND-KEY 0= if JR:CLOSE exit then
-   JR:TOKEN JR:T-ARR <> if JR:CLOSE exit then
+   s" limits" JSON:READ-FIND-KEY 0= if JSON:READ-CLOSE exit then
+   JSON:READ-TOKEN JSON:T-ARR <> if JSON:READ-CLOSE exit then
    SC-ARRAY
-   JR:CLOSE ;
+   JSON:READ-CLOSE ;
 
 : CLAUDE-LIMITS ( ptr u8 n -- ) {: d du :}
    0 LIM-N !
@@ -498,7 +494,7 @@ variable SC-PCT
 : CLAUDE-EXPIRED? ( -- bool )
    CFG$ CREDS-KEY$ s" expiresAt" DOC-INT2 {: ms :}
    ms 0 <= if false exit then
-   ms 1000 / TIME:EPOCH-SECONDS 60 + < ;
+   ms 1000 / epoch-seconds 60 + < ;
 
 : CLAUDE-REFRESH-TOKEN? ( -- bool )
    CFG$ CREDS-KEY$ s" refreshToken" VAL-BUF 4096 DOC-STR2 0 >= ;
@@ -507,15 +503,15 @@ variable SC-PCT
 : CLAUDE-REFRESH-RAW ( -- bool )
    CFG$ CREDS-KEY$ s" refreshToken" VAL-BUF 4096 DOC-STR2 dup 0 < if drop false exit then VAL-U !
    JSON-OPEN
-   JSON-WRITE:OBJECT-START
-   s" grant_type" s" refresh_token" JSON-WRITE:FIELD-S JSON-WRITE:COMMA
-   s" refresh_token" VAL-BUF VAL-U @ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
-   s" client_id" CLAUDE-CLIENT-ID$ JSON-WRITE:FIELD-S
-   JSON-WRITE:OBJECT-END JSON-WRITE:$
+   JSON:WRITE-OBJECT-START
+   s" grant_type" s" refresh_token" JSON:WRITE-FIELD-S JSON:WRITE-COMMA
+   s" refresh_token" VAL-BUF VAL-U @ JSON:WRITE-FIELD-S JSON:WRITE-COMMA
+   s" client_id" CLAUDE-CLIENT-ID$ JSON:WRITE-FIELD-S
+   JSON:WRITE-OBJECT-END JSON:WRITTEN$
    KIBA-UA$ CURL-BEGIN
    CLAUDE-TOKEN-URL$ POST-JSON {: code :}
    code REFRESH-CODE !
-   REQ$ REMOVE-FILE
+   REQ$ FS:REMOVE-FILE
    code 200 <> if false exit then
    BODY-READ {: b bu :}
    b bu s" access_token" VAL-BUF 4096 DOC-STR1 dup 0 < if drop false exit then VAL-U !
@@ -524,9 +520,9 @@ variable SC-PCT
       VAL-U ! CREDS-KEY$ s" refreshToken" VAL-BUF VAL-U @ LITERAL$ CFG-REPLACE2
    else drop then
    b bu s" expires_in" DOC-INT1 {: secs :}
-   secs 0 > if CREDS-KEY$ s" expiresAt" TIME:EPOCH-SECONDS secs + 1000 * NUMBER$ CFG-REPLACE2 then
+   secs 0 > if CREDS-KEY$ s" expiresAt" epoch-seconds secs + 1000 * NUMBER$ CFG-REPLACE2 then
    b bu s" refresh_token_expires_in" DOC-INT1 {: rsecs :}
-   rsecs 0 > if CREDS-KEY$ s" refreshTokenExpiresAt" TIME:EPOCH-SECONDS rsecs + 1000 * NUMBER$ CFG-REPLACE2 then
+   rsecs 0 > if CREDS-KEY$ s" refreshTokenExpiresAt" epoch-seconds rsecs + 1000 * NUMBER$ CFG-REPLACE2 then
    true ;
 
 : CLAUDE-REFRESH-LOCKED ( -- )
@@ -578,24 +574,24 @@ variable SC-PCT
 \ the window at key inside rate_limit: used percent, window seconds, reset epoch
 : CODEX-WINDOW ( ptr u8 n ptr u8 n -- n n n ) {: d du k ku :}
    d du OPEN-DOC ENTER-OBJECT
-   s" rate_limit" KEY-OBJECT 0= if JR:CLOSE -1 0 0 exit then
-   k ku KEY-OBJECT 0= if JR:CLOSE -1 0 0 exit then
-   s" used_percent" JR:FIND-KEY 0= if JR:CLOSE -1 0 0 exit then
+   s" rate_limit" KEY-OBJECT 0= if JSON:READ-CLOSE -1 0 0 exit then
+   k ku KEY-OBJECT 0= if JSON:READ-CLOSE -1 0 0 exit then
+   s" used_percent" JSON:READ-FIND-KEY 0= if JSON:READ-CLOSE -1 0 0 exit then
    BUCKET-PCT {: h :}
-   JR:CLOSE
+   JSON:READ-CLOSE
    d du OPEN-DOC ENTER-OBJECT
    s" rate_limit" KEY-OBJECT drop
    k ku KEY-OBJECT drop
-   s" limit_window_seconds" JR:FIND-KEY 0= if JR:CLOSE h 0 0 exit then
-   JR:TOKEN JR:T-INT <> if JR:CLOSE h 0 0 exit then
-   JR:INT {: secs :}
-   JR:CLOSE
+   s" limit_window_seconds" JSON:READ-FIND-KEY 0= if JSON:READ-CLOSE h 0 0 exit then
+   JSON:READ-TOKEN JSON:T-INT <> if JSON:READ-CLOSE h 0 0 exit then
+   JSON:READ-INT {: secs :}
+   JSON:READ-CLOSE
    d du OPEN-DOC ENTER-OBJECT
    s" rate_limit" KEY-OBJECT drop
    k ku KEY-OBJECT drop
-   s" reset_at" JR:FIND-KEY 0= if JR:CLOSE h secs 0 exit then
-   JR:TOKEN JR:T-INT <> if JR:CLOSE h secs 0 exit then
-   JR:INT swap JR:CLOSE
+   s" reset_at" JSON:READ-FIND-KEY 0= if JSON:READ-CLOSE h secs 0 exit then
+   JSON:READ-TOKEN JSON:T-INT <> if JSON:READ-CLOSE h secs 0 exit then
+   JSON:READ-INT swap JSON:READ-CLOSE
    h secs rot ;
 
 : WINDOW-LABEL$ ( n -- ptr u8 n )
@@ -623,15 +619,15 @@ variable SC-PCT
 : CODEX-REFRESH-RAW ( -- bool )
    CFG$ TOKENS-KEY$ s" refresh_token" VAL-BUF 4096 DOC-STR2 dup 0 < if drop false exit then VAL-U !
    JSON-OPEN
-   JSON-WRITE:OBJECT-START
-   s" client_id" CODEX-CLIENT-ID$ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
-   s" grant_type" s" refresh_token" JSON-WRITE:FIELD-S JSON-WRITE:COMMA
-   s" refresh_token" VAL-BUF VAL-U @ JSON-WRITE:FIELD-S
-   JSON-WRITE:OBJECT-END JSON-WRITE:$
+   JSON:WRITE-OBJECT-START
+   s" client_id" CODEX-CLIENT-ID$ JSON:WRITE-FIELD-S JSON:WRITE-COMMA
+   s" grant_type" s" refresh_token" JSON:WRITE-FIELD-S JSON:WRITE-COMMA
+   s" refresh_token" VAL-BUF VAL-U @ JSON:WRITE-FIELD-S
+   JSON:WRITE-OBJECT-END JSON:WRITTEN$
    KIBA-UA$ CURL-BEGIN
    CODEX-TOKEN-URL$ POST-JSON {: code :}
    code REFRESH-CODE !
-   REQ$ REMOVE-FILE
+   REQ$ FS:REMOVE-FILE
    code 200 <> if false exit then
    BODY-READ {: b bu :}
    b bu s" access_token" VAL-BUF 4096 DOC-STR1 dup 0 < if drop false exit then VAL-U !
@@ -642,7 +638,7 @@ variable SC-PCT
    b bu s" id_token" TOK-BUF BUF-CAP DOC-STR1 dup 0 >= if
       TOK-U ! TOKENS-KEY$ s" id_token" TOK-BUF TOK-U @ LITERAL$ CFG-REPLACE2
    else drop then
-   TIME:EPOCH-SECONDS RESET-BUF LIM-RESET-CAP DATE:FORMAT-EPOCH-UTC LITERAL$ s" last_refresh" 2swap CFG-REPLACE
+   epoch-seconds RESET-BUF LIM-RESET-CAP DATE:FORMAT-EPOCH-UTC LITERAL$ s" last_refresh" 2swap CFG-REPLACE
    true ;
 
 : CODEX-REFRESH-LOCKED ( -- )
@@ -710,7 +706,7 @@ EXPORT HUNDREDTHS
 \ load a slot's usage file into the limit table; false when there is none
 : LOAD-USAGE-RAW ( n ptr u8 n -- bool ) {: p a u :}
    LIM-RESET
-   p a u USAGE-FILE$ FILE? 0= if false exit then
+   p a u USAGE-FILE$ FS:FILE? 0= if false exit then
    p a u USAGE-FILE$ OBJ-BUF OBJ-U READ-INTO {: d du :}
    d du PARSE-USAGE-FILE
    d du s" note" NOTE-BUF 256 DOC-STR1 dup 0 < if drop 0 then NOTE-U !
@@ -781,7 +777,7 @@ EXPORT HUNDREDTHS
 \ the outcome of a probe, written under the lock: the usage file, or the
 \ removal of a slot whose login the provider has revoked
 : USAGE-WRITE-LOCKED ( -- )
-   PROBE-REMOVED? if PROBE-P @ PROBE-NAME$ SLOT-DIR$ REMOVE-TREE exit then
+   PROBE-REMOVED? if PROBE-P @ PROBE-NAME$ SLOT-DIR$ FS:REMOVE-TREE exit then
    PROBE-P @ PROBE-NAME$ WRITE-USAGE ;
 
 : USAGE-WRITE ( -- )

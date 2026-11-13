@@ -10,7 +10,7 @@ public
 EXPORT AUTH-NAME$
 
 : CODEX-LIVE-IDENTITY ( -- bool )
-   CODEX-AUTH$ FILE? 0= if ID-LIVE NO-IDENTITY false exit then
+   CODEX-AUTH$ FS:FILE? 0= if ID-LIVE NO-IDENTITY false exit then
    CODEX-AUTH$ READ-FILE$ ID-LIVE CODEX-IDENTITY ;
 
 \ the live document is read here, so a slot read between naming the account
@@ -22,11 +22,11 @@ EXPORT AUTH-NAME$
 
 : CODEX-SLOT-PLAN ( ptr u8 n -- ) {: a u :}
    ID-SLOT NO-IDENTITY
-   P-CODEX a u AUTH-NAME$ SLOT-FILE$ FILE? 0= if exit then
+   P-CODEX a u AUTH-NAME$ SLOT-FILE$ FS:FILE? 0= if exit then
    P-CODEX a u AUTH-NAME$ SLOT-FILE$ READ-SLOT$ ID-SLOT CODEX-IDENTITY drop ;
 
 : CODEX-INSTALL ( ptr u8 n -- ) {: a u :}
-   P-CODEX a u AUTH-NAME$ SLOT-FILE$ FILE? 0= if E-SW-NO-ACCOUNT throw then
+   P-CODEX a u AUTH-NAME$ SLOT-FILE$ FS:FILE? 0= if E-SW-NO-ACCOUNT throw then
    P-CODEX a u AUTH-NAME$ SLOT-FILE$ READ-SLOT$ ID-SLOT CODEX-IDENTITY 0= if E-SW-JSON throw then
    a u ID-SLOT EMAIL$ NAME-FOR-EMAIL? 0= if E-SW-MISMATCH throw then
    CODEX-AUTH$ DIRNAME ENSURE-PRIVATE

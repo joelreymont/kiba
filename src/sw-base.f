@@ -1,5 +1,5 @@
 \ sw-base.f - errors, providers, and byte helpers shared by every kiba module.
-require src/lib/errors.f
+require src/lib/error.f
 require src/lib/string.f
 require src/lib/prelude.f
 require src/lib/fs.f
@@ -8,29 +8,29 @@ package SW
 
 public
 
-\ kiba error block: -9900..-9999, outside every src/lib/errors.f range
--9900 constant E-SW-USAGE       \ bad command line
--9901 constant E-SW-PROVIDER    \ unknown provider name
--9902 constant E-SW-NO-LIVE     \ the provider has no live login to save
--9903 constant E-SW-NO-ACCOUNT  \ the named account is not saved
--9904 constant E-SW-NAME        \ an account name carries unsafe bytes
--9905 constant E-SW-LOCKED      \ another kiba holds the store lock
--9906 constant E-SW-JSON        \ a provider file lacks an expected field
--9907 constant E-SW-LOGIN       \ the provider login command failed
--9908 constant E-SW-CAPACITY    \ a fixed buffer is too small
--9909 constant E-SW-NO-CLI      \ a required command is not on PATH
--9910 constant E-SW-BASE64      \ a JWT segment is not base64url
--9911 constant E-SW-ENV         \ HOME is not set
--9912 constant E-SW-INTERRUPTED \ an earlier switch stopped between its two file writes
--9913 constant E-SW-MISMATCH    \ a saved file names a different account than its slot
--9915 constant E-SW-MIXED       \ the live Claude files name different accounts
+\ kiba error block: -100000..-100099, in Habu's external range (src/lib/error.f)
+-100000 constant E-SW-FIRST
+-100099 constant E-SW-LAST
+-100000 constant E-SW-USAGE       \ bad command line
+-100001 constant E-SW-PROVIDER    \ unknown provider name
+-100002 constant E-SW-NO-LIVE     \ the provider has no live login to save
+-100003 constant E-SW-NO-ACCOUNT  \ the named account is not saved
+-100004 constant E-SW-NAME        \ an account name carries unsafe bytes
+-100005 constant E-SW-LOCKED      \ another kiba holds the store lock
+-100006 constant E-SW-JSON        \ a provider file lacks an expected field
+-100007 constant E-SW-LOGIN       \ the provider login command failed
+-100008 constant E-SW-CAPACITY    \ a fixed buffer is too small
+-100009 constant E-SW-NO-CLI      \ a required command is not on PATH
+-100010 constant E-SW-BASE64      \ a JWT segment is not base64url
+-100011 constant E-SW-ENV         \ HOME is not set
+-100012 constant E-SW-INTERRUPTED \ an earlier switch stopped between its two file writes
+-100013 constant E-SW-MISMATCH    \ a saved file names a different account than its slot
+-100015 constant E-SW-MIXED       \ the live Claude files name different accounts
 
 0 constant P-CLAUDE
 1 constant P-CODEX
 2 constant P-COUNT
 
-$2F constant SLASH
-$2E constant DOT
 $3D constant EQUALS
 128 constant NAME-CAP           \ longest account name plus its length byte
 
@@ -67,19 +67,19 @@ $3D constant EQUALS
    u up ! ;
 
 : PATH! ( ptr u8 n ptr u8 ptr n -- )
-   FS-PATH-CAP SPAN! ;
+   PATH-CAP SPAN! ;
 
 : NAME-BYTE? ( n -- bool ) {: c :}
    c $20 < if false exit then
    c $7F = if false exit then
-   c SLASH <> ;
+   c FS:SLASH <> ;
 
 \ account names become directory names: no control bytes, no slash, no
 \ leading dot; any other byte an email may carry is fine in a path
 : NAME-OK? ( ptr u8 n -- bool ) {: a u :}
    u 0 <= if false exit then
    u NAME-CAP 1- > if false exit then
-   a c@ DOT = if false exit then
+   a c@ FS:DOT = if false exit then
    0 begin dup u < while
       dup a + c@ NAME-BYTE? 0= if drop false exit then
       1+
@@ -113,7 +113,7 @@ $3D constant EQUALS
 
 : LAST-SLASH ( ptr u8 n -- n ) {: a u :}
    u begin dup 0 > while
-      1- dup a + c@ SLASH = if exit then
+      1- dup a + c@ FS:SLASH = if exit then
    repeat
    drop -1 ;
 
@@ -132,7 +132,7 @@ $3D constant EQUALS
    c $61 >= c $7A <= and if c $61 - 26 + exit then
    c $30 >= c $39 <= and if c $30 - 52 + exit then
    c $2D = c $2B = or if 62 exit then
-   c $5F = c SLASH = or if 63 exit then
+   c $5F = c $2F = or if 63 exit then
    c EQUALS = if B64-END exit then
    B64-BAD ;
 

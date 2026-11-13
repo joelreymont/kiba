@@ -109,7 +109,7 @@ create UT-PID 32 allot
 
 \ a throw inside a parse must not wedge the reader storage for the next parse
 : UT-READER-RECOVERS ( -- )
-   [: s\" {\"a\":" s" a" UT-BUF 256 DOC-STR1 drop ;] E-JR-EOF TTHROWSQ
+   [: s\" {\"a\":" s" a" UT-BUF 256 DOC-STR1 drop ;] E-JSON-READ-EOF TTHROWSQ
    CFG-A$ s" oauthAccount" s" emailAddress" UT-BUF 256 DOC-STR2 8 T= ;
 
 : UT-DOC-CLOSE ( -- )
@@ -143,10 +143,10 @@ create UT-PID 32 allot
 : UT-LOCK ( -- )
    LOCK-STORE
    UT-NESTED
-   LOCK$ DIR? TTRUE
+   LOCK$ FS:DIR? TTRUE
    UNLOCK-STORE
    [: UT-LOCKED-BOOM ;] E-SW-JSON TTHROWSQ
-   LOCK$ DIR? TFALSE
+   LOCK$ FS:DIR? TFALSE
    E-SW-LOCKED REASON$ s" kiba: another kiba holds the store lock; remove " STARTS-WITH? TTRUE
    E-SW-LOCKED REASON$ s"  if it is stale" ENDS-WITH? TTRUE
    E-SW-LOCKED REASON$ LOCK$ CONTAINS? TTRUE ;
@@ -184,11 +184,11 @@ create UT-PID 32 allot
    P-CLAUDE s" a@x.test" CMD-USE
    CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
    CLAUDE-CONFIG$ READ-FILE$ CFG-BA$ T$=
-   CLAUDE-CREDS$ STAT-MODE $1FF and $180 T=
-   STORE$ STAT-MODE $1FF and $1C0 T=
-   P-CLAUDE PROVIDER-DIR$ STAT-MODE $1FF and $1C0 T=
-   P-CLAUDE s" a@x.test" SLOT-DIR$ STAT-MODE $1FF and $1C0 T=
-   P-CLAUDE s" a@x.test" s" oauth-account.json" SLOT-FILE$ STAT-MODE $1FF and $180 T=
+   CLAUDE-CREDS$ FS:STAT-MODE $1FF and $180 T=
+   STORE$ FS:STAT-MODE $1FF and $1C0 T=
+   P-CLAUDE PROVIDER-DIR$ FS:STAT-MODE $1FF and $1C0 T=
+   P-CLAUDE s" a@x.test" SLOT-DIR$ FS:STAT-MODE $1FF and $1C0 T=
+   P-CLAUDE s" a@x.test" s" oauth-account.json" SLOT-FILE$ FS:STAT-MODE $1FF and $180 T=
    P-CLAUDE LIVE-IDENTITY TTRUE
    ID-LIVE EMAIL$ s" a@x.test" T$=
    ID-LIVE PLAN$ s" max" T$=
@@ -202,7 +202,7 @@ create UT-PID 32 allot
    P-CLAUDE s" b@x.test" CMD-FORGET
    P-CLAUDE LIST-ACCOUNTS ACCT# 1 T=
    [: P-CLAUDE s" b@x.test" CMD-FORGET ;] E-SW-NO-ACCOUNT TTHROWSQ
-   LOCK$ DIR? TFALSE ;
+   LOCK$ FS:DIR? TFALSE ;
 
 \ a second login under the same email but another organization gets its own
 \ slot, "a@x.test #2", and the active mark follows the organization
@@ -259,10 +259,10 @@ create UT-PID 32 allot
    CLAUDE-CONFIG$ CFG-EMPTY$ WRITE-PRIVATE
    P-CLAUDE s" a@x.test" CMD-USE
    CLAUDE-CONFIG$ READ-FILE$ s\" {\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-a\",\"organizationName\":\"Org A\"}}" T$=
-   CLAUDE-CONFIG$ REMOVE-FILE
+   CLAUDE-CONFIG$ FS:REMOVE-FILE
    P-CLAUDE s" a@x.test" CMD-USE
    CLAUDE-CONFIG$ READ-FILE$ s\" {\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-a\",\"organizationName\":\"Org A\"}}" T$=
-   CLAUDE-CONFIG$ STAT-MODE $1FF and $180 T=
+   CLAUDE-CONFIG$ FS:STAT-MODE $1FF and $180 T=
    CLAUDE-CONFIG$ s\" {\"a\":1,\"oauthAccount\":null,\"z\":2}" WRITE-PRIVATE
    P-CLAUDE s" a@x.test" CMD-USE
    CLAUDE-CONFIG$ READ-FILE$ s\" {\"a\":1,\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-a\",\"organizationName\":\"Org A\"},\"z\":2}" T$=
@@ -273,9 +273,9 @@ create UT-PID 32 allot
 
 \ a config write that fails before its rename leaves no marker behind
 : UT-FAILED-FIRST-WRITE ( -- )
-   HOME$ $140 CHMOD-MODE
+   HOME$ $140 FS:CHMOD-MODE
    [: P-CLAUDE s" a@x.test" CMD-USE ;] E-FS-OPEN TTHROWSQ
-   HOME$ $1C0 CHMOD-MODE
+   HOME$ $1C0 FS:CHMOD-MODE
    P-CLAUDE INSTALLING? TFALSE
    P-CLAUDE LIVE-IDENTITY TTRUE ID-LIVE EMAIL$ s" a@x.test" T$= ;
 
@@ -287,7 +287,7 @@ create UT-PID 32 allot
    [: -1 CMD-SAVE ;] E-SW-INTERRUPTED TTHROWSQ
    P-CLAUDE s" a@x.test" CMD-USE
    P-CLAUDE INSTALLING? TFALSE
-   P-CLAUDE s" b@x.test" s" credentials.json" SLOT-FILE$ FILE? TFALSE
+   P-CLAUDE s" b@x.test" s" credentials.json" SLOT-FILE$ FS:FILE? TFALSE
    P-CLAUDE s" a@x.test" s" credentials.json" SLOT-FILE$ READ-FILE$ CREDS-A$ T$=
    CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$= ;
 
@@ -306,7 +306,7 @@ create UT-PID 32 allot
    P-CLAUDE LIST-ACCOUNTS ACCT# 2 T=
    P-CLAUDE 1 ACCT-NAME SLOT-PLAN ID-SLOT PLAN$ nip 0 T=
    STATUS-JSON$ s\" \"email\":\"bad@x.test\",\"plan\":\"\",\"active\":false" CONTAINS? TTRUE
-   [: P-CLAUDE s" bad@x.test" CMD-USE ;] E-JR-MALFORMED TTHROWSQ
+   [: P-CLAUDE s" bad@x.test" CMD-USE ;] E-JSON-READ-MALFORMED TTHROWSQ
    CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
    P-CLAUDE s" bad@x.test" CMD-FORGET ;
 
@@ -333,22 +333,22 @@ create UT-PID 32 allot
 : UT-SYMLINK ( -- )
    CODEX-AUTH$ DIRNAME {: d du :}
    SB-RESET d du SB-APPEND s" /real-auth.json" SB-APPEND SB$ UT-BUF 256 SPAN-COPY {: r ru :}
-   CODEX-AUTH$ r ru RENAME-FILE
-   r ru CODEX-AUTH$ MAKE-SYMLINK
-   CODEX-AUTH$ SYMLINK? TTRUE
+   CODEX-AUTH$ r ru FS:RENAME-FILE
+   r ru CODEX-AUTH$ FS:MAKE-SYMLINK
+   CODEX-AUTH$ FS:SYMLINK? TTRUE
    P-CODEX s" d@x.test" CMD-USE
-   CODEX-AUTH$ SYMLINK? TTRUE
+   CODEX-AUTH$ FS:SYMLINK? TTRUE
    r ru READ-FILE$ AUTH-D$ T$=
    P-CODEX s" c@x.test" CMD-USE
-   CODEX-AUTH$ REMOVE-FILE
-   r ru CODEX-AUTH$ RENAME-FILE ;
+   CODEX-AUTH$ FS:REMOVE-FILE
+   r ru CODEX-AUTH$ FS:RENAME-FILE ;
 
 : UT-WRITE-SCRIPT ( ptr u8 n ptr u8 n -- ) {: n nu body bu :}
    HOME$ {: h hu :}
    SB-RESET h hu SB-APPEND s" /bin" SB-APPEND SB$ ENSURE-PRIVATE
    SB-RESET h hu SB-APPEND s" /bin/" SB-APPEND n nu SB-APPEND SB$ UT-BUF 256 SPAN-COPY {: f fu :}
-   f fu body bu WRITE-ALL
-   f fu CHMOD-X ;
+   f fu body bu FS:WRITE-ALL
+   f fu FS:CHMOD-X ;
 
 \ a fake curl: answers each provider URL from the Authorization header it is
 \ given, writes the body to the -o file, prints the status, and logs the call
@@ -445,14 +445,14 @@ create UT-PID 32 allot
    d du s\" \"refresh_token\":\"rt-d2\"" CONTAINS? TTRUE
    d du s\" \"account_id\":\"acct\"" CONTAINS? TTRUE
    d du ID-SLOT CODEX-IDENTITY TTRUE ID-SLOT EMAIL$ s" d@x.test" T$=
-   P-CODEX s" z@x.test" SLOT-DIR$ DIR? TFALSE
-   P-CODEX s" y@x.test" SLOT-DIR$ DIR? TTRUE
+   P-CODEX s" z@x.test" SLOT-DIR$ FS:DIR? TFALSE
+   P-CODEX s" y@x.test" SLOT-DIR$ FS:DIR? TTRUE
    P-CODEX s" y@x.test" LOAD-USAGE TTRUE STATE$ s" error" T$=
    P-CODEX s" y@x.test" s" auth.json" SLOT-FILE$ READ-FILE$ AUTH-Y$ T$=
    P-CODEX s" y@x.test" CMD-FORGET
    LOG$ READ-FILE$ s" argvheader Authorization" CONTAINS? TFALSE
    LOG$ READ-FILE$ s" hdrmode 600" CONTAINS? TTRUE
-   s" /headers.txt" PSUB-PUBLIC$ FILE? TFALSE
+   s" /headers.txt" PSUB-PUBLIC$ FS:FILE? TFALSE
    P-CLAUDE s" a@x.test" LOAD-USAGE TTRUE STATE$ s" ok" T$=
    STATUS-JSON$ s\" \"state\":\"ok\"" CONTAINS? TTRUE
    STATUS-JSON$ s\" \"usage\":{\"fetchedAt\":" CONTAINS? TTRUE
@@ -467,7 +467,7 @@ create UT-PID 32 allot
    l lu s" Authorization: Bearer at-z" CONTAINS? TTRUE
    l lu s" ua User-Agent: kiba" CONTAINS? TTRUE
    l lu s" ua User-Agent: codex-cli" CONTAINS? TTRUE
-   s" /body.json" PSUB-PUBLIC$ FILE? TFALSE
+   s" /body.json" PSUB-PUBLIC$ FS:FILE? TFALSE
    P-CODEX s" d@x.test" CMD-USE
    P-CODEX s" d@x.test" LOAD-USAGE TTRUE LIM#@ 2 T=
    P-CODEX s" c@x.test" CMD-USE
@@ -493,24 +493,24 @@ create UT-PID 32 allot
    UT-FAKE-CODEX
    HOME$ {: h hu :}
    SB-RESET h hu SB-APPEND s" /fail-login" SB-APPEND SB$ UT-BUF 256 SPAN-COPY {: f fu :}
-   f fu s" x" WRITE-ALL
+   f fu s" x" FS:WRITE-ALL
    P-CODEX s" c@x.test" CMD-USE
    [: P-CODEX s" " CMD-ADD ;] E-SW-LOGIN TTHROWSQ
    CODEX-AUTH$ READ-FILE$ AUTH-C$ T$=
-   P-CODEX LOGIN-HOME-PUBLIC$ DIR? TFALSE
-   f fu REMOVE-FILE
+   P-CODEX LOGIN-HOME-PUBLIC$ FS:DIR? TFALSE
+   f fu FS:REMOVE-FILE
    HOME$ {: h2 h2u :}
    SB-RESET h2 h2u SB-APPEND s" /bin/codex" SB-APPEND SB$ UT-BUF 256 SPAN-COPY {: cx cxu :}
    SB-RESET h2 h2u SB-APPEND s" /bin/codex.off" SB-APPEND SB$ UT-BUF 256 SPAN-COPY {: cxo cxou :}
-   cx cxu cxo cxou RENAME-FILE
+   cx cxu cxo cxou FS:RENAME-FILE
    [: P-CODEX s" " CMD-ADD ;] E-SW-NO-CLI TTHROWSQ
-   CODEX-AUTH$ FILE? TTRUE
-   cxo cxou cx cxu RENAME-FILE
+   CODEX-AUTH$ FS:FILE? TTRUE
+   cxo cxou cx cxu FS:RENAME-FILE
    P-CODEX s" " CMD-ADD
    CODEX-AUTH$ READ-FILE$ AUTH-C$ T$=
    P-CODEX s" d@x.test" s" auth.json" SLOT-FILE$ READ-FILE$ AUTH-D$ T$=
    P-CODEX s" c@x.test" s" auth.json" SLOT-FILE$ READ-FILE$ AUTH-C$ T$=
-   P-CODEX LOGIN-HOME-PUBLIC$ DIR? TFALSE
+   P-CODEX LOGIN-HOME-PUBLIC$ FS:DIR? TFALSE
    LOG$ READ-FILE$ {: l lu :}
    l lu s\" present\n" ENDS-WITH? TTRUE
    l lu s" /probe/login-codex/.codex" CONTAINS? TTRUE
@@ -528,7 +528,7 @@ create UT-PID 32 allot
    P-CLAUDE s" b@x.test" s" oauth-account.json" SLOT-FILE$ READ-FILE$ s\" \"organizationUuid\":\"org-b\"" CONTAINS? TTRUE
    CLAUDE-CONFIG$ READ-FILE$ CFG-BA$ T$=
    CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
-   P-CLAUDE LOGIN-HOME-PUBLIC$ DIR? TFALSE
+   P-CLAUDE LOGIN-HOME-PUBLIC$ FS:DIR? TFALSE
    P-CLAUDE LIVE-IDENTITY TTRUE ID-LIVE EMAIL$ s" a@x.test" T$=
    P-CLAUDE s" zz@x.test" CMD-ADD
    SAVED-NAME$ s" b@x.test" T$=
@@ -553,7 +553,7 @@ create UT-PID 32 allot
 \ one provider's unreadable live file does not stop the other's probe
 : UT-USAGE-ISOLATION ( -- )
    CLAUDE-CONFIG$ s" {not json" WRITE-PRIVATE
-   P-CODEX s" c@x.test" USAGE-FILE-PUBLIC$ REMOVE-FILE
+   P-CODEX s" c@x.test" USAGE-FILE-PUBLIC$ FS:REMOVE-FILE
    -1 CMD-USAGE
    P-CODEX s" c@x.test" LOAD-USAGE TTRUE STATE$ s" ok" T$=
    CLAUDE-CONFIG$ CFG-BA$ WRITE-PRIVATE ;
@@ -587,14 +587,14 @@ create UT-PID 32 allot
    SB-RESET l lu SB-APPEND s" /pid" SB-APPEND SB$ UT-BUF 256 SPAN-COPY {: f fu :}
    f fu s" 999999999" WRITE-PRIVATE
    P-CODEX CMD-SAVE
-   LOCK$ DIR? TFALSE
+   LOCK$ FS:DIR? TFALSE
    LOCK$ ENSURE-PRIVATE
    SB-RESET getpid FMT:SB-U SB$ UT-PID 32 SPAN-COPY {: pt ptu :}
    f fu pt ptu WRITE-PRIVATE
    f fu READ-FILE$ pt ptu T$=
    [: P-CODEX CMD-SAVE ;] E-SW-LOCKED TTHROWSQ
-   f fu REMOVE-FILE
-   LOCK$ REMOVE-DIR ;
+   f fu FS:REMOVE-FILE
+   LOCK$ FS:REMOVE-DIR ;
 
 \ a live config naming another account over credentials still identical to
 \ the installed slot's is a mix: save-back skips it, save refuses it
@@ -629,8 +629,8 @@ create UT-PID 32 allot
    P-CODEX LIST-ACCOUNTS ACCT# 2 T=
    0 ACCT-NAME s" c@x.test" T$=
    1 ACCT-NAME s" d@x.test" T$=
-   SB-RESET d du SB-APPEND s" /auth.json" SB-APPEND SB$ REMOVE-FILE
-   P-CODEX s" c@x.test" s" sub" SLOT-FILE$ REMOVE-TREE ;
+   SB-RESET d du SB-APPEND s" /auth.json" SB-APPEND SB$ FS:REMOVE-FILE
+   P-CODEX s" c@x.test" s" sub" SLOT-FILE$ FS:REMOVE-TREE ;
 
 : UT-MAIN ( -- )
    T-RESET

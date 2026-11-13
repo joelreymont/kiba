@@ -2,7 +2,7 @@
 require ../src/sw-store.f
 require ../src/sw-run.f
 require ../src/sw-usage.f
-require src/lib/json-write.f
+require src/lib/json.f
 require src/lib/fmt.f
 
 package SW
@@ -62,14 +62,14 @@ public
    rc E-SW-INTERRUPTED = if s" kiba: an earlier switch was interrupted; run `kiba use` to finish it" exit then
    rc E-SW-MISMATCH = if s" kiba: the saved file belongs to a different account than its folder name" exit then
    rc E-SW-MIXED = if s" kiba: the live Claude files name different accounts; switch to an account to repair them" exit then
-   rc E-JR-STATE = if s" kiba: a login field is longer than kiba can hold" exit then
+   rc E-JSON-READ-STATE = if s" kiba: a login field is longer than kiba can hold" exit then
    rc E-STR-CAPACITY = if s" kiba: a path or name is too long" exit then
    rc E-FS-OPEN = if s" kiba: cannot open a login file" exit then
    rc E-FS-IO = if s" kiba: a file read, write, or rename failed" exit then
    rc E-FS-CAPACITY = rc E-SPAN-CAPACITY = or rc E-SPAN-RANGE = or if s" kiba: a login file or path is too large" exit then
    rc E-FS-PATH-UNSAFE = if s" kiba: refusing to write through a symlink chain" exit then
    rc E-PROC-SPAWN = if s" kiba: could not start the provider command" exit then
-   rc E-JR-LAST >= rc E-JR-FIRST <= and if s" kiba: a login file is not valid JSON" exit then
+   rc E-JSON-READ-LAST >= rc E-JSON-READ-FIRST <= and if s" kiba: a login file is not valid JSON" exit then
    rc E-FS-LAST >= rc E-FS-FIRST <= and if s" kiba: a file operation failed" exit then
    rc E-PROC-LAST >= rc E-PROC-FIRST <= and if s" kiba: could not run a command" exit then
    SB-RESET s" kiba: error code " SB-APPEND rc FMT:SB-INT SB$ ;
@@ -83,7 +83,7 @@ private
 
 : .AGE ( -- )
    USAGE-AT@ 0 < if exit then
-   TIME:EPOCH-SECONDS USAGE-AT@ - 60 / {: m :}
+   epoch-seconds USAGE-AT@ - 60 / {: m :}
    s"  (" type m FMT:.U s" m ago)" type ;
 
 : .USAGE ( n n -- ) {: p i :}
@@ -112,56 +112,56 @@ private
    0 begin dup P-COUNT < while dup .PROVIDER 1+ repeat drop ;
 
 \ ---- status: json -----------------------------------------------------------
-: JSON-LIVE ( ptr JSON-WRITE:writer -- ptr JSON-WRITE:writer )
-   s" live" JSON-WRITE:KEY
-   SCAN-LIVE @ 0= if JSON-WRITE:NULL exit then
-   JSON-WRITE:OBJECT-START
-   s" email" ID-LIVE EMAIL$ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
-   s" plan" ID-LIVE PLAN$ JSON-WRITE:FIELD-S
-   JSON-WRITE:OBJECT-END ;
+: JSON-LIVE ( ptr JSON:writer -- ptr JSON:writer )
+   s" live" JSON:WRITE-KEY
+   SCAN-LIVE @ 0= if JSON:WRITE-NULL exit then
+   JSON:WRITE-OBJECT-START
+   s" email" ID-LIVE EMAIL$ JSON:WRITE-FIELD-S JSON:WRITE-COMMA
+   s" plan" ID-LIVE PLAN$ JSON:WRITE-FIELD-S
+   JSON:WRITE-OBJECT-END ;
 
-: JSON-USAGE ( ptr JSON-WRITE:writer n n -- ptr JSON-WRITE:writer ) {: p i :}
-   s" usage" JSON-WRITE:KEY
-   p i ACCT-NAME LOAD-USAGE 0= if JSON-WRITE:NULL exit then
-   JSON-WRITE:OBJECT-START
-   s" fetchedAt" USAGE-AT@ 0 max JSON-WRITE:FIELD-U JSON-WRITE:COMMA
-   s" state" STATE$ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
-   s" note" NOTE$ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
-   s" limits" USAGE-LIMITS-RAW$ JSON-WRITE:FIELD-RAW
-   JSON-WRITE:OBJECT-END ;
+: JSON-USAGE ( ptr JSON:writer n n -- ptr JSON:writer ) {: p i :}
+   s" usage" JSON:WRITE-KEY
+   p i ACCT-NAME LOAD-USAGE 0= if JSON:WRITE-NULL exit then
+   JSON:WRITE-OBJECT-START
+   s" fetchedAt" USAGE-AT@ 0 max JSON:WRITE-FIELD-U JSON:WRITE-COMMA
+   s" state" STATE$ JSON:WRITE-FIELD-S JSON:WRITE-COMMA
+   s" note" NOTE$ JSON:WRITE-FIELD-S JSON:WRITE-COMMA
+   s" limits" USAGE-LIMITS-RAW$ JSON:WRITE-FIELD-RAW
+   JSON:WRITE-OBJECT-END ;
 
-: JSON-ACCOUNT ( ptr JSON-WRITE:writer n n -- ptr JSON-WRITE:writer ) {: p i :}
-   i 0 > if JSON-WRITE:COMMA then
-   JSON-WRITE:OBJECT-START
-   s" email" i ACCT-NAME JSON-WRITE:FIELD-S JSON-WRITE:COMMA
+: JSON-ACCOUNT ( ptr JSON:writer n n -- ptr JSON:writer ) {: p i :}
+   i 0 > if JSON:WRITE-COMMA then
+   JSON:WRITE-OBJECT-START
+   s" email" i ACCT-NAME JSON:WRITE-FIELD-S JSON:WRITE-COMMA
    p i ACCT-NAME SLOT-PLAN
-   s" plan" ID-SLOT PLAN$ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
-   s" active" i ACTIVE? JSON-WRITE:FIELD-BOOL JSON-WRITE:COMMA
+   s" plan" ID-SLOT PLAN$ JSON:WRITE-FIELD-S JSON:WRITE-COMMA
+   s" active" i ACTIVE? JSON:WRITE-FIELD-BOOL JSON:WRITE-COMMA
    p i JSON-USAGE
-   JSON-WRITE:OBJECT-END ;
+   JSON:WRITE-OBJECT-END ;
 
-: JSON-PROVIDER ( ptr JSON-WRITE:writer n -- ptr JSON-WRITE:writer ) {: p :}
+: JSON-PROVIDER ( ptr JSON:writer n -- ptr JSON:writer ) {: p :}
    p SCAN-PROVIDER
-   p 0 > if JSON-WRITE:COMMA then
-   JSON-WRITE:OBJECT-START
-   s" id" p PROVIDER$ JSON-WRITE:FIELD-S JSON-WRITE:COMMA
-   JSON-LIVE JSON-WRITE:COMMA
-   s" accounts" JSON-WRITE:KEY JSON-WRITE:ARRAY-START
+   p 0 > if JSON:WRITE-COMMA then
+   JSON:WRITE-OBJECT-START
+   s" id" p PROVIDER$ JSON:WRITE-FIELD-S JSON:WRITE-COMMA
+   JSON-LIVE JSON:WRITE-COMMA
+   s" accounts" JSON:WRITE-KEY JSON:WRITE-ARRAY-START
    ACCT# 0 ?do p i JSON-ACCOUNT loop
-   JSON-WRITE:ARRAY-END
-   SCAN-RC @ 0<> if JSON-WRITE:COMMA s" error" SCAN-RC @ REASON$ JSON-WRITE:FIELD-S then
-   JSON-WRITE:OBJECT-END ;
+   JSON:WRITE-ARRAY-END
+   SCAN-RC @ 0<> if JSON:WRITE-COMMA s" error" SCAN-RC @ REASON$ JSON:WRITE-FIELD-S then
+   JSON:WRITE-OBJECT-END ;
 
 public
 
 : STATUS-JSON$ ( -- ptr u8 n )
    JSON-OPEN
-   JSON-WRITE:OBJECT-START
-   s" providers" JSON-WRITE:KEY JSON-WRITE:ARRAY-START
+   JSON:WRITE-OBJECT-START
+   s" providers" JSON:WRITE-KEY JSON:WRITE-ARRAY-START
    P-COUNT 0 ?do i JSON-PROVIDER loop
-   JSON-WRITE:ARRAY-END
-   JSON-WRITE:OBJECT-END
-   JSON-WRITE:$ ;
+   JSON:WRITE-ARRAY-END
+   JSON:WRITE-OBJECT-END
+   JSON:WRITTEN$ ;
 
 private
 
@@ -248,8 +248,8 @@ private
    USAGE-PROVIDER ;
 
 : FORGET-LOCKED ( -- )
-   CMD-P @ NAME$ SLOT-DIR$ DIR? 0= if E-SW-NO-ACCOUNT throw then
-   CMD-P @ NAME$ SLOT-DIR$ REMOVE-TREE ;
+   CMD-P @ NAME$ SLOT-DIR$ FS:DIR? 0= if E-SW-NO-ACCOUNT throw then
+   CMD-P @ NAME$ SLOT-DIR$ FS:REMOVE-TREE ;
 
 public
 
@@ -299,7 +299,7 @@ variable LOGIN-RC
    0 LINE-BUF 256 read drop ;
 
 : ADD-BEGIN ( n -- ) {: p :}
-   p LOGIN-HOME$ DIR? if p LOGIN-HOME$ REMOVE-TREE then
+   p LOGIN-HOME$ FS:DIR? if p LOGIN-HOME$ FS:REMOVE-TREE then
    p LOGIN-HOME$ ENSURE-PRIVATE
    p LOGIN-HOME$ LOGIN-ROOT!
    p LOGIN-DIR$ ENSURE-PRIVATE ;
@@ -308,7 +308,7 @@ variable LOGIN-RC
 \ outlives the command
 : ADD-END ( n -- ) {: p :}
    LOGIN-ROOT-CLEAR
-   p LOGIN-HOME$ DIR? if p LOGIN-HOME$ REMOVE-TREE then ;
+   p LOGIN-HOME$ FS:DIR? if p LOGIN-HOME$ FS:REMOVE-TREE then ;
 
 : LOGIN-KEEP ( n ptr u8 n -- n ptr u8 n ) {: p e eu :}
    p e eu NAME-EMAIL LOGIN LOGIN-RC !

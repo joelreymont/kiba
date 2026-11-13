@@ -69,10 +69,10 @@ private
    repeat drop ;
 
 : NOTE-FILE ( ptr u8 n -- ) {: a u :}
-   a u BASENAME LIST-P @ MARKER$ STR= 0= if exit then
+   a u FS:BASENAME LIST-P @ MARKER$ STR= 0= if exit then
    a u DIRNAME DIRNAME LIST-P @ PROVIDER-DIR$ STR= 0= if exit then
-   a u DIRNAME BASENAME NAME-OK? 0= if exit then
-   a u DIRNAME BASENAME ACCT+ ;
+   a u DIRNAME FS:BASENAME NAME-OK? 0= if exit then
+   a u DIRNAME FS:BASENAME ACCT+ ;
 
 \ the file that names a slot's account
 : IDENTITY-FILE$ ( n -- ptr u8 n )
@@ -83,7 +83,7 @@ private
    endcase ;
 
 : SLOT-IDENTITY ( n ptr u8 n -- bool ) {: p a u :}
-   p a u p IDENTITY-FILE$ SLOT-FILE$ FILE? 0= if false exit then
+   p a u p IDENTITY-FILE$ SLOT-FILE$ FS:FILE? 0= if false exit then
    p a u p IDENTITY-FILE$ SLOT-FILE$ READ-SLOT$
    p P-CLAUDE = if ID-SLOT CLAUDE-OAUTH-IDENTITY exit then
    ID-SLOT CODEX-IDENTITY ;
@@ -129,7 +129,7 @@ variable NAME-FREE                  \ first candidate that is free or damaged; 0
    0 NAME-FREE !
    1 begin dup NAME-TRIES <= while
       dup NAME-CANDIDATE!
-      p NAME-OUT NAME-OUT-U @ SLOT-DIR$ DIR? 0= if
+      p NAME-OUT NAME-OUT-U @ SLOT-DIR$ FS:DIR? 0= if
          NAME-FREE @ 0= if dup NAME-FREE ! then
       else
          p SLOT-HOLDS-LIVE? if drop NAME-OUT NAME-OUT-U @ exit then
@@ -174,7 +174,7 @@ public
 : CLAUDE-MIXED? ( -- bool )
    P-CLAUDE INSTALLED$ {: a u :}
    u 0= if false exit then
-   P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ FILE? 0= if false exit then
+   P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ FS:FILE? 0= if false exit then
    CLAUDE-LIVE-IDENTITY 0= if false exit then
    a u CONFIG-NAMES-INSTALLED? if false exit then
    P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ READ-SLOT$
@@ -185,8 +185,8 @@ EXPORT LIVE-NAME
 : LIST-ACCOUNTS ( n -- ) {: p :}
    0 ACCT-N !
    p LIST-P !
-   p PROVIDER-DIR$ DIR? 0= if exit then
-   p PROVIDER-DIR$ [: NOTE-FILE ;] WALK-FILES
+   p PROVIDER-DIR$ FS:DIR? 0= if exit then
+   p PROVIDER-DIR$ [: NOTE-FILE ;] FS:WALK-FILES
    SORT-ACCOUNTS ;
 
 \ a slot with a damaged file still lists; only its plan is unknown.

@@ -5,15 +5,15 @@ require src/lib/fs-mutate.f
 
 package SW
 
-create STORE-BUF FS-PATH-CAP allot   variable STORE-U
-create PDIR-BUF FS-PATH-CAP allot    variable PDIR-U
-create SLOT-BUF FS-PATH-CAP allot    variable SLOT-U
-create SFILE-BUF FS-PATH-CAP allot   variable SFILE-U
-create LIVE-BUF FS-PATH-CAP allot    variable LIVE-U
-create CONFIG-BUF FS-PATH-CAP allot  variable CONFIG-U
-create LOCK-BUF FS-PATH-CAP allot    variable LOCK-U
-create LROOT-BUF FS-PATH-CAP allot   variable LROOT-U     \ a throwaway home; empty means the real one
-create LDIR-BUF FS-PATH-CAP allot    variable LDIR-U
+create STORE-BUF PATH-CAP allot   variable STORE-U
+create PDIR-BUF PATH-CAP allot    variable PDIR-U
+create SLOT-BUF PATH-CAP allot    variable SLOT-U
+create SFILE-BUF PATH-CAP allot   variable SFILE-U
+create LIVE-BUF PATH-CAP allot    variable LIVE-U
+create CONFIG-BUF PATH-CAP allot  variable CONFIG-U
+create LOCK-BUF PATH-CAP allot    variable LOCK-U
+create LROOT-BUF PATH-CAP allot   variable LROOT-U     \ a throwaway home; empty means the real one
+create LDIR-BUF PATH-CAP allot    variable LDIR-U
 
 public
 
@@ -36,20 +36,20 @@ public
 
 : PROVIDER-DIR$ ( n -- ptr u8 n ) {: p :}
    STORE$ {: s su :}
-   SB-RESET s su SB-APPEND SLASH SB-APPEND-C p PROVIDER$ SB-APPEND
+   SB-RESET s su SB-APPEND FS:SLASH SB-APPEND-C p PROVIDER$ SB-APPEND
    SB$ PDIR-BUF PDIR-U PATH!
    PDIR-BUF PDIR-U @ ;
 
 : SLOT-DIR$ ( n ptr u8 n -- ptr u8 n ) {: p a u :}
    a u CHECK-NAME
    p PROVIDER-DIR$ {: d du :}
-   SB-RESET d du SB-APPEND SLASH SB-APPEND-C a u SB-APPEND
+   SB-RESET d du SB-APPEND FS:SLASH SB-APPEND-C a u SB-APPEND
    SB$ SLOT-BUF SLOT-U PATH!
    SLOT-BUF SLOT-U @ ;
 
 : SLOT-FILE$ ( n ptr u8 n ptr u8 n -- ptr u8 n ) {: p a u f fu :}
    p a u SLOT-DIR$ {: d du :}
-   SB-RESET d du SB-APPEND SLASH SB-APPEND-C f fu SB-APPEND
+   SB-RESET d du SB-APPEND FS:SLASH SB-APPEND-C f fu SB-APPEND
    SB$ SFILE-BUF SFILE-U PATH!
    SFILE-BUF SFILE-U @ ;
 

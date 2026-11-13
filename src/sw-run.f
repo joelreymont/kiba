@@ -9,7 +9,7 @@ require src/lib/process-fork.f
 
 package SW
 
-create EXE-BUF FS-PATH-CAP allot
+create EXE-BUF PATH-CAP allot
 variable EXE-U
 
 : EXE$ ( -- ptr u8 n ) EXE-BUF EXE-U @ ;
@@ -90,10 +90,7 @@ variable ENV-STR-U
    PROC-FORK:CHECKED {: pid :}
    pid PID>N 0= if pathz argv EXEC-STAGED then
    PROC-ARGV-RESET
-   pid PROC-WAIT-RC MATCH result
-     ok OF ENDOF
-     err OF ENDOF
-   ;MATCH ;
+   pid PROCESS:WAIT PROCESS:STATUS>RC RC>N ;
 
 public
 

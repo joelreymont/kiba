@@ -43,7 +43,7 @@ package SW
 \ logout is overwritten rather than joined by a second key; a missing key is
 \ inserted and a missing file is created
 : BUILD-CONFIG ( -- )
-   CLAUDE-CONFIG$ FILE? 0= if NEW-CONFIG exit then
+   CLAUDE-CONFIG$ FS:FILE? 0= if NEW-CONFIG exit then
    CLAUDE-CONFIG$ CFG-BUF CFG-U READ-INTO 2drop
    CFG$ OAUTH-KEY$ DOC-VALUE-SPAN? if SPLICE-CONFIG exit then
    2drop CFG$ DOC-CLOSE INSERT-CONFIG ;
@@ -74,8 +74,8 @@ EXPORT CREDS-NAME$
 
 \ loads both live documents; false when Claude Code has no login
 : CLAUDE-LIVE-IDENTITY ( -- bool )
-   CLAUDE-CONFIG$ FILE? 0= if ID-LIVE NO-IDENTITY false exit then
-   CLAUDE-CREDS$ FILE? 0= if ID-LIVE NO-IDENTITY false exit then
+   CLAUDE-CONFIG$ FS:FILE? 0= if ID-LIVE NO-IDENTITY false exit then
+   CLAUDE-CREDS$ FS:FILE? 0= if ID-LIVE NO-IDENTITY false exit then
    CLAUDE-CONFIG$ CFG-BUF CFG-U READ-INTO
    CLAUDE-CREDS$ FILE-BUF FILE-U READ-INTO
    ID-LIVE CLAUDE-IDENTITY ;
@@ -92,13 +92,13 @@ EXPORT CREDS-NAME$
 
 : CLAUDE-SLOT-PLAN ( ptr u8 n -- ) {: a u :}
    ID-SLOT NO-IDENTITY
-   P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ FILE? 0= if exit then
+   P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ FS:FILE? 0= if exit then
    P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ READ-SLOT$ ID-SLOT CLAUDE-PLAN ;
 
 \ the marker brackets the two live writes; see sw-io.f
 : CLAUDE-INSTALL ( ptr u8 n -- ) {: a u :}
-   P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ FILE? 0= if E-SW-NO-ACCOUNT throw then
-   P-CLAUDE a u OAUTH-NAME$ SLOT-FILE$ FILE? 0= if E-SW-NO-ACCOUNT throw then
+   P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ FS:FILE? 0= if E-SW-NO-ACCOUNT throw then
+   P-CLAUDE a u OAUTH-NAME$ SLOT-FILE$ FS:FILE? 0= if E-SW-NO-ACCOUNT throw then
    P-CLAUDE a u OAUTH-NAME$ SLOT-FILE$ OBJ-BUF OBJ-U READ-INTO CHECK-OBJECT
    a u CHECK-SLOT-EMAIL
    BUILD-CONFIG

@@ -75,12 +75,12 @@ public
 
 \ ---- Codex ------------------------------------------------------------------
 : JWT-PAYLOAD ( ptr u8 n -- ptr u8 n ) {: t tu :}
-   t tu DOT INDEX-OF MATCH option
+   t tu $2E INDEX-OF MATCH option
      none OF E-SW-JSON throw ENDOF
      some OF IDX>N ENDOF
    ;MATCH {: d1 :}
    t d1 1+ + tu d1 1+ - {: r ru :}
-   r ru DOT INDEX-OF MATCH option
+   r ru $2E INDEX-OF MATCH option
      none OF E-SW-JSON throw ENDOF
      some OF IDX>N ENDOF
    ;MATCH {: d2 :}
