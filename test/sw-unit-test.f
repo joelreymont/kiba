@@ -612,6 +612,94 @@ create UT-PID 32 allot
    P-CLAUDE s" a@x.test" CMD-USE
    P-CLAUDE s" b@x.test" CMD-FORGET ;
 
+\ ---- the SQLite store -------------------------------------------------------
+create UT-NUL 3 allot                 \ a login blob holding a NUL byte
+create UT-CLAIM 32 allot
+variable UT-V
+
+\ kiba-mac's JSONEncoder (.sortedKeys) bytes for one usage record
+: USAGE-LIT$ ( -- ptr u8 n )
+   s\" {\"fetchedAt\":1700000000,\"limits\":[{\"label\":\"Session (5-hour)\",\"percent\":30,\"resetsAt\":\"2026-11-13T10:00:00Z\"},{\"label\":\"Weekly \\/ Opus\",\"percent\":-1,\"resetsAt\":\"\"}],\"note\":\"a\\/b \\\"q\\\"\\n\",\"resets\":{\"count\":2,\"grant\":\"g-1\",\"program\":\"cedar_ember\"},\"state\":\"throttled\"}" ;
+
+: UT-DB-OPEN ( -- )
+   $61 UT-NUL c! 0 UT-NUL 1+ c! $62 UT-NUL 2 + c!
+   DB-OPEN
+   0 UT-V !
+   s" PRAGMA user_version" s" test" [: ;] [: 0 DB-COL-INT UT-V ! ;] DB-QUERY
+   UT-V @ 5 T= ;
+
+: UT-DB-PUT ( -- )
+   CFG-A$ CREDS-A$ ID-SLOT CLAUDE-IDENTITY TTRUE
+   [: P-CLAUDE s" b@x.test" ID-SLOT UT-NUL 3 UT-NUL -1 false DB-PUT
+      P-CLAUDE s" a@x.test" ID-SLOT CREDS-A$ OAUTH-A$ false DB-PUT ;] DB-WRITE
+   P-CLAUDE DB-LIST DB-ROW# 2 T=
+   0 DB-ROW-NAME$ s" a@x.test" T$=
+   1 DB-ROW-NAME$ s" b@x.test" T$= ;
+
+: UT-DB-FETCH ( -- )
+   P-CLAUDE s" b@x.test" DB-FETCH TTRUE DB-ROW# 1 T=
+   0 DB-ROW-NAME$ s" b@x.test" T$=
+   0 DB-ROW-EMAIL$ s" a@x.test" T$=
+   0 DB-ROW-ORG$ s" org-a" T$=
+   0 DB-ROW-PLAN$ s" max" T$=
+   0 DB-ROW-LOGIN$ UT-NUL 3 T$=
+   0 DB-ROW-PROFILE$ nip -1 T=
+   0 DB-ROW-USAGE TFALSE
+   P-CLAUDE s" a@x.test" DB-FETCH TTRUE
+   0 DB-ROW-LOGIN$ CREDS-A$ T$=
+   0 DB-ROW-PROFILE$ OAUTH-A$ T$= ;
+
+\ the record survives the store byte for byte, plan coalesce included
+: UT-DB-USAGE ( -- )
+   USAGE-LIT$ DB-USAGE-DECODE
+   DB-USAGE-ENCODE USAGE-LIT$ T$=
+   DB-USAGE-AT 1700000000 T=
+   DB-USAGE-STATE DB-STATE$ s" throttled" T$=
+   DB-USAGE-NOTE$ s\" a/b \"q\"\n" T$=
+   DB-LIMIT# 2 T=
+   1 DB-LIMIT-LABEL$ s" Weekly / Opus" T$=
+   1 DB-LIMIT-PERCENT -1 T=
+   DB-RESETS? TTRUE DB-RESETS-COUNT 2 T=
+   [: P-CLAUDE s" a@x.test" s" pro" DB-SET-USAGE ;] DB-WRITE
+   s" {}" DB-USAGE-DECODE
+   DB-USAGE-NOTE$ s" usage record is unreadable; refresh usage" T$=
+   P-CLAUDE s" a@x.test" DB-FETCH TTRUE
+   0 DB-ROW-PLAN$ s" pro" T$=
+   0 DB-ROW-USAGE TTRUE
+   DB-USAGE-ENCODE USAGE-LIT$ T$= ;
+
+: KEEP-CLAIM ( ptr u8 n -- ) {: c cu :}
+   cu 32 T= c UT-CLAIM 32 BYTE-COPY ;
+
+: UT-DB-PENDING ( -- )
+   [: P-CLAUDE s" a@x.test" DB-NOTE-PENDING KEEP-CLAIM
+      P-CLAUDE UT-CLAIM 32 DB-OWNS? TTRUE ;] DB-WRITE
+   [: P-CLAUDE s" b@x.test" DB-NOTE-PENDING 2drop
+      P-CLAUDE UT-CLAIM 32 DB-OWNS? TFALSE
+      P-CLAUDE UT-CLAIM 32 DB-CLEAR-PENDING ;] DB-WRITE
+   P-CLAUDE DB-PENDING TTRUE s" b@x.test" T$= ;
+
+: UT-DB-ROLLBACK ( -- )
+   [: [: P-CLAUDE s" c@x.test" ID-SLOT CREDS-A$ UT-NUL -1 false DB-PUT
+         E-SW-LOGIN throw ;] DB-WRITE ;] E-SW-LOGIN TTHROWSQ
+   P-CLAUDE s" c@x.test" DB-FETCH TFALSE ;
+
+\ a newer schema is refused and leaves the store closed
+: UT-DB-VERSION ( -- )
+   s" PRAGMA user_version = 6" s" test" DB-EXEC
+   DB-CLOSE
+   [: DB-OPEN ;] E-SW-DB-VERSION TTHROWSQ
+   [: P-CLAUDE DB-LIST ;] E-SW-DB TTHROWSQ ;
+
+: UT-DB ( -- )
+   UT-DB-OPEN
+   UT-DB-PUT
+   UT-DB-FETCH
+   UT-DB-USAGE
+   UT-DB-PENDING
+   UT-DB-ROLLBACK
+   UT-DB-VERSION ;
+
 : UT-NAMES ( -- )
    s" a@x.test #2" s" a@x.test" NAME-SUFFIX# 2 T=
    s" a@x.test #10" s" a@x.test" NAME-SUFFIX# 10 T=
@@ -665,6 +753,7 @@ create UT-PID 32 allot
    UT-STALE-LOCK
    UT-MIXED-PAIR
    UT-NAMES
+   UT-DB
    T-REPORT ;
 
 UT-MAIN

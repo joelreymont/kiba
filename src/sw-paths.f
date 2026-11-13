@@ -6,6 +6,7 @@ require src/lib/fs-mutate.f
 package SW
 
 create STORE-BUF PATH-CAP allot   variable STORE-U
+create DBFILE-BUF PATH-CAP allot  variable DBFILE-U
 create PDIR-BUF PATH-CAP allot    variable PDIR-U
 create SLOT-BUF PATH-CAP allot    variable SLOT-U
 create SFILE-BUF PATH-CAP allot   variable SFILE-U
@@ -27,6 +28,13 @@ public
    s" /kiba" SB-APPEND
    SB$ STORE-BUF STORE-U PATH!
    STORE-BUF STORE-U @ ;
+
+\ the account store's SQLite database
+: DB-PATH$ ( -- ptr u8 n )
+   STORE$ {: s su :}
+   SB-RESET s su SB-APPEND s" /kiba.db" SB-APPEND
+   SB$ DBFILE-BUF DBFILE-U PATH!
+   DBFILE-BUF DBFILE-U @ ;
 
 : LOCK$ ( -- ptr u8 n )
    STORE$ {: s su :}

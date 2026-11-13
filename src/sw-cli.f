@@ -2,6 +2,7 @@
 require ../src/sw-store.f
 require ../src/sw-run.f
 require ../src/sw-usage.f
+require ../src/sw-db.f
 require src/lib/json.f
 require src/lib/fmt.f
 
@@ -62,6 +63,8 @@ public
    rc E-SW-INTERRUPTED = if s" kiba: an earlier switch was interrupted; run `kiba use` to finish it" exit then
    rc E-SW-MISMATCH = if s" kiba: the saved file belongs to a different account than its folder name" exit then
    rc E-SW-MIXED = if s" kiba: the live Claude files name different accounts; switch to an account to repair them" exit then
+   rc E-SW-DB = if SB-RESET s" kiba: the account database refused: " SB-APPEND DB-ERROR$ SB-APPEND SB$ exit then
+   rc E-SW-DB-VERSION = if s" kiba: the account store is from a newer kiba; upgrade kiba" exit then
    rc E-JSON-READ-STATE = if s" kiba: a login field is longer than kiba can hold" exit then
    rc E-STR-CAPACITY = if s" kiba: a path or name is too long" exit then
    rc E-FS-OPEN = if s" kiba: cannot open a login file" exit then

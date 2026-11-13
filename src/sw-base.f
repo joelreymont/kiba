@@ -26,6 +26,8 @@ public
 -100012 constant E-SW-INTERRUPTED \ an earlier switch stopped between its two file writes
 -100013 constant E-SW-MISMATCH    \ a saved file names a different account than its slot
 -100015 constant E-SW-MIXED       \ the live Claude files name different accounts
+-100016 constant E-SW-DB          \ a SQLite call failed
+-100017 constant E-SW-DB-VERSION  \ the store is from a newer schema
 
 0 constant P-CLAUDE
 1 constant P-CODEX
