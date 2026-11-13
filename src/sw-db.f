@@ -849,16 +849,6 @@ public
    s" DELETE FROM pending WHERE provider = ? AND owner = ?" s" clear pending"
    [: p PROVIDER$ DB-TEXT+ c cu DB-TEXT+ ;] TX-RUN ;
 
-\ records an add's login as begun with the live item it must leave as it
-\ found (length -1 for none); Linux files no item under a service
-: DB-NOTE-ADDING ( n ptr u8 n -- ) {: p a u :}
-   SQL-RESET s" INSERT INTO adding (provider, live, service) VALUES (?, ?, ?)" SQL+
-   s"  ON CONFLICT (provider) DO UPDATE SET" SQL+
-   s"  live = excluded.live, service = excluded.service" SQL+
-   SQL$ s" note adding" [:
-      p PROVIDER$ DB-TEXT+ a u DB-BLOB+ s" " DB-TEXT+
-   ;] TX-RUN ;
-
 : DB-CLEAR-ADDING ( n -- ) {: p :}
    s" DELETE FROM adding WHERE provider = ?" s" clear adding"
    [: p PROVIDER$ DB-TEXT+ ;] TX-RUN ;

@@ -47,10 +47,13 @@ create LIVE-ROW NAME-CAP allot   variable LIVE-ROW-U
    P-CLAUDE = if CLAUDE-LIVE-MIXED? exit then
    false ;
 
+\ the provider whose add record E-SW-UNRESTORED names
+variable UNRESTORED-P
+
 \ E-SW-UNRESTORED while the store holds an add's record of the live login:
 \ until it goes back, the live files may hold tokens no saved name owns
-: REQUIRE-RESTORED ( n -- )
-   DB-ADDING nip nip if E-SW-UNRESTORED throw then ;
+: REQUIRE-RESTORED ( n -- ) {: p :}
+   p DB-ADDING nip nip if p UNRESTORED-P ! E-SW-UNRESTORED throw then ;
 
 \ puts the live login under the name DB-LIVE-NAME gives its identity; one
 \ read serves both, so a login rewritten meanwhile cannot land under

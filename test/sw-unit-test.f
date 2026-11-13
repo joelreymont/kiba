@@ -232,6 +232,19 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
 : UT-PENDING? ( n -- bool ) {: p :}
    [: p UT-PENDING-KEEP ;] UT-STORE UT-N @ ;
 
+: UT-ADDING-KEEP ( n -- ) DB-ADDING UT-N ! 2drop ;
+
+: UT-ADDING? ( n -- bool ) {: p :}
+   [: p UT-ADDING-KEEP ;] UT-STORE UT-N @ ;
+
+\ plants an add's record of p's live login a u, as a store a Mac's add
+\ left holds one; kiba never writes it
+: UT-PLANT-ADDING ( n ptr u8 n -- ) {: p a u :}
+   SB-RESET s" INSERT INTO adding (provider, live, service) VALUES ('" SB-APPEND
+   p PROVIDER$ SB-APPEND s" ', CAST('" SB-APPEND
+   a u SB-APPEND s" ' AS BLOB), '')" SB-APPEND
+   SB$ s" test" DB-EXEC ;
+
 : UT-PENDING= ( n ptr u8 n -- ) {: p a u :}
    [: p DB-PENDING TTRUE a u T$= ;] UT-STORE ;
 
@@ -312,7 +325,7 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
 \ notes the marks, reads them and clears them again in one transaction
 : UT-MARKS ( -- )
    P-CODEX s" c@x.test" DB-NOTE-PENDING {: c cu :}
-   P-CODEX AUTH-C9$ DB-NOTE-ADDING
+   P-CODEX AUTH-C9$ UT-PLANT-ADDING
    UT-MARKS-READ
    P-CODEX DB-CLEAR-ADDING
    P-CODEX c cu DB-CLEAR-PENDING ;
@@ -573,7 +586,7 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
    P-CLAUDE s" a@x.test" CMD-USE
    CLAUDE-CONFIG$ READ-FILE$ CFG-BA$ T$= ;
 
-: UT-NOTE-ADDING ( -- ) [: P-CLAUDE CREDS-A$ DB-NOTE-ADDING ;] DB-WRITE ;
+: UT-NOTE-ADDING ( -- ) P-CLAUDE CREDS-A$ UT-PLANT-ADDING ;
 : UT-CLEAR-ADDING ( -- ) [: P-CLAUDE DB-CLEAR-ADDING ;] DB-WRITE ;
 
 \ an add's record of the live login stops save and use
@@ -583,7 +596,8 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
    [: P-CLAUDE s" b@x.test" CMD-USE ;] E-SW-UNRESTORED TTHROWSQ
    CLAUDE-CREDS$ READ-FILE$ CREDS-A9$ T$=
    [: UT-CLEAR-ADDING ;] UT-STORE
-   E-SW-UNRESTORED REASON$ s" kiba: the live login waits" STARTS-WITH? TTRUE ;
+   E-SW-UNRESTORED REASON$
+   s" kiba: the live claude login waits to be put back after an add; a new claude add does it" T$= ;
 
 \ credentials without a config are nobody's: neither saved nor replaced
 : UT-ORPHAN ( -- )
@@ -1011,10 +1025,11 @@ create UT-AT-BUF 1024 allot
    P-CODEX s" whole@x.test" CMD-FORGET
    P-CODEX s" long@x.test" CMD-FORGET ;
 
-\ the fake `claude` logs its argv and writes account B into CLAUDE_CONFIG_DIR
+\ the fake `claude` logs its argv and writes account B into CLAUDE_CONFIG_DIR,
+\ or exits 3 when HOME holds fail-login
 : UT-FAKE-CLAUDE ( -- )
    s" claude"
-   s\" #!/bin/sh\necho \"claude $* cfg=$CLAUDE_CONFIG_DIR\" >> \"$KIBA_TEST_LOG\"\nprintf '%s' '{\"oauthAccount\":{\"accountUuid\":\"u2\",\"emailAddress\":\"b@x.test\",\"organizationUuid\":\"org-b\"}}' > \"$CLAUDE_CONFIG_DIR/.claude.json\"\nprintf '%s' '{\"claudeAiOauth\":{\"accessToken\":\"sk-b\",\"refreshToken\":\"r-b\",\"expiresAt\":2,\"scopes\":[\"user:inference\"],\"subscriptionType\":\"pro\"}}' > \"$CLAUDE_CONFIG_DIR/.credentials.json\"\n"
+   s\" #!/bin/sh\necho \"claude $* cfg=$CLAUDE_CONFIG_DIR\" >> \"$KIBA_TEST_LOG\"\nif [ -e \"$HOME/fail-login\" ]; then exit 3; fi\nprintf '%s' '{\"oauthAccount\":{\"accountUuid\":\"u2\",\"emailAddress\":\"b@x.test\",\"organizationUuid\":\"org-b\"}}' > \"$CLAUDE_CONFIG_DIR/.claude.json\"\nprintf '%s' '{\"claudeAiOauth\":{\"accessToken\":\"sk-b\",\"refreshToken\":\"r-b\",\"expiresAt\":2,\"scopes\":[\"user:inference\"],\"subscriptionType\":\"pro\"}}' > \"$CLAUDE_CONFIG_DIR/.credentials.json\"\n"
    UT-WRITE-SCRIPT ;
 
 \ `add` logs in inside a throwaway home: the live login stays where it is,
@@ -1102,6 +1117,23 @@ create UT-AT-BUF 1024 allot
    P-CLAUDE s" zz@x.test" UT-ROW? TFALSE
    [: UT-CLAUDE-B ;] UT-STORE
    P-CLAUDE s" b@x.test" CMD-FORGET ;
+
+\ an add clears a stale add record before its login, so save runs after it
+\ whether or not the login completes
+: UT-ADD-STALE ( -- )
+   UT-FAKE-CLAUDE
+   [: P-CLAUDE CREDS-A$ UT-PLANT-ADDING ;] UT-STORE
+   P-CLAUDE s" " CMD-ADD
+   P-CLAUDE UT-ADDING? TFALSE
+   P-CLAUDE CMD-SAVE
+   P-CLAUDE s" b@x.test" CMD-FORGET
+   [: P-CLAUDE CREDS-A$ UT-PLANT-ADDING ;] UT-STORE
+   s" /fail-login" UT-HOME-FILE$ {: f fu :}
+   f fu s" x" FS:WRITE-ALL
+   [: P-CLAUDE s" " CMD-ADD ;] E-SW-LOGIN TTHROWSQ
+   f fu FS:REMOVE-FILE
+   P-CLAUDE UT-ADDING? TFALSE
+   P-CLAUDE CMD-SAVE ;
 
 \ the live account's expired token is reported, never sent
 : CREDS-A-OLD$ ( -- ptr u8 n )
@@ -1657,6 +1689,7 @@ create UT-LIST UT-LIST-CAP allot
    UT-ADD
    UT-ADD-EMPTY
    UT-ADD-CLAUDE
+   UT-ADD-STALE
    UT-PCT
    UT-PCT-CALLERS
    UT-LONG-TOKEN

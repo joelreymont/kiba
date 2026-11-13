@@ -24,6 +24,12 @@ public
    s"  switch to " SB-APPEND UNREPAIRED-NAME UNREPAIRED-NAME-U @ SB-APPEND
    s"  did not finish; nothing is probed or refreshed until a switch completes" SB-APPEND SB$ ;
 
+: UNRESTORED-REASON$ ( -- ptr u8 n )
+   UNRESTORED-P @ PROVIDER$ {: a u :}
+   SB-RESET s" kiba: the live " SB-APPEND a u SB-APPEND
+   s"  login waits to be put back after an add; a new " SB-APPEND
+   a u SB-APPEND s"  add does it" SB-APPEND SB$ ;
+
 : NO-RESETS-REASON$ ( -- ptr u8 n )
    SB-RESET s" kiba: no limit resets are available for " SB-APPEND
    REDEEM-NAME REDEEM-NAME-U @ SB-APPEND SB$ ;
@@ -49,7 +55,7 @@ public
    rc E-SW-BASE64 = if s" kiba: id_token is not base64url" exit then
    rc E-SW-ENV = if s" kiba: HOME is not set" exit then
    rc E-SW-MISMATCH = if s" kiba: the saved login belongs to a different account than its name" exit then
-   rc E-SW-UNRESTORED = if s" kiba: the live login waits to be put back after an add; a new add does it" exit then
+   rc E-SW-UNRESTORED = if UNRESTORED-REASON$ exit then
    rc E-SW-SUPERSEDED = if s" kiba: another Claude switch began before this one wrote anything; this one changed nothing" exit then
    rc E-SW-ORPHAN-LIVE = if ORPHAN-REASON$ exit then
    rc E-SW-UNREPAIRED = if UNREPAIRED-REASON$ exit then
@@ -623,21 +629,57 @@ create LINE-BUF 256 allot
    LOGIN-ROOT-CLEAR
    p LOGIN-HOME$ FS:DIR? if p LOGIN-HOME$ FS:REMOVE-TREE then ;
 
-\ the new login is read from the throwaway home, which LOGIN-ROOT names,
-\ and saved under its name; E-SW-NO-LIVE when the login left none
-: ADD-IMPORT ( n -- ) {: p :}
+\ The login runs, then the new login is read from the throwaway home, which
+\ LOGIN-ROOT names, and saved under its name. E-SW-LOGIN when the login
+\ fails; E-SW-NO-LIVE when it left no login.
+ENUM add-state signing importing added ;ENUM
+ENUM sign-input signed-in failed ;ENUM
+ENUM import-input saved none ;ENUM
+\ the account the user is asked to sign in to; empty when none was named
+create ADD-EMAIL NAME-CAP allot   variable ADD-EMAIL-U
+
+: ADD-EMAIL$ ( -- ptr u8 n ) ADD-EMAIL ADD-EMAIL-U @ ;
+
+\ the login's exit status
+: ADD-LOGIN ( n -- n ) ADD-EMAIL$ NAME-EMAIL LOGIN ;
+
+: ADD-SIGN ( n -- sign-input ) {: p :}
+   p ADD-EMAIL$ ADD-PAUSE
+   p ADD-LOGIN 0= if construct sign-input signed-in exit then
+   construct sign-input failed ;
+
+: ADD-IMPORT ( n -- import-input ) {: p :}
    0 LIVE-ROW-U !
    [: p PUT-LIVE ;] DB-WRITE
-   LIVE-ROW$ nip 0= if E-SW-NO-LIVE throw then ;
+   LIVE-ROW$ nip 0= if construct import-input none exit then
+   construct import-input saved ;
+
+: LOGIN-FAILED ( n -- ) drop E-SW-LOGIN throw ;
+
+: NO-LOGIN ( n -- ) drop E-SW-NO-LIVE throw ;
+
+FSM:DEFINE ADD-STEPS ( n ) add-state sign-input
+   IN signing ADD-SIGN
+      signed-in -             >importing
+      failed    LOGIN-FAILED  >added
+   IN importing ADD-IMPORT ( import-input )
+      saved     -             >added
+      none      NO-LOGIN      >added
+   FINAL added -
+;DEFINE
 
 : ADD-RUN ( n ptr u8 n -- ) {: p e eu :}
+   e eu ADD-EMAIL ADD-EMAIL-U NAME-CAP SPAN!
    p ADD-BEGIN
-   p e eu ADD-PAUSE
-   p e eu NAME-EMAIL LOGIN 0<> if E-SW-LOGIN throw then
-   p ADD-IMPORT ;
+   p construct add-state signing ADD-STEPS ;
 
 : ADD-TURN ( n ptr u8 n -- ) {: p e eu :}
    [: p e eu ADD-RUN ;] [: p ADD-END ;] finally ;
+
+\ a store copied from a Mac can hold an add's record of the live login;
+\ kiba's add never touches the live files, so there is nothing to put back
+: ADD-SETTLE ( n -- ) {: p :}
+   [: p DB-CLEAR-ADDING ;] DB-WRITE ;
 
 : .ADDED ( n ptr u8 n -- ) {: p e eu :}
    p PROVIDER$ type s" : saved " type LIVE-ROW$ type
@@ -648,7 +690,8 @@ create LINE-BUF 256 allot
 
 : CMD-ADD ( n ptr u8 n -- ) {: p e eu :}
    p CHECK-LOGIN-CLI
-   p [: p e eu ADD-TURN
+   p [: p ADD-SETTLE
+      p e eu ADD-TURN
       p LIVE-ROW$ false PROBE-IN-TURN ;] STORE-TURN
    p e eu .ADDED ;
 
