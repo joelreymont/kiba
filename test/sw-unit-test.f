@@ -110,6 +110,18 @@ create UT-PID 32 allot
    ID-LIVE EMAIL$ s" a@x.test" T$=
    ID-LIVE PLAN$ s" max" T$= ;
 
+\ credentials that cannot name a plan leave the config's account, plan empty
+: UT-PLAN-UNREADABLE ( -- )
+   CFG-A$ s" not json" ID-LIVE CLAUDE-IDENTITY TTRUE
+   ID-LIVE EMAIL$ s" a@x.test" T$=
+   ID-LIVE ORG$ s" org-a" T$=
+   ID-LIVE PLAN$ nip 0 T=
+   CFG-A$ CREDS-A$ ID-LIVE CLAUDE-IDENTITY TTRUE
+   CFG-A$ s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-g\"}}" ID-LIVE CLAUDE-IDENTITY TTRUE
+   ID-LIVE EMAIL$ s" a@x.test" T$=
+   ID-LIVE ORG$ s" org-a" T$=
+   ID-LIVE PLAN$ nip 0 T= ;
+
 \ a throw inside a parse must not wedge the reader storage for the next parse
 : UT-READER-RECOVERS ( -- )
    [: s\" {\"a\":" s" a" UT-BUF 256 DOC-STR1 drop ;] E-JSON-READ-EOF TTHROWSQ
@@ -1176,6 +1188,7 @@ create UT-LIST UT-LIST-CAP allot
    UT-JWT
    UT-DOC
    UT-IDENTITY
+   UT-PLAN-UNREADABLE
    UT-STRINGS
    UT-READER-RECOVERS
    UT-DOC-CLOSE

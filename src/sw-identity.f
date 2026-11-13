@@ -49,9 +49,22 @@ public
    F-COUNT 0 ?do 0 id i LEN! loop ;
 
 \ ---- Claude Code ------------------------------------------------------------
-: CLAUDE-PLAN ( ptr u8 n n -- ) {: cr cru id :}
+private
+
+: PLAN-KEEP ( ptr u8 n n -- ptr u8 n n ) {: cr cru id :}
    cr cru s" claudeAiOauth" s" subscriptionType" id PLAN-ROW PLAN-CAP DOC-STR2
-   id F-PLAN LEN! ;
+   id F-PLAN LEN!
+   cr cru id ;
+
+: PLAN-READ? ( ptr u8 n n -- bool )
+   [: PLAN-KEEP ;] catch {: rc :} 2drop drop rc 0= ;
+
+public
+
+\ the credentials' plan; empty when they are not one JSON object, lack the
+\ string, or hold one too long, since the account comes from the config alone
+: CLAUDE-PLAN ( ptr u8 n n -- ) {: cr cru id :}
+   cr cru id PLAN-READ? 0= if 0 id F-PLAN LEN! then ;
 
 \ the organization tells two logins under one email apart
 : CLAUDE-ORG ( ptr u8 n n -- ) {: cfg cu id :}
