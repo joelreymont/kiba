@@ -5,6 +5,10 @@ require ../src/sw-turn.f
 require src/lib/test.f
 require src/lib/fs-list.f
 require src/lib/fs-lock.f
+require src/lib/fd.f
+require src/lib/process.f
+require src/lib/spawn.f
+require src/lib/time.f
 require src/lib/test/stderr.f
 
 package SW-TEST
@@ -2090,6 +2094,179 @@ create UT-LIST UT-LIST-CAP allot
    UT-CODEX-THROTTLED
    UT-FAKE-CURL ;
 
+\ ---- the order of the queue -------------------------------------------------
+create UT-READY 8 allot
+
+\ a shell that locks the stale entry, says so on fd w and holds the lock
+\ until it is killed
+: UT-HOLDER ( fd -- pid ) {: w:fd :}
+   s" /bin/sh" PROCESS:NEW
+   s" -c" PROCESS:ARG
+   s\" exec 9<\"$0\" && /usr/bin/flock 9 && echo ready && exec /usr/bin/sleep 600" PROCESS:ARG
+   UT-STALE$ PROCESS:ARG
+   1 >FD w PROCESS:FD
+   PROCESS:SPAWN ;
+
+\ the stale entry, locked by a holder that has said it holds it
+: UT-HOLD-ENTRY ( -- pid )
+   UT-STALE$ s" " WRITE-PRIVATE
+   FD:PIPE-PAIR {: r:fd w:fd :}
+   w UT-HOLDER {: pid :}
+   w FD>N close
+   r FD>N UT-READY 8 read 6 T=
+   r FD>N close
+   UT-READY 6 s\" ready\n" T$=
+   pid ;
+
+: UT-STOP ( pid -- ) {: pid :}
+   pid PROCESS:SIGKILL PROCESS:KILL-RAW RC>N 0 T=
+   pid PROCESS:WAIT PROCESS:STATUS>RC RC>N 137 T= ;
+
+: UT-TURN-FREE ( -- )
+   UT-TURN$ FS:>PATHZ open-rd {: fd :}
+   fd >FD FS-LOCK:TRY TTRUE
+   fd close ;
+
+\ the turn is free, but the entry ahead is held: the wait runs its whole
+\ TURN-WAIT-MS, and only the entry ahead stays queued
+: UT-WAIT-BEHIND ( -- )
+   UT-TURN-FREE
+   300 TURN-WAIT-MS !
+   TIME:MONO-NS {: t0 :}
+   [: P-CLAUDE TURN-ENTER ;] E-SW-TURN-BUSY TTHROWSQ
+   TIME:MONO-NS t0 - 300000000 >= TTRUE
+   120000 TURN-WAIT-MS !
+   UT-QUEUE-LEN {: n :}
+   UT-LIST n s" 00000000000000000000-0000000001-00000000000000000000" T$= ;
+
+\ waiters take the turn in queue order: a held entry ahead keeps
+\ TURN-ENTER waiting; once its holder is gone the entry is removed and the
+\ turn taken
+: UT-TURN-ORDER ( -- )
+   UT-HOLD-ENTRY {: pid :}
+   [: UT-WAIT-BEHIND ;] [: pid UT-STOP ;] finally
+   P-CLAUDE TURN-ENTER
+   UT-STALE$ FS:FILE? TFALSE
+   P-CLAUDE TURN-LEAVE
+   UT-QUEUE-LEN 0 T= ;
+
+\ ---- commands in their turn -------------------------------------------------
+create UT-FAKE-PATH PATH-CAP allot   variable UT-FAKE-U
+create UT-ANS-PATH PATH-CAP allot    variable UT-ANS-U
+create UT-OWN-TURN PATH-CAP allot    variable UT-OWN-TURN-U
+create UT-WRAP-BUF 1024 allot
+
+\ provider p's turn file
+: UT-TURN-OF$ ( n -- ptr u8 n ) {: p :}
+   STORE$ {: s su :}
+   SB-RESET s su SB-APPEND s" /turn-" SB-APPEND p PROVIDER$ SB-APPEND
+   SB$ UT-OWN-TURN UT-OWN-TURN-U PATH!
+   UT-OWN-TURN UT-OWN-TURN-U @ ;
+
+\ the fake script name in the scratch PATH
+: UT-FAKE$ ( ptr u8 n -- ptr u8 n ) {: n nu :}
+   HOME$ {: h hu :}
+   SB-RESET h hu SB-APPEND s" /bin/" SB-APPEND n nu SB-APPEND
+   SB$ UT-FAKE-PATH UT-FAKE-U PATH!
+   UT-FAKE-PATH UT-FAKE-U @ ;
+
+\ where the fake name goes once a turn check runs in front of it
+: UT-ANSWERS$ ( ptr u8 n -- ptr u8 n ) {: n nu :}
+   HOME$ {: h hu :}
+   SB-RESET h hu SB-APPEND s" /bin/" SB-APPEND n nu SB-APPEND
+   s" -answers" SB-APPEND
+   SB$ UT-ANS-PATH UT-ANS-U PATH!
+   UT-ANS-PATH UT-ANS-U @ ;
+
+\ a script that logs "turn held <name>" when provider p's turn is locked as
+\ it starts, "turn free <name>" when it is not, then runs the fake name
+: UT-WRAP$ ( n ptr u8 n -- ptr u8 n ) {: p n nu :}
+   p UT-TURN-OF$ {: t tu :}
+   n nu UT-ANSWERS$ {: x xu :}
+   SB-RESET s\" #!/bin/sh\n/usr/bin/flock -n -E 9 '" SB-APPEND
+   t tu SB-APPEND s\" ' /usr/bin/true\ncase $? in " SB-APPEND
+   s\" 0) s=free;; 9) s=held;; *) s=unknown;; esac\n" SB-APPEND
+   s\" echo \"turn $s " SB-APPEND n nu SB-APPEND
+   s\" \" >> \"$KIBA_TEST_LOG\"\nexec '" SB-APPEND
+   x xu SB-APPEND s\" ' \"$@\"\n" SB-APPEND
+   SB$ UT-WRAP-BUF 1024 SPAN-COPY ;
+
+\ the fake name, already written, runs behind a check of p's turn
+: UT-TURN-WRAP ( n ptr u8 n -- ) {: p n nu :}
+   n nu UT-FAKE$ n nu UT-ANSWERS$ FS:RENAME-FILE
+   n nu p n nu UT-WRAP$ UT-WRITE-SCRIPT ;
+
+: UT-TURN-LINE$ ( ptr u8 n ptr u8 n -- ptr u8 n ) {: s su n nu :}
+   SB-RESET s" turn " SB-APPEND s su SB-APPEND
+   STR-SPACE SB-APPEND-C n nu SB-APPEND SB$ ;
+
+\ since the mark, name ran with its provider's turn held, never without
+: UT-RAN-HELD ( ptr u8 n -- ) {: n nu :}
+   UT-LOG-NEW$ {: l lu :}
+   l lu s" held" n nu UT-TURN-LINE$ CONTAINS? TTRUE
+   l lu s" free" n nu UT-TURN-LINE$ CONTAINS? TFALSE
+   l lu s" unknown" n nu UT-TURN-LINE$ CONTAINS? TFALSE ;
+
+\ usage probes each provider's logins inside that provider's turn
+: UT-USAGE-HELD ( -- )
+   UT-FAKE-CURL P-CLAUDE s" curl" UT-TURN-WRAP
+   UT-LOG-MARK
+   P-CLAUDE CMD-USAGE
+   s" curl" UT-RAN-HELD
+   UT-FAKE-CURL P-CODEX s" curl" UT-TURN-WRAP
+   UT-LOG-MARK
+   P-CODEX CMD-USAGE
+   s" curl" UT-RAN-HELD ;
+
+\ use probes the login it installs and the one it saved back in its turn
+: UT-USE-HELD ( -- )
+   UT-LOG-MARK
+   P-CODEX s" d@x.test" CMD-USE
+   P-CODEX s" c@x.test" CMD-USE
+   s" curl" UT-RAN-HELD ;
+
+\ redeem asks for the reset and probes again in its turn
+: UT-REDEEM-HELD ( -- )
+   UT-LOG-MARK
+   s" reset" s" Limit reset for w@x.test" UT-CODEX-WORD
+   s" curl" UT-RAN-HELD
+   P-CODEX s" w@x.test" CMD-FORGET ;
+
+\ add's login runs in its turn, and so does the probe of the new login
+: UT-ADD-HELD ( -- )
+   UT-FAKE-CLAUDE P-CLAUDE s" claude" UT-TURN-WRAP
+   UT-FAKE-CURL P-CLAUDE s" curl" UT-TURN-WRAP
+   UT-LOG-MARK
+   P-CLAUDE s" b@x.test" CMD-ADD
+   s" claude" UT-RAN-HELD
+   s" curl" UT-RAN-HELD
+   P-CLAUDE s" b@x.test" CMD-FORGET
+   UT-FAKE-CLAUDE ;
+
+\ every command that calls out does so holding its provider's turn
+: UT-COMMANDS-HELD ( -- )
+   UT-USAGE-HELD
+   UT-USE-HELD
+   UT-REDEEM-HELD
+   UT-ADD-HELD
+   UT-FAKE-CURL ;
+
+\ a Claude turn held elsewhere: usage waits TURN-WAIT-MS, reports the busy
+\ turn as Claude's error and calls nothing
+: UT-USAGE-BUSY ( -- )
+   UT-TURN$ FS:>PATHZ open-rd {: fd :}
+   fd >FD FS-LOCK:TRY TTRUE
+   300 TURN-WAIT-MS !
+   P-CLAUDE UT-USAGES UT-C0 !
+   UT-LOG-MARK
+   P-CLAUDE UT-USAGE-ERR
+   120000 TURN-WAIT-MS !
+   fd close
+   UT-ERR$ READ-FILE$
+   s\" claude: another kiba holds that provider's turn\n" T$=
+   UT-LOG-NEW$ nip 0 T=
+   P-CLAUDE UT-USAGES UT-C0 @ T= ;
+
 : UT-MAIN ( -- )
    T-RESET
    ALLOC-BUFFERS
@@ -2155,6 +2332,8 @@ create UT-LIST UT-LIST-CAP allot
    UT-USAGE-CHECKED
    UT-USE-PROBES
    UT-USE-PROBES-CLAUDE
+   UT-COMMANDS-HELD
+   UT-USAGE-BUSY
    UT-REDEEM-CLAUDE
    UT-REDEEM-RENEWED
    UT-REDEEM-SEGMENT
@@ -2169,6 +2348,7 @@ create UT-LIST UT-LIST-CAP allot
    UT-TURN-ROUND
    UT-TURN-STALE
    UT-TURN-BUSY
+   UT-TURN-ORDER
    T-REPORT ;
 
 UT-MAIN
