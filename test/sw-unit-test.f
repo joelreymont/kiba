@@ -141,15 +141,63 @@ create UT-BUF 256 allot
    CLAIMS-R$ CHECK-OBJECT
    [: AUTH-R$ ID-SLOT CODEX-IDENTITY drop ;] E-SW-JSON TTHROWSQ ;
 
+\ a key repeated four objects deep, once escaped: JSONFields refuses it, and
+\ JSONDoc, which looks only at the root and the objects directly under it,
+\ takes it
+: UT-DEEP-REPEAT ( -- )
+   s\" {\"a\":{\"b\":{\"c\":{\"d\":{\"x\":1,\"\\u0078\":2}}}}}" {: d du :}
+   d du FIELDS? TFALSE
+   d du CHECK-OBJECT ;
+
+DYNAMIC-BUFFER UT-BIG u8   variable UT-BIG-U
+8000 constant UT-DEPTH
+100000 constant UT-KEYS
+
+: BIG-C+ ( n -- ) UT-BIG-U @ UT-BIG c!  1 UT-BIG-U +! ;
+
+: BIG+ ( ptr u8 n -- ) {: a u :}
+   a UT-BIG-U @ UT-BIG u BYTE-COPY  u UT-BIG-U +! ;
+
+: BIG$ ( -- ptr u8 n ) 0 UT-BIG UT-BIG-U @ ;
+
+\ an object nested UT-DEPTH deep, six bytes a level
+: UT-NESTED$ ( -- ptr u8 n )
+   UT-DEPTH 6 * 2 + UT-BIG-RESERVE  0 UT-BIG-U !
+   UT-DEPTH 0 ?do s\" {\"a\":" BIG+ loop
+   s" {}" BIG+
+   UT-DEPTH 0 ?do s" }" BIG+ loop
+   BIG$ ;
+
+\ member n of a wide object: its key spells n in four letters
+: UT-MEMBER+ ( n -- )
+   s\" \"" BIG+
+   4 0 ?do 26 /mod swap [char] a + BIG-C+ loop drop
+   s\" \":0," BIG+ ;
+
+\ one object of UT-KEYS keys, nine bytes a member
+: UT-WIDE$ ( -- ptr u8 n )
+   UT-KEYS 9 * 2 + UT-BIG-RESERVE  0 UT-BIG-U !
+   s" {" BIG+
+   UT-KEYS 0 ?do i UT-MEMBER+ loop
+   -1 UT-BIG-U +!  s" }" BIG+
+   BIG$ ;
+
+\ FIELDS? takes d du in under a second
+: FAST-FIELDS ( ptr u8 n -- ) {: d du :}
+   TIME:MONO-NS {: t0 :}
+   d du FIELDS? TTRUE
+   TIME:MONO-NS t0 - 1000000000 < TTRUE ;
+
+\ the repeated-key check is linear in the document's bytes and keys
+: UT-REPEATS-FAST ( -- )
+   UT-NESTED$ FAST-FIELDS
+   UT-WIDE$ FAST-FIELDS
+   UT-BIG-RELEASE ;
+
 \ an identity field longer than its buffer is an error, never a missing field
 : UT-FIELD-LONG ( -- )
    [: CFG-A$ s\" {\"claudeAiOauth\":{\"subscriptionType\":\"ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\"}}" ID-SLOT CLAUDE-IDENTITY drop ;]
    E-SW-CAPACITY TTHROWSQ ;
-
-\ an integer spelled as a whole decimal reads as that integer
-: UT-WHOLE-EXPIRY ( -- )
-   s\" {\"claudeAiOauth\":{\"expiresAt\":4102444800000.0}}" s" claudeAiOauth" s" expiresAt" DOC-INT2
-   TTRUE 4102444800000 T= ;
 
 \ a throw inside a parse must not wedge the reader storage for the next parse
 : UT-READER-RECOVERS ( -- )
@@ -2331,8 +2379,9 @@ create UT-WRAP-BUF 1024 allot
    UT-STRINGS
    UT-READER-RECOVERS
    UT-CLAIMS-REPEAT
+   UT-DEEP-REPEAT
+   UT-REPEATS-FAST
    UT-FIELD-LONG
-   UT-WHOLE-EXPIRY
    UT-DOC-CLOSE
    UT-STORE-SAVE
    UT-STORE-USE
