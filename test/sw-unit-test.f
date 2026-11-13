@@ -745,6 +745,56 @@ create UT-ERR-PATH 256 allot   variable UT-ERR-U
    P-CODEX s\" {\"tokens\":{\"access_token\":\"at-r2\"}}" false PROBE
    s" ok" UT-STATE= DB-LIMIT# 1 T= 0 s" Session (5-hour)" 0 UT-LIMIT= ;
 
+\ a fake curl that logs the Authorization and ChatGPT-Account-Id lines of
+\ each call and answers it with one window
+: UT-LONG-CURL ( -- )
+   s" curl"
+   s\" #!/bin/sh\nout=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) case \"$2\" in @*) /usr/bin/grep -e ^Authorization: -e ^ChatGPT-Account-Id: \"${2#@}\" >> \"$KIBA_TEST_LOG\";; esac; shift;; esac; shift; done\nprintf '%s' '{\"rate_limit\":{\"primary_window\":{\"used_percent\":12,\"limit_window_seconds\":18000}}}' > \"$out\"\nprintf 200\n"
+   UT-WRITE-SCRIPT ;
+
+16384 constant UT-LONG-CAP   \ the login and both header lines it sends
+create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
+
+: UT-LONG-ROOM ( n -- )
+   UT-LONG-U @ + UT-LONG-CAP > if E-SW-CAPACITY throw then ;
+
+: UT-LONG+ ( ptr u8 n -- ) {: a u :}
+   u UT-LONG-ROOM
+   a UT-LONG UT-LONG-U @ + u BYTE-COPY
+   UT-LONG-U @ u + UT-LONG-U ! ;
+
+\ byte c, n times
+: UT-LONG-FILL ( n n -- ) {: c n :}
+   n UT-LONG-ROOM
+   0 begin dup n < while
+      c over UT-LONG UT-LONG-U @ + + c!
+      1+
+   repeat drop
+   UT-LONG-U @ n + UT-LONG-U ! ;
+
+\ UT-LONG from offset o to its end
+: UT-LONG$ ( n -- ptr u8 n ) {: o :}
+   UT-LONG o + UT-LONG-U @ o - ;
+
+\ a 5000-byte access token and a 200-byte account id
+: UT-TOK+ ( -- ) s" at-" UT-LONG+ [char] k 4997 UT-LONG-FILL ;
+: UT-ACCT+ ( -- ) s" acct-" UT-LONG+ [char] q 195 UT-LONG-FILL ;
+
+\ a token and an account id are read whole and sent whole
+: UT-LONG-TOKEN ( -- )
+   UT-LONG-CURL
+   0 UT-LONG-U !
+   s\" {\"tokens\":{\"access_token\":\"" UT-LONG+ UT-TOK+
+   s\" \",\"account_id\":\"" UT-LONG+ UT-ACCT+ s\" \"}}" UT-LONG+
+   P-CODEX 0 UT-LONG$ false PROBE
+   s" ok" UT-STATE=
+   UT-LONG-U @ {: o :}
+   s" Authorization: Bearer " UT-LONG+ UT-TOK+ $0A 1 UT-LONG-FILL
+   LOG$ READ-FILE$ o UT-LONG$ CONTAINS? TTRUE
+   UT-LONG-U @ {: i :}
+   s" ChatGPT-Account-Id: " UT-LONG+ UT-ACCT+ $0A 1 UT-LONG-FILL
+   LOG$ READ-FILE$ i UT-LONG$ CONTAINS? TTRUE ;
+
 : UT-PLAN= ( n ptr u8 n ptr u8 n -- ) {: p a u l lu :}
    [: p a u DB-FETCH TTRUE 0 DB-ROW-PLAN$ l lu T$= ;] UT-STORE ;
 
@@ -1609,6 +1659,7 @@ create UT-LIST UT-LIST-CAP allot
    UT-ADD-CLAUDE
    UT-PCT
    UT-PCT-CALLERS
+   UT-LONG-TOKEN
    UT-SCRATCH-APART
    UT-USAGE
    UT-USAGE-REFRESHED

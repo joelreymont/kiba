@@ -21,15 +21,11 @@ package SW
 
 $0A constant LF
 64 constant RESET-CAP               \ a window's reset instant, as the record holds it
-4096 constant HDR-CAP
 120 constant DETAIL-MAX             \ the longest server-supplied text a note carries
 20 constant HTTP-TIMEOUT-SEC
 
 create PROBE-BUF PATH-CAP allot  variable PROBE-U   \ <store>/probe-<provider>
 create PSUB-BUF PATH-CAP allot   variable PSUB-U    \ a file inside it
-create HDR-BUF HDR-CAP allot        variable HDR-U     \ one curl -H value
-create ACCT-ID-BUF 128 allot        variable ACCT-ID-U
-create VAL-BUF 4096 allot           variable VAL-U     \ a decoded token
 create RESET-BUF RESET-CAP allot
 variable OUT-FD
 
@@ -165,8 +161,8 @@ variable HTTP-CODE                  \ the last answer's status, -1 when there wa
 \ stdout, redirected into a second file before exec.
 \ E-SW-CAPACITY unless n more bytes fit
 : HDR-ROOM ( n -- )
-   HDR-U @ + HDR-CAP > if
-      s" bytes in a request's headers" HDR-CAP LIMIT$ TOO-MANY
+   HDR-U @ + BUF-CAP > if
+      s" bytes in a request's headers" BUF-CAP LIMIT$ TOO-MANY
    then ;
 
 : HDR-LINE+ ( ptr u8 n -- ) {: a u :}
@@ -737,7 +733,7 @@ ENUM profile-input free limited ;ENUM
 \ in a document whose tokens were blanked
 : CLAUDE-TOKEN ( ptr u8 n -- n ) {: k ku :}
    SDOC$ FIELDS? 0= if -1 exit then
-   SDOC$ CREDS-KEY$ k ku VAL-BUF 4096 DOC-STR2 dup 0 > if dup VAL-U ! exit then
+   SDOC$ CREDS-KEY$ k ku VAL-BUF BUF-CAP DOC-STR2 dup 0 > if dup VAL-U ! exit then
    drop -1 ;
 
 \ expiresAt in epoch milliseconds; -1 when absent
@@ -771,7 +767,7 @@ ENUM profile-input free limited ;ENUM
 : CLAUDE-SPLICE ( ptr u8 n -- ) {: b bu :}
    SPLICE-BEGIN
    CREDS-KEY$ s" accessToken" VAL-BUF VAL-U @ LITERAL$ CFG-SET2
-   b bu s" refresh_token" VAL-BUF 4096 DOC-STR1 dup 0 >= if
+   b bu s" refresh_token" VAL-BUF BUF-CAP DOC-STR1 dup 0 >= if
       VAL-U ! CREDS-KEY$ s" refreshToken" VAL-BUF VAL-U @ LITERAL$ CFG-SET2
    else drop then
    b bu s" expires_in" DOC-INT1 s" expiresAt" EXPIRY-SET
@@ -781,7 +777,7 @@ ENUM profile-input free limited ;ENUM
 : CLAUDE-RENEWED ( n -- renew-input )
    BODY-READ {: b bu :}
    b bu FIELDS? 0= if construct renew-input unusable exit then
-   b bu s" access_token" VAL-BUF 4096 DOC-STR1 dup 0 < if drop construct renew-input unusable exit then
+   b bu s" access_token" VAL-BUF BUF-CAP DOC-STR1 dup 0 < if drop construct renew-input unusable exit then
    VAL-U !
    b bu CLAUDE-SPLICE
    construct renew-input renewed ;
@@ -994,7 +990,7 @@ ENUM retry-input no-token unreachable fine unreadable rejected throttled other ;
 \ the tokens member k in VAL-BUF; its length, -1 when absent
 : CODEX-TOKEN ( ptr u8 n -- n ) {: k ku :}
    SDOC$ FIELDS? 0= if -1 exit then
-   SDOC$ TOKENS-KEY$ k ku VAL-BUF 4096 DOC-STR2 dup 0 >= if dup VAL-U ! then ;
+   SDOC$ TOKENS-KEY$ k ku VAL-BUF BUF-CAP DOC-STR2 dup 0 >= if dup VAL-U ! then ;
 
 \ an API-key login without an id_token has no usage windows
 : CODEX-KEYED ( n -- key-input ) drop
@@ -1005,7 +1001,7 @@ ENUM retry-input no-token unreachable fine unreadable rejected throttled other ;
 
 \ the usage call with the access token CODEX-TOKEN left in VAL-BUF
 : CODEX-GET ( n -- n ) {: p :}
-   SDOC$ TOKENS-KEY$ s" account_id" ACCT-ID-BUF 128 DOC-STR2 0 max ACCT-ID-U !
+   SDOC$ TOKENS-KEY$ s" account_id" ACCT-ID-BUF BUF-CAP DOC-STR2 0 max ACCT-ID-U !
    p s" codex-cli" CURL-BEGIN
    VAL-BUF VAL-U @ BEARER
    ACCT-ID-U @ 0 > if s" ChatGPT-Account-Id" ACCT-ID-BUF ACCT-ID-U @ HDR then
@@ -1046,7 +1042,7 @@ ENUM retry-input no-token unreachable fine unreadable rejected throttled other ;
 : CODEX-SPLICE ( ptr u8 n -- ) {: b bu :}
    SPLICE-BEGIN
    TOKENS-KEY$ s" access_token" VAL-BUF VAL-U @ LITERAL$ CFG-SET2
-   b bu s" refresh_token" VAL-BUF 4096 DOC-STR1 dup 0 >= if
+   b bu s" refresh_token" VAL-BUF BUF-CAP DOC-STR1 dup 0 >= if
       VAL-U ! TOKENS-KEY$ s" refresh_token" VAL-BUF VAL-U @ LITERAL$ CFG-SET2
    else drop then
    b bu s" id_token" TOK-BUF BUF-CAP DOC-STR1 dup 0 >= if
@@ -1058,7 +1054,7 @@ ENUM retry-input no-token unreachable fine unreadable rejected throttled other ;
 : CODEX-RENEWED ( n -- codex-renew-input )
    BODY-READ {: b bu :}
    b bu FIELDS? 0= if construct codex-renew-input unusable exit then
-   b bu s" access_token" VAL-BUF 4096 DOC-STR1 dup 0 < if drop construct codex-renew-input unusable exit then
+   b bu s" access_token" VAL-BUF BUF-CAP DOC-STR1 dup 0 < if drop construct codex-renew-input unusable exit then
    VAL-U !
    b bu CODEX-SPLICE
    construct codex-renew-input renewed ;
@@ -1334,7 +1330,7 @@ create RID-BUF 36 allot
    P-CLAUDE RESET-URL$ RESET-POST ;
 
 : CODEX-RESET-SEND ( -- n )
-   SDOC$ TOKENS-KEY$ s" account_id" ACCT-ID-BUF 128 DOC-STR2 0 max ACCT-ID-U !
+   SDOC$ TOKENS-KEY$ s" account_id" ACCT-ID-BUF BUF-CAP DOC-STR2 0 max ACCT-ID-U !
    P-CODEX s" codex-cli" CURL-BEGIN
    VAL-BUF VAL-U @ BEARER
    ACCT-ID-U @ 0 > if s" ChatGPT-Account-Id" ACCT-ID-BUF ACCT-ID-U @ HDR then
