@@ -2,6 +2,8 @@
 require ../src/sw-paths.f
 require src/lib/memory.f
 require src/lib/fs-mutate.f
+require src/lib/fs-list.f
+require src/lib/string.f
 require src/lib/fmt.f
 require src/lib/json.f
 require src/lib/span.f
@@ -21,19 +23,12 @@ TYPED-VARIABLE TOK-A ptr u8    variable TOK-U     \ a raw id_token string
 TYPED-VARIABLE JSON-A ptr u8                      \ the JSON writer's output
 TYPED-VARIABLE SDOC-A ptr u8   variable SDOC-U    \ one saved login's document
 TYPED-VARIABLE BACK-A ptr u8   variable BACK-U    \ the credentials read back after a failed install
-create TMP-BUF PATH-CAP allot   variable TMP-U
 create LINK-BUF PATH-CAP allot  variable LINK-U
 create DEST-BUF PATH-CAP allot  variable DEST-U
 8 constant LINK-HOPS
 
 : ALLOC-ONE ( ptr ptr u8 -- )
    BUF-CAP MEM-ALLOC-BYTES drop swap ! ;
-
-: TMP$ ( -- ptr u8 n ) TMP-BUF TMP-U @ ;
-
-: TMP-FOR ( ptr u8 n -- )
-   SB-RESET SB-APPEND s" .tmp" SB-APPEND
-   SB$ TMP-BUF TMP-U PATH! ;
 
 \ E-FS-CAPACITY is a semantic refusal: a link that does not fit would be
 \ silently truncated.
@@ -70,15 +65,6 @@ create DEST-BUF PATH-CAP allot  variable DEST-U
    a u FS:>PATHZ FS:O-WRONLY FS:O-CREAT or FS:O-TRUNC or MODE-PRIVATE-FILE open {: fd :}
    fd 0 < if E-FS-OPEN throw then
    fd ;
-
-: WRITE-FD-ALL ( n ptr u8 n -- ) {: fd src u :}
-   0 begin dup u < while
-      {: done :}
-      fd src done + u done - write {: n :}
-      n 0 <= if fd close E-FS-IO throw then
-      done n +
-   repeat drop
-   fd close ;
 
 public
 
@@ -139,30 +125,11 @@ TYPED-VARIABLE JSON-W JSON:writer
 : READ-SLOT$ ( ptr u8 n -- ptr u8 n )
    SDOC-BUF SDOC-U READ-INTO ;
 
-: WRITE-TMP ( ptr u8 n -- )
-   TMP$ OPEN-PRIVATE -rot WRITE-FD-ALL ;
-
-: WRITE-TMP-KEEP ( ptr u8 n -- ptr u8 n ) {: src su :}
-   src su WRITE-TMP src su ;
-
-: RENAME-TMP-KEEP ( ptr u8 n -- ptr u8 n ) {: da du :}
-   TMP$ da du FS:RENAME-FILE da du ;
-
-: DROP-TMP ( -- )
-   TMP$ FS:FILE? if TMP$ FS:REMOVE-FILE then ;
-
-\ a failed write or rename must not leave a secret behind as <file>.tmp
+\ returns once the new 0600 file and its name are on permanent storage; a
+\ failed write leaves the old file and no temp. WRITE-TARGET resolves the
+\ chain first, since Habu refuses a link whose target is missing.
 : WRITE-PRIVATE ( ptr u8 n ptr u8 n -- ) {: pa pu src su :}
-   pa pu WRITE-TARGET {: da du :}
-   da du TMP-FOR
-   src su [: WRITE-TMP-KEEP ;] catch {: rc :} 2drop
-   rc 0<> if DROP-TMP rc throw then
-   da du [: RENAME-TMP-KEEP ;] catch {: rc2 :} 2drop
-   rc2 0<> if DROP-TMP rc2 throw then ;
-
-\ the temp twin of any file, for sweeping a crashed write
-: ASIDE-TMP ( ptr u8 n -- ptr u8 n )
-   TMP-FOR TMP$ ;
+   pa pu WRITE-TARGET src su FS:ATOMIC-WRITE-PRIVATE ;
 
 \ directories the store creates are private at every level; an existing
 \ directory, whoever made it, is left as it is
@@ -210,9 +177,17 @@ create PIDTXT-BUF 32 allot             variable PIDTXT-U
    LOCK$ FS:DIR? 0= if E-FS-IO throw then
    false ;
 
+\ a holder that died mid-write leaves WRITE-PRIVATE's sibling of its pid
+\ file, named `.tmp-<seed>-<attempt>` by Habu, in the lock directory
+: SWEEP-TEMP ( ptr u8 n -- ) {: a u :}
+   a u s" .tmp-" STARTS-WITH? 0= if exit then
+   LOCK$ {: l lu :}
+   SB-RESET l lu SB-APPEND FS:SLASH SB-APPEND-C a u SB-APPEND
+   SB$ FS:ATOMIC-CLEAN-TEMP ;
+
 : BREAK-LOCK ( -- )
    LOCKPID$ FS:FILE? if LOCKPID$ FS:REMOVE-FILE then
-   LOCKPID$ ASIDE-TMP FS:FILE? if LOCKPID$ ASIDE-TMP FS:REMOVE-FILE then
+   LOCK$ [: SWEEP-TEMP ;] FS-LIST:EACH
    LOCK$ FS:REMOVE-DIR ;
 
 : PIDTXT$ ( -- ptr u8 n )

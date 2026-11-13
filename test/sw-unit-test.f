@@ -486,6 +486,26 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
    CODEX-AUTH$ FS:REMOVE-FILE
    r ru CODEX-AUTH$ FS:RENAME-FILE ;
 
+\ a failed write leaves the old file whole and no temp beside it: refused
+\ before the temp exists, in a directory nothing can be written in, and
+\ after, by a rename onto a directory
+: UT-FAILED-WRITE ( -- )
+   UT-LOCKED$ ENSURE-PRIVATE
+   UT-REAL$ CREDS-A9$ WRITE-PRIVATE
+   UT-LOCKED$ $140 FS:CHMOD-MODE
+   [: UT-REAL$ CREDS-A$ WRITE-PRIVATE ;] E-FS-OPEN TTHROWSQ
+   UT-LOCKED$ $1C0 FS:CHMOD-MODE
+   UT-REAL$ READ-FILE$ CREDS-A9$ T$=
+   UT-LOCKED$ UT-BUF 256 FS-LIST:NAMES {: n :}
+   UT-BUF n s" creds.json" T$=
+   UT-REAL$ FS:REMOVE-FILE
+   UT-REAL$ ENSURE-PRIVATE
+   [: UT-REAL$ CREDS-A$ WRITE-PRIVATE ;] E-FS-IO TTHROWSQ
+   UT-REAL$ FS:DIR? TTRUE
+   UT-LOCKED$ UT-BUF 256 FS-LIST:NAMES {: n2 :}
+   UT-BUF n2 s" creds.json" T$=
+   UT-LOCKED$ FS:REMOVE-TREE ;
+
 \ a live config naming another account over credentials still identical to
 \ the installed row's is a mix: save refuses it, use skips saving it back
 : UT-MIXED-PAIR ( -- )
@@ -1230,6 +1250,7 @@ create UT-LIST UT-LIST-CAP allot
    UT-DAMAGED-ROW
    UT-API-KEY
    UT-SYMLINK
+   UT-FAILED-WRITE
    UT-MIXED-PAIR
    UT-UNRESTORED
    UT-ORPHAN
