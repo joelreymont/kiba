@@ -5,6 +5,7 @@ require ../src/sw-turn.f
 require src/lib/test.f
 require src/lib/fs-list.f
 require src/lib/fs-lock.f
+require src/lib/test/stderr.f
 
 package SW-TEST
 using SW
@@ -615,6 +616,21 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
 variable UT-C0
 variable UT-X0
 create UT-HELD 32 allot
+create UT-ERR-PATH 256 allot   variable UT-ERR-U
+
+\ the file a usage run's stderr is captured in, under the scratch HOME
+: UT-ERR$ ( -- ptr u8 n ) UT-ERR-PATH UT-ERR-U @ ;
+
+: UT-ERR-PATH! ( -- )
+   SB-RESET s" HOME" GETENV SB-APPEND s" /usage-stderr" SB-APPEND SB$
+   UT-ERR-PATH 256 SPAN-COPY nip UT-ERR-U ! ;
+
+\ usage for p (every provider when p < 0) with stderr captured in UT-ERR$;
+\ the run reports an error, so it ends E-SW-REPORTED
+: UT-USAGE-ERR ( n -- ) {: p :}
+   UT-ERR-PATH!
+   UT-ERR$ STDERR:CAPTURE
+   [: [: p CMD-USAGE ;] E-SW-REPORTED TTHROWSQ ;] [: STDERR:;CAPTURE ;] finally ;
 
 \ ID-SLOT: email a u, organization o ou (none when empty), no plan
 : UT-ID ( ptr u8 n ptr u8 n -- ) {: a u o ou :}
@@ -928,7 +944,9 @@ create UT-HELD 32 allot
 : UT-USAGE-ISOLATION ( -- )
    CLAUDE-CONFIG$ s" {not json" WRITE-PRIVATE
    P-CODEX UT-USAGES UT-X0 !
-   [: -1 CMD-USAGE ;] E-SW-REPORTED TTHROWSQ
+   -1 UT-USAGE-ERR
+   UT-ERR$ READ-FILE$
+   s\" claude: live login not saved: a login file is not valid JSON\nclaude: a login file is not valid JSON\n" T$=
    P-CODEX UT-USAGES UT-X0 @ 2 + T=
    P-CODEX s" c@x.test" UT-RECORD s" ok" UT-STATE=
    CLAUDE-CONFIG$ CFG-BA$ WRITE-PRIVATE ;
@@ -969,12 +987,25 @@ create UT-HELD 32 allot
 : UT-UNREPAIRED ( -- )
    [: [: P-CLAUDE s" b@x.test" DB-NOTE-PENDING UT-HOLD ;] DB-WRITE ;] UT-STORE
    P-CLAUDE UT-USAGES UT-C0 !
-   [: P-CLAUDE CMD-USAGE ;] E-SW-REPORTED TTHROWSQ
+   P-CLAUDE UT-USAGE-ERR
+   UT-ERR$ READ-FILE$
+   s\" claude: live login not saved: the live Claude files name different accounts; switch to an account to repair them\nclaude: the claude switch to b@x.test did not finish; nothing is probed or refreshed until a switch completes\n" T$=
    P-CLAUDE UT-USAGES UT-C0 @ T=
    E-SW-UNREPAIRED REASON$
    s" kiba: the claude switch to b@x.test did not finish; nothing is probed or refreshed until a switch completes" T$=
    [: [: P-CLAUDE UT-HELD 32 DB-CLEAR-PENDING ;] DB-WRITE ;] UT-STORE
    P-CLAUDE UT-PENDING? TFALSE ;
+
+\ a record the store refuses is reported under its account's name; the
+\ other account is still recorded
+: UT-UNRECORDED ( -- )
+   [: s" CREATE TRIGGER ut_refuse BEFORE UPDATE OF usage ON account WHEN NEW.name = 'd@x.test' BEGIN SELECT RAISE(ABORT, 'refused by the test'); END" s" test" DB-EXEC ;] UT-STORE
+   P-CODEX UT-USAGES UT-X0 !
+   P-CODEX UT-USAGE-ERR
+   [: s" DROP TRIGGER ut_refuse" s" test" DB-EXEC ;] UT-STORE
+   UT-ERR$ READ-FILE$
+   s\" codex: d@x.test: usage not recorded: the account database refused: set usage: refused by the test\n" T$=
+   P-CODEX UT-USAGES UT-X0 @ 1+ T= ;
 
 \ when every saved login was probed after the run began, the recorded
 \ outcomes are reported and nothing is probed
@@ -1271,6 +1302,7 @@ create UT-LIST UT-LIST-CAP allot
    UT-DAMAGED-LIVE-SLOT
    UT-DAMAGED-NOT-CLAIMED
    UT-UNREPAIRED
+   UT-UNRECORDED
    UT-USAGE-CHECKED
    UT-USE-PROBES
    UT-STALE-LOCK

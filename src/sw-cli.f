@@ -71,6 +71,14 @@ public
 
 private
 
+\ rc's reason without its "kiba: " prefix, for a line that already starts
+\ with its provider
+: BARE-REASON$ ( n -- ptr u8 n )
+   REASON$ {: a u :}
+   s" kiba: " {: k ku :}
+   a u k ku STARTS-WITH? 0= if a u exit then
+   a ku + u ku - ;
+
 \ ---- status: text -----------------------------------------------------------
 \ Each provider is rendered right after its read: the row table, ID-LIVE and
 \ the usage record hold that provider until the next store read.
@@ -428,7 +436,7 @@ DYNAMIC-BUFFER FAULTS u8     variable FAULTS-U     \ the provider error; empty w
    loop ;
 
 : NOTE-BACK ( n -- ) drop
-   BACK-RC @ REASON$ BACK-ERR BACK-ERR-U 1024 SPAN! ;
+   BACK-RC @ BARE-REASON$ BACK-ERR BACK-ERR-U 1024 SPAN! ;
 
 : NOTE-MIXED ( n -- )
    true USAGE-MIXED !
@@ -436,7 +444,7 @@ DYNAMIC-BUFFER FAULTS u8     variable FAULTS-U     \ the provider error; empty w
    NOTE-BACK ;
 
 : NOTE-FAILURE ( n -- ) drop
-   FAULT-NEXT USAGE-RC @ REASON$ FAULT+ ;
+   FAULT-NEXT USAGE-RC @ BARE-REASON$ FAULT+ ;
 
 : .ROW ( n -- ) {: p :}
    p USAGE-ROW @ DB-ROW-NAME$ .USAGE
@@ -445,7 +453,7 @@ DYNAMIC-BUFFER FAULTS u8     variable FAULTS-U     \ the provider error; empty w
 : NOTE-UNRECORDED ( n -- ) drop
    FAULT-NEXT
    USAGE-ROW @ DB-ROW-NAME$ FAULT+ s" : usage not recorded: " FAULT+
-   USAGE-RC @ REASON$ FAULT+
+   USAGE-RC @ BARE-REASON$ FAULT+
    1 USAGE-ROW +! ;
 
 FSM:DEFINE USAGE-STEPS ( n ) usage-step check-input
@@ -485,14 +493,15 @@ FSM:DEFINE USAGE-TURN ( n ) usage-turn turn-input
    FINAL left -
 ;DEFINE
 
-\ the save-back error goes to stderr, the provider error to stdout
+\ the save-back error and the provider error each go to stderr as one line
+\ that starts with the provider
 : .FAULTS ( n -- ) {: p :}
    BACK-ERR-U @ 0 > if
       p PROVIDER$ ERR-PART s" : live login not saved: " ERR-PART BACK-ERR BACK-ERR-U @ ERR-NOTE
       true USAGE-FAILED !
    then
    FAULTS-U @ 0 > if
-      p PROVIDER$ type s" : " type FAULTS$ type cr
+      p PROVIDER$ ERR-PART s" : " ERR-PART FAULTS$ ERR-NOTE
       true USAGE-FAILED !
    then ;
 
