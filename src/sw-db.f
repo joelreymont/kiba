@@ -629,19 +629,23 @@ public
 
 private
 
-: ONE-ROW ( n ptr u8 n ptr u8 n n -- ) {: p sql su op ou cols :}
-   cols ROW-RESET
-   sql su op ou [: p PROVIDER$ DB-TEXT+ ;] [: ROW-KEEP ;] DB-QUERY ;
+create QUERY-NAME NAME-CAP allot   variable QUERY-NAME-U
 
-\ the name sql selects for the provider; false when there is no row
-: NAME-QUERY ( n ptr u8 n ptr u8 n -- ptr u8 n bool )
-   1 ONE-ROW
-   ROW-N @ 0= if NULL-PTR BYTE-VIEW 0 false exit then
-   0 0 ROW-TEXT$ {: a u :}
+: QUERY-ROW ( -- )
+   0 DB-COL-BYTES {: a u :}
    a u CHECK-NAME
-   a u true ;
+   a u QUERY-NAME QUERY-NAME-U NAME-CAP SPAN!
+   1 FOUND-N ! ;
 
-create CAND-BUF NAME-CAP allot   variable CAND-U
+\ the name sql selects for the provider, read without touching the row table
+\ and lasting until the next such read; false when there is no row
+: NAME-QUERY ( n ptr u8 n ptr u8 n -- ptr u8 n bool )
+   {: p sql su op ou :}
+   0 FOUND-N ! 0 QUERY-NAME-U !
+   sql su op ou [: p PROVIDER$ DB-TEXT+ ;] [: QUERY-ROW ;] DB-QUERY
+   QUERY-NAME QUERY-NAME-U @ FOUND-N @ 0<> ;
+
+create CAND-BUF NAME-CAP allot
 variable HIT-K
 variable FREE-K
 
@@ -681,6 +685,16 @@ variable SAME
    TAKEN @ bit and 0= if FREE-K @ 0= if k FREE-K ! then exit then
    SAME @ bit and 0<> HIT-K @ 0= and if k HIT-K ! then ;
 
+DYNAMIC-BUFFER ADD-LIVE u8   variable ADD-LIVE-U
+
+\ keeps column 0 in ADD-LIVE; length -1 for NULL
+: ADDING-ROW ( -- )
+   0 DB-COL-BYTES {: a u :}
+   u 0 max {: size :}
+   size 1+ ADD-LIVE-RESERVE
+   a 0 ADD-LIVE size BYTE-COPY
+   u ADD-LIVE-U ! 1 FOUND-N ! ;
+
 public
 
 \ the slot the identity's login saves to, read without touching the row
@@ -714,11 +728,14 @@ public
    FOUND-AT @ FOUND-N @ 0<> ;
 
 \ the live item an add's login may overwrite, as it was before the login ran
-\ (length -1 when there was none); false when no add is in flight
+\ (length -1 when there was none), read without touching the row table and
+\ lasting until the next DB-ADDING; false when no add is in flight
 : DB-ADDING ( n -- ptr u8 n bool )
-   s" SELECT live, service FROM adding WHERE provider = ?" s" adding" 2 ONE-ROW
-   ROW-N @ 0= if NULL-PTR BYTE-VIEW 0 false exit then
-   0 0 ROW-SPAN true ;
+   {: p :}
+   0 FOUND-N ! 0 ADD-LIVE-U ! 1 ADD-LIVE-RESERVE
+   s" SELECT live FROM adding WHERE provider = ?" s" adding"
+   [: p PROVIDER$ DB-TEXT+ ;] [: ADDING-ROW ;] DB-QUERY
+   0 ADD-LIVE ADD-LIVE-U @ FOUND-N @ 0<> ;
 
 \ ---- writes, inside DB-WRITE ---------------------------------------------------
 private

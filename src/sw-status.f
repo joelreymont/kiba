@@ -56,11 +56,8 @@ ENUM live-input present absent threw ;ENUM
 : NAME-RUN ( n -- n )
    dup ID-LIVE DB-LIVE-NAME STAT-NAME STAT-NAME-U NAME-CAP SPAN! ;
 
-\ DB-LIVE-NAME lists the provider again into the row table, so the rows
-\ shown are the ones it leaves, whether or not it returns
 : NAME-SENSE ( n -- read-input )
    [: NAME-RUN ;] catch {: rc :} drop
-   DB-ROW# STAT-ROWS !
    rc READ-INPUT ;
 
 FSM:DEFINE READING ( n ) status-step read-input

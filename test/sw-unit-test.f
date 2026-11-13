@@ -274,6 +274,27 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
       0 DB-ROW-NAME$ s" a@x.test" T$=
       1 DB-ROW-NAME$ s" b@x.test" T$= ;] UT-STORE ;
 
+\ Codex's installed, pending and adding reads answer their records and leave
+\ the Claude rows a caller listed
+: UT-MARKS-READ ( -- )
+   P-CLAUDE DB-LIST
+   P-CODEX DB-INSTALLED TTRUE s" d@x.test" T$=
+   P-CODEX DB-PENDING TTRUE s" c@x.test" T$=
+   P-CODEX DB-ADDING TTRUE AUTH-C9$ T$=
+   DB-ROW# 2 T=
+   0 DB-ROW-NAME$ s" a@x.test" T$=
+   1 DB-ROW-NAME$ s" b@x.test" T$= ;
+
+\ notes the marks, reads them and clears them again in one transaction
+: UT-MARKS ( -- )
+   P-CODEX s" c@x.test" DB-NOTE-PENDING {: c cu :}
+   P-CODEX AUTH-C9$ DB-NOTE-ADDING
+   UT-MARKS-READ
+   P-CODEX DB-CLEAR-ADDING
+   P-CODEX c cu DB-CLEAR-PENDING ;
+
+: UT-READS-KEEP-ROWS ( -- ) [: [: UT-MARKS ;] DB-WRITE ;] UT-STORE ;
+
 \ a second login under the same email but another organization gets its own
 \ name, "a@x.test #2"
 : CFG-A2$ ( -- ptr u8 n )
@@ -1251,6 +1272,7 @@ create UT-LIST UT-LIST-CAP allot
    UT-STORE-USE
    UT-STORE-USE-CODEX
    UT-NAME-KEEPS-ROWS
+   UT-READS-KEEP-ROWS
    UT-SAME-EMAIL
    UT-INSTALL-INSERT
    UT-FAILED-FIRST-WRITE
