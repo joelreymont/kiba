@@ -927,6 +927,34 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    P-CODEX PROBE-CLEANUP
    P-CODEX s" /body.json" PSUB-PUBLIC$ FS:FILE? TFALSE ;
 
+\ a saved Claude login whose access token has expired
+: CREDS-T$ ( -- ptr u8 n )
+   s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-t\",\"refreshToken\":\"r-t\",\"expiresAt\":2,\"scopes\":[\"user:inference\"],\"subscriptionType\":\"max\"}}" ;
+
+\ a fake curl that renews any Claude grant to sk-t-new, then answers its
+\ usage call with a model name too long to read; every other call gets {}
+: UT-RENEW-THROW-CURL ( -- )
+   s" curl"
+   s\" #!/bin/sh\nout=; auth=; url=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) case \"$2\" in @*) auth=$(/usr/bin/grep ^Authorization: \"${2#@}\");; esac; shift;; --data-binary|-X|-m|-w) shift;; -*) ;; *) url=$1;; esac; shift; done\nbody='{}'\ncase \"$url\" in\n*platform.claude.com/v1/oauth/token) body='{\"access_token\":\"sk-t-new\",\"refresh_token\":\"r-t-new\",\"expires_in\":3600}';;\n*api.anthropic.com/api/oauth/usage*) case \"$auth\" in *sk-t-new) body='{\"limits\":[{\"kind\":\"weekly_scoped\",\"scope\":{\"model\":{\"display_name\":\"ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\"}},\"percent\":1}]}';; esac;;\nesac\nprintf '%s' \"$body\" > \"$out\"\nprintf 200\n"
+   UT-WRITE-SCRIPT ;
+
+: UT-RENEWED-T ( ptr u8 n -- ) {: c cu :}
+   c cu CHECK-OBJECT
+   c cu s\" \"accessToken\":\"sk-t-new\"" CONTAINS? TTRUE
+   c cu s\" \"refreshToken\":\"r-t-new\"" CONTAINS? TTRUE
+   c cu s\" \"expiresAt\":2," CONTAINS? TFALSE ;
+
+\ a probe that throws after renewing the token records its error and keeps
+\ the renewed login in the row
+: UT-RENEWED-THROWS ( -- )
+   UT-RENEW-THROW-CURL
+   P-CLAUDE s" t@x.test" CREDS-T$ UT-PUT
+   P-CLAUDE CMD-USAGE
+   P-CLAUDE s" t@x.test" UT-RECORD s" error" UT-STATE=
+   DB-USAGE-NOTE$ s" too many: bytes in a JSON string (limit 64)" T$=
+   P-CLAUDE s" t@x.test" [: UT-RENEWED-T ;] UT-ROW-LOGIN
+   P-CLAUDE s" t@x.test" CMD-FORGET ;
+
 \ live claude a@x.test (sk-a) and codex c@x.test, saved back first; saved
 \ b@x.test refreshes its expired token, e@x.test's refresh is rate limited
 \ (an error, not a dead login), f@x.test has no refresh token; saved
@@ -1694,6 +1722,7 @@ create UT-LIST UT-LIST-CAP allot
    UT-PCT-CALLERS
    UT-LONG-TOKEN
    UT-SCRATCH-APART
+   UT-RENEWED-THROWS
    UT-USAGE
    UT-USAGE-REFRESHED
    UT-USAGE-REVOKED

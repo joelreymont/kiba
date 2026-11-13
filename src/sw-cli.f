@@ -326,9 +326,11 @@ FSM:DEFINE OUTCOME-STEPS ( n ) outcome-step outcome-input
    r OUTCOME-ROW ! live OUTCOME-LIVE !
    p construct outcome-step sensing OUTCOME-STEPS ;
 
+\ the probe of row r left a login other than the row's, byte for byte; the
+\ probe's login points into the row table until a renewal, so no store read
+\ may come between the probe and this
 : LOGIN-CHANGED? ( n -- bool ) {: r :}
-   PROBE-RENEWED? 0= if false exit then
-   SDOC$ r DB-ROW-LOGIN$ STR= 0= ;
+   PROBE-DOC$ r DB-ROW-LOGIN$ STR= 0= ;
 
 \ ID-SLOT carries the plan the provider named, when it named one
 : PLAN-OVER ( -- )
@@ -347,7 +349,7 @@ FSM:DEFINE OUTCOME-STEPS ( n ) outcome-step outcome-input
    r DB-ROW-NAME$ {: a u :}
    r LOGIN-CHANGED? {: changed :}
    [: p a u PROBED-PLAN$ DB-SET-USAGE
-      changed if p a u SDOC$ DB-SET-LOGIN then
+      changed if p a u PROBE-DOC$ DB-SET-LOGIN then
       p a u ID-SLOT live at DB-APPEND-USAGE ;] DB-WRITE ;
 
 \ probes the saved login a u and records the outcome, for an operation that
@@ -579,7 +581,7 @@ public
 : REDEEM-SAVE ( n n -- ) {: p r :}
    r LOGIN-CHANGED? 0= if exit then
    r DB-ROW-NAME$ {: a u :}
-   [: p a u SDOC$ DB-SET-LOGIN ;] DB-WRITE ;
+   [: p a u PROBE-DOC$ DB-SET-LOGIN ;] DB-WRITE ;
 
 : REDEEM-SPEND ( n n bool -- ) {: p r live :}
    [: p r live REDEEM ;] [: p r REDEEM-SAVE ;] finally ;

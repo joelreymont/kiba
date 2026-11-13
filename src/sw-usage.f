@@ -1,8 +1,8 @@
 \ sw-usage.f - per-account rate limits, read from each provider's usage
 \ endpoint with curl, as kiba-mac's ClaudeProbe and CodexProbe read them. A
 \ probe takes a saved login's document and whether the CLI is using it, and
-\ leaves the usage record (sw-db.f), the document in SDOC refreshed when a
-\ token was renewed, and the plan the provider named. It reads and writes no
+\ leaves the usage record (sw-db.f), the document in PROBE-DOC$, renewed
+\ when a token was, and the plan the provider named. It reads and writes no
 \ slot and takes no lock: the caller holds the provider's turn and records
 \ the outcome. A reset request (REDEEM) spends one limit reset under the same
 \ terms and leaves its outcome and the document.
@@ -118,9 +118,13 @@ variable EXP-VALUE                  \ the exponent, its magnitude held to a cap
 \ ---- one probe -------------------------------------------------------------------
 variable PROBE-AT                   \ epoch seconds the probe began: its fetchedAt
 variable PROBE-LIVE                 \ bool: the CLI is using this login; it is never refreshed
-variable DOC-NEW                    \ bool: SDOC holds the login with a renewed token
+\ the login probed: the caller's bytes until a renewal points it at SDOC
+TYPED-VARIABLE PROBE-DOC-A ptr u8   variable PROBE-DOC-U
 create PLAN-NAMED PLAN-CAP allot    variable PLAN-NAMED-U   \ -1 when the provider named none
 variable HTTP-CODE                  \ the last answer's status, -1 when there was none
+
+: PROBE-DOC! ( ptr u8 n -- ) PROBE-DOC-U ! PROBE-DOC-A ! ;
+: PROBE-DOC$ ( -- ptr u8 n ) PROBE-DOC-A @ PROBE-DOC-U @ ;
 
 \ the probe's outcome: a record of state st and note a u, without limits
 : SAY ( usage-state ptr u8 n -- ) {: st a u :}
@@ -387,11 +391,11 @@ variable LINE-GAP                   \ bool: a separator run waits for the next s
    SB-RESET FMT:SB-INT SB$ ;
 
 \ a refresh splices a copy of the login, which replaces it only when whole
-: SPLICE-BEGIN ( -- ) SDOC$ CFG-BUF CFG-U BUF-CAP SPAN! ;
+: SPLICE-BEGIN ( -- ) PROBE-DOC$ CFG-BUF CFG-U BUF-CAP SPAN! ;
 
 : SPLICE-END ( -- )
    CFG$ SDOC-BUF SDOC-U BUF-CAP SPAN!
-   true DOC-NEW ! ;
+   SDOC$ PROBE-DOC! ;
 
 \ ---- Anthropic -----------------------------------------------------------------------
 \ The usage flags ask for both reset blocks, as Claude Code does. The usage
@@ -732,14 +736,14 @@ ENUM profile-input free limited ;ENUM
 \ the claudeAiOauth token k in VAL-BUF; its length, -1 when absent or "", as
 \ in a document whose tokens were blanked
 : CLAUDE-TOKEN ( ptr u8 n -- n ) {: k ku :}
-   SDOC$ FIELDS? 0= if -1 exit then
-   SDOC$ CREDS-KEY$ k ku VAL-BUF BUF-CAP DOC-STR2 dup 0 > if dup VAL-U ! exit then
+   PROBE-DOC$ FIELDS? 0= if -1 exit then
+   PROBE-DOC$ CREDS-KEY$ k ku VAL-BUF BUF-CAP DOC-STR2 dup 0 > if dup VAL-U ! exit then
    drop -1 ;
 
 \ expiresAt in epoch milliseconds; -1 when absent
 : CLAUDE-EXPIRES ( -- n )
-   SDOC$ FIELDS? 0= if -1 exit then
-   SDOC$ CREDS-KEY$ s" expiresAt" DOC-INT2 0= if drop -1 then ;
+   PROBE-DOC$ FIELDS? 0= if -1 exit then
+   PROBE-DOC$ CREDS-KEY$ s" expiresAt" DOC-INT2 0= if drop -1 then ;
 
 \ a token this close to expiring, a minute, counts as expired
 : CLAUDE-FRESH ( n -- fresh-input ) drop
@@ -989,19 +993,19 @@ ENUM retry-input no-token unreachable fine unreadable rejected throttled other ;
 
 \ the tokens member k in VAL-BUF; its length, -1 when absent
 : CODEX-TOKEN ( ptr u8 n -- n ) {: k ku :}
-   SDOC$ FIELDS? 0= if -1 exit then
-   SDOC$ TOKENS-KEY$ k ku VAL-BUF BUF-CAP DOC-STR2 dup 0 >= if dup VAL-U ! then ;
+   PROBE-DOC$ FIELDS? 0= if -1 exit then
+   PROBE-DOC$ TOKENS-KEY$ k ku VAL-BUF BUF-CAP DOC-STR2 dup 0 >= if dup VAL-U ! then ;
 
 \ an API-key login without an id_token has no usage windows
 : CODEX-KEYED ( n -- key-input ) drop
-   SDOC$ FIELDS? 0= if construct key-input tokens exit then
-   SDOC$ CODEX-API-KEY? 0= if construct key-input tokens exit then
-   SDOC$ TOKENS-KEY$ s" id_token" KIND2 JSON:T-STR = if construct key-input tokens exit then
+   PROBE-DOC$ FIELDS? 0= if construct key-input tokens exit then
+   PROBE-DOC$ CODEX-API-KEY? 0= if construct key-input tokens exit then
+   PROBE-DOC$ TOKENS-KEY$ s" id_token" KIND2 JSON:T-STR = if construct key-input tokens exit then
    construct key-input api-key ;
 
 \ the usage call with the access token CODEX-TOKEN left in VAL-BUF
 : CODEX-GET ( n -- n ) {: p :}
-   SDOC$ TOKENS-KEY$ s" account_id" ACCT-ID-BUF BUF-CAP DOC-STR2 0 max ACCT-ID-U !
+   PROBE-DOC$ TOKENS-KEY$ s" account_id" ACCT-ID-BUF BUF-CAP DOC-STR2 0 max ACCT-ID-U !
    p s" codex-cli" CURL-BEGIN
    VAL-BUF VAL-U @ BEARER
    ACCT-ID-U @ 0 > if s" ChatGPT-Account-Id" ACCT-ID-BUF ACCT-ID-U @ HDR then
@@ -1175,10 +1179,10 @@ FSM:DEFINE CODEX-EXCHANGE ( n ) codex-step key-input
 
 \ ---- one probe -------------------------------------------------------------------
 : PROBE-BEGIN ( ptr u8 n bool -- ) {: d du live :}
+   d du PROBE-DOC!
    epoch-seconds PROBE-AT !
    live PROBE-LIVE !
-   false DOC-NEW ! -1 PLAN-NAMED-U ! -1 HTTP-CODE !
-   d du SDOC-BUF SDOC-U BUF-CAP SPAN! ;
+   -1 PLAN-NAMED-U ! -1 HTTP-CODE ! ;
 
 : PROBE-RUN ( n -- ) {: p :}
    p case
@@ -1330,7 +1334,7 @@ create RID-BUF 36 allot
    P-CLAUDE RESET-URL$ RESET-POST ;
 
 : CODEX-RESET-SEND ( -- n )
-   SDOC$ TOKENS-KEY$ s" account_id" ACCT-ID-BUF BUF-CAP DOC-STR2 0 max ACCT-ID-U !
+   PROBE-DOC$ TOKENS-KEY$ s" account_id" ACCT-ID-BUF BUF-CAP DOC-STR2 0 max ACCT-ID-U !
    P-CODEX s" codex-cli" CURL-BEGIN
    VAL-BUF VAL-U @ BEARER
    ACCT-ID-U @ 0 > if s" ChatGPT-Account-Id" ACCT-ID-BUF ACCT-ID-U @ HDR then
@@ -1525,8 +1529,8 @@ EXPORT PROBE-PREPARE
 EXPORT PROBE-CLEANUP
 
 \ probes provider p's login document d du, live when the CLI is using it:
-\ the outcome is the usage record, SDOC with the login (renewed when
-\ PROBE-RENEWED?) and PROBED-PLAN$
+\ the outcome is the usage record, PROBE-DOC$ with the login (renewed
+\ when a token was) and PROBED-PLAN$
 : PROBE ( n ptr u8 n bool -- ) {: p d du live :}
    d du live PROBE-BEGIN
    p PROBE-PREPARE
@@ -1538,14 +1542,16 @@ EXPORT PROBE-CLEANUP
    -1 PLAN-NAMED-U !
    construct usage-state error a u SAY ;
 
-: PROBE-RENEWED? ( -- bool ) DOC-NEW @ ;
+\ the login the last probe or reset request read, renewed when a token was;
+\ until a renewal these are the caller's bytes, so they last as long
+EXPORT PROBE-DOC$
 
 \ the plan the provider named; length -1 when it named none
 : PROBED-PLAN$ ( -- ptr u8 n ) PLAN-NAMED PLAN-NAMED-U @ ;
 
 \ spends one limit reset of provider p's saved row r, whose usage holds the
 \ offer, live when the CLI is using it: RESET-OUTCOME is what the provider
-\ made of it and SDOC the login (renewed when PROBE-RENEWED?). E-SW-REMOTE
+\ made of it and PROBE-DOC$ the login (renewed when a token was). E-SW-REMOTE
 \ with REMOTE-NOTE$ when the provider spent none, E-SW-NO-RESETS for a
 \ program kiba does not know, E-SW-JSON for a Claude row with no organization
 : REDEEM ( n n bool -- ) {: p r live :}
