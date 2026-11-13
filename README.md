@@ -40,35 +40,50 @@ saved copy dies with them.
 ## Commands
 
 ```
-kiba status [--json]          live account, saved accounts, and their usage
-kiba save [claude|codex]      copy the live login(s) into the store
-kiba use <provider> <name>    save back the live login, install <name>
-kiba add <provider> [name]    log in to a new (or the named) account, save it
+kiba status [--json]           live account, saved accounts, and their usage
+kiba save [claude|codex]       save the live login(s) under their account names
+kiba use <provider> <name>     save back the live login, install <name>
+kiba add <provider> [name]     log in to a new (or the named) account, save it
 kiba forget <provider> <name>
-kiba usage [claude|codex]     probe the rate limits of every saved account
+kiba usage [claude|codex]      probe the rate limits of every saved account
+kiba redeem <provider> <name>  spend one of <name>'s limit resets
 ```
 
 `<name>` is the account's email, or `email #2`, `email #3` for further
 logins under the same email. Exit codes: 0 ok, 64 usage, 1 any other failure
-with a one-line reason on stderr. `use` and `add` re-probe the account they
-touched, so the widget shows its figures at once.
+with a one-line reason on stderr; `usage` exits 1 once every provider has
+run when any of them reported an error. `use` probes the account it
+installed and the one it saved back, `add` the account it saved, and
+`redeem` the account it reset, so the widget shows their figures at once.
 
-`status --json` shape:
+`status --json` is kiba-mac's snapshot, which the Claude Code auto-switch mod
+reads:
 
 ```json
-{"providers":[{"id":"claude","live":{"email":"a@x","plan":"max"},
-  "accounts":[{"email":"a@x","plan":"max","active":true,
-    "usage":{"fetchedAt":1789480000,"note":"",
-      "limits":[{"label":"Session (5-hour)","percent":56,"resetsAt":"2026-09-15T14:00:00+00:00"},
-                {"label":"Weekly (7-day)","percent":14,"resetsAt":"2026-09-21T11:00:00+00:00"}]}}]}, ...]}
+{"providers":[{"provider":"claude","live":{"email":"a@x","plan":"max"},"installedAt":1789480000,
+  "accounts":[{"name":"a@x","plan":"max","active":true,
+    "usage":{"fetchedAt":1789480000,"state":"ok","note":"",
+      "limits":[{"label":"Session (5-hour)","percent":56,"left":44,"resetsAt":"2026-09-15T14:00:00Z"}],
+      "resets":{"count":1,"program":"juniper_tide","grant":""}}}]}, ...]}
 ```
 
-`live` is `null` without a login; `plan` is `""` when the file has none. A
-provider whose files cannot be read carries an `"error"` string and keeps its
-`accounts` list, so the other provider and every saved login stay usable.
-`usage` is `null` until the account has been probed; `percent` is the whole
-number used, `state` is one of `ok`, `expired`, `revoked`, `error`, or
-`unknown`, and `note` explains anything but `ok`.
+A provider whose files cannot be read carries an `"error"` string and keeps
+its `accounts` list, so the other provider and every saved login stay
+usable. `usage` is absent until the account has been probed; `percent` is
+the whole number used, `-1` for a window without a reading; `resets` is
+absent when the provider said nothing about limit resets. `state` is one of:
+
+| state | meaning |
+|-------|---------|
+| `ok` | the figures are current |
+| `expired` | the token has expired and cannot be renewed now |
+| `revoked` | the provider revoked the login; log in again |
+| `error` | the check failed; `note` says why, the login is kept |
+| `unknown` | never probed, or the stored record is unreadable |
+| `unsubscribed` | the login works, but its organization has no plan the CLI may use |
+| `throttled` | the provider is rate limiting this login's usage checks |
+| `missing` | the saved login holds no token to check or renew with |
+| `free` | the organization is on the free plan: no usage to read |
 
 ## How switching works
 
@@ -83,70 +98,78 @@ number used, `state` is one of `ok`, `expired`, `revoked`, `error`, or
   `CODEX_HOME` is honored. An API-key login has no email; it is saved and
   restored under the fixed name `api-key`.
 - **Two logins under one email** (a second Claude organization or a second
-  ChatGPT workspace) get separate slots in the order they are added: the first
-  keeps the bare email, the next are `email #2`, `email #3`. The store matches
-  a login to its slot by organization, never by position.
-- **Store**: `$XDG_DATA_HOME/kiba/<provider>/<name>/` (default
-  `~/.local/share/kiba`), directories `0700`, files `0600`, every write
-  through a same-directory temp file and rename. A `lock` directory holding
-  the owner's pid serializes concurrent runs; a lock whose owner is dead is
-  taken over, and `status` never takes it.
+  ChatGPT workspace) get separate names in the order they are added: the first
+  keeps the bare email, the next are `email #2`, `email #3`. A login is matched
+  to its name by organization, never by position.
+- **Store**: one SQLite file, `$XDG_DATA_HOME/kiba/kiba.db` (default
+  `~/.local/share/kiba`), in kiba-mac's schema: each saved login, the live
+  install records, and a history of every probe and switch. Its directory is
+  `0700`; every write is a transaction. A store from a newer kiba is refused.
+- **Turns**: every command but `status` holds its provider's turn, a lock
+  shared by every kiba process, from start to end, network calls included.
+  Waiters take it in the order they arrived and give up after two minutes;
+  Claude and Codex commands run side by side.
 - **Save-back**: both CLIs rotate tokens while they run, so before installing
-  another account `use` first saves the currently live login into its own slot.
+  another account `use` first saves the currently live login into its own row.
   A saved copy is therefore never staler than the last switch away from it.
-  The Claude install writes two files; a marker in the store brackets the pair
-  so that a switch interrupted between them can never save one account's
-  tokens under another account's name. `save` refuses while the marker is
-  present and the next `use` clears it. kiba also records which slot it
-  installed last: if `.claude.json` later names another account while the
-  credentials are still byte-for-byte the installed slot's, the pair is
-  mixed, save-back leaves it alone, and `save` says so.
+  The Claude install writes two files, so it records a pending install in
+  the store before the first and clears it after the second; until a later
+  `use` completes an interrupted one, nothing is probed or refreshed. kiba
+  also records which login it installed last: if `.claude.json` later names
+  another account while the credentials are still byte-for-byte that
+  login's, the pair is mixed, save-back leaves it alone, and `save` says so.
 - **Live files that are symlinks** stay symlinks on `use` and `save`: the
-  write replaces the file the link points at. `add` is the exception: the
-  provider's own login creates a fresh regular file, so after an `add` the
-  live file is a plain file and the old link target keeps the previous
-  account's tokens until you remove it.
+  write replaces the file the link points at.
 - **Login runs in the foreground, in a throwaway home**: `add` forks and
   execs the provider's login with `CLAUDE_CONFIG_DIR` or `CODEX_HOME`
-  pointing at a private directory under `<store>/probe-<provider>/`, so the login never
-  sees the live login: nothing is read, revoked (`codex login` revokes
-  whatever login it finds), or replaced while your sessions are working. The
-  new login is read from that directory, saved under its name, probed, and
-  the directory is removed. The child stays in the terminal's process group;
-  a child in its own group is stopped by SIGTTIN the moment it reads the
-  terminal.
+  pointing at a private directory under `<store>/probe-<provider>/`, so the
+  login never sees the live login: nothing is read, revoked (`codex login`
+  revokes whatever login it finds), or replaced while your sessions are
+  working. The new login is read from that directory and saved under its
+  name, the directory is removed, and the new account is probed. The child
+  stays in the terminal's process group; a child in its own group is stopped
+  by SIGTTIN the moment it reads the terminal.
 
 ## Usage per account
 
 `kiba usage` answers "which account still has room". For every saved account
 it asks the provider's own usage endpoint with that account's saved token,
-through `curl`, and keeps the reported windows in `<slot>/usage.json`:
+through `curl`, and records the answer, any refreshed tokens and a history
+event in one transaction:
 
 - Claude: `GET https://api.anthropic.com/api/oauth/usage` with the OAuth
   access token. Windows: `Session (5-hour)`, `Weekly (7-day)`, and every
   model-scoped window the payload lists, named after the model, such as
-  `Fable Weekly`.
+  `Fable Weekly`, plus the limit resets the account may spend.
 - Codex: `GET https://chatgpt.com/backend-api/wham/usage` with the access
   token and account id. Windows are named from their length: five hours is
   the session, seven days the week.
 
 A saved (non-live) account is refreshed once through the provider's token
 endpoint when its token has expired (Claude) or is rejected (Codex), and the
-new tokens replace the slot's. The live account is never refreshed by kiba:
-its CLI owns that token, and rotating it underneath a running session would
-log the session out, so an expired live token is reported as `expired` and
-not sent. A Codex login whose refresh grant is refused after the provider
-called it revoked has no value left, so its slot is removed; log into the
-account again and add it. Any other failure is recorded as that account's
-`state` and `note` and the run continues with the next account and the next
-provider. Network calls run without the store lock; only the saved-back live
-login and each slot write take it. Headers, which carry the token, reach
-`curl` through a 0600 file, never through argv; scratch files live under
-`<store>/probe-<provider>/`, one directory per provider so a Claude and a
-Codex command running at once never remove each other's, and are removed
-after each request. Every request names
-`kiba` as its User-Agent (the ChatGPT usage call keeps `codex-cli`):
-Anthropic's token endpoint answers 429 to curl's own, whatever the grant.
+new tokens replace the saved ones. The live account is never refreshed by
+kiba: its CLI owns that token, and rotating it underneath a running session
+would log the session out, so an expired live token is reported as
+`expired` and not sent. Only a 400 or 401 from a token endpoint means a
+saved login is gone; a revoked login keeps its row, marked `revoked`, until
+you forget it. Any other failure is recorded as that account's `state` and
+`note` and the run continues with the next account. When every saved
+account was probed after the run began, because another kiba probed them
+while this one waited for the turn, those results are reported and nothing
+is probed again.
+
+Headers, which carry the token, reach `curl` through a 0600 file, never
+through argv. Scratch files live under `<store>/probe-<provider>/`, one
+directory per provider so a Claude and a Codex command running at once never
+remove each other's, and are removed after each request. Requests name
+`kiba` as their User-Agent, except the usage and reset calls: the ChatGPT
+ones keep `codex-cli`, and the Claude ones carry Claude Code's
+`claude-cli/<version>`, which alone opens the limit-reset offer. Anthropic's
+token endpoint answers 429 to curl's own User-Agent, whatever the grant.
+
+`kiba redeem <provider> <name>` spends one limit reset the account's last
+probe offered, then probes it again. A saved login's token is refreshed
+first when it has expired or is rejected; the live login's never is.
 
 ## Bar widget
 

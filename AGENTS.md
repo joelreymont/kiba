@@ -20,13 +20,14 @@ checked Habu program; a thin Omarchy bar widget runs it.
   stack-comment, and checker rules apply here unchanged.
 - All Forth lives in `package SW`, split one concern per file under `src/`:
   `sw-base.f` errors and byte helpers, `sw-paths.f` file locations, `sw-io.f`
-  buffers, the JSON writer, private writes, lock and install marker, `sw-json.f`
-  field access over in-memory JSON, `sw-identity.f` who a login belongs to,
-  `sw-claude.f` and `sw-codex.f` save and install per provider, `sw-store.f`
-  slot naming and listing, `sw-run.f` provider commands in the foreground,
-  `sw-usage.f` usage probes through `curl`, `sw-cli.f` the commands, `kiba.f`
-  the entry and `MAIN`. This split is today's folder-store code, which the
-  parity rebuild (`PARITY.md`) replaces.
+  buffers, the JSON writer and private writes, `sw-json.f` field access over
+  in-memory JSON, `sw-identity.f` who a login belongs to, `sw-claude.f` and
+  `sw-codex.f` the live files per provider, `sw-sqlite.f` the SQLite binding,
+  `sw-db.f` the account store, `sw-turn.f` the per-provider turn,
+  `sw-store.f` saving, installing and forgetting through the store,
+  `sw-status.f` the status read, `sw-run.f` provider commands in the
+  foreground, `sw-usage.f` usage probes and limit resets through `curl`,
+  `sw-cli.f` the commands, `kiba.f` the entry and `MAIN`.
 - Library words come from a checkout of [Habu](https://github.com/joelreymont/habu)
   named by `HABU` (default `~/Work/habu`). `build.sh` and `test.sh` run
   `bin/hb` from that checkout, so relative `require src/lib/...` resolves there.
@@ -34,12 +35,12 @@ checked Habu program; a thin Omarchy bar widget runs it.
   them. `MAIN` maps them to one-line reasons; `status` and `usage` catch per
   provider or per account so one bad file never hides the others.
 - Every identity read names the record it fills: `ID-LIVE` is the login the
-  provider is running, `ID-SLOT` the saved slot under examination, so reading
-  a slot never disturbs the live login and nothing is copied aside.
-- The store lock is re-entrant within a process and records its owner's pid;
-  network calls in `sw-usage.f` run outside it and every slot write takes it
-  through a `WITH-LOCK` quotation that reads its account from module cells.
-  This lock guards today's folder store, which the parity rebuild replaces.
+  provider is running, `ID-SLOT` the saved login under examination, so
+  reading a saved login never disturbs the live one and nothing is copied
+  aside.
+- Every command but `status` opens the store itself and holds its
+  provider's turn (`STORE-TURN`) from start to end, network calls included;
+  each store write is one `DB-WRITE` transaction.
 
 ## Layout
 
@@ -85,8 +86,10 @@ checked Habu program; a thin Omarchy bar widget runs it.
   process group and a terminal read then stops it with SIGTTIN.
 - Credential files and account directories are written `0600`/`0700` and
   replaced atomically.
-- Every `curl` request names its client (`KIBA-UA$`, or `codex-cli` for the
-  ChatGPT usage call): Anthropic's token endpoint answers 429 to curl's own
-  User-Agent whatever the grant, which read as dead logins for a day. Only
-  a 400 or 401 from a token endpoint means a saved login is gone; any other
-  answer is an `error` state, never `expired`.
+- Every `curl` request names its client: `KIBA-UA$`, except the usage and
+  reset calls, where the ChatGPT ones keep `codex-cli` and the Claude ones
+  carry Claude Code's `claude-cli/<version>` (`CLAUDE-UA$`), which alone
+  opens the limit-reset surface. Anthropic's token endpoint answers 429 to
+  curl's own User-Agent whatever the grant. Only a 400 or 401 from a token
+  endpoint means a saved login is gone; any other answer is an `error`
+  state, never `expired`.

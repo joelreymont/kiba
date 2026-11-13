@@ -21,32 +21,31 @@ holds that.
     - `O_EXLOCK` and `F_FULLFSYNC` (`PrivateFS.swift`, `Switcher.swift`);
     - `CryptoKit` and `os`;
     - `URLSession` (`HTTP.swift`).
-- **kiba** (this repository): a Habu Forth CLI (`src/`, about 2,500 lines)
+- **kiba** (this repository): a Habu Forth CLI (`src/`, about 4,700 lines)
   and the Omarchy widget (`plugin/kiba/`).
-  - Commands: `status`, `save`, `usage`, `use`, `add`, `forget` (`src/kiba.f:45-50`).
-  - The store is a folder per account under `$XDG_DATA_HOME/kiba` (`src/sw-paths.f:23-28`).
-  - Its last behaviour change was around 2026-09-21.
-  - Missing against kiba-mac:
-    - the SQLite store and its history;
-    - four of kiba-mac's nine usage states (`Sources/KibaCore/Usage.swift:37-45`);
-    - limit resets;
-    - per-provider turns that hold across network calls (`src/sw-io.f:158`);
+  - Commands: `status`, `save`, `usage`, `use`, `add`, `forget`, `redeem`
+    (`src/kiba.f:46-52`).
+  - The store is kiba-mac's SQLite file, history included (`src/sw-db.f`),
+    through kiba's own libsqlite3 binding over Habu's FFI
+    (`src/sw-sqlite.f`).
+  - Every command but `status` holds its provider's turn across network
+    calls (`src/sw-turn.f`).
+  - `usage` records kiba-mac's nine states and the limit-reset offer, and
+    `redeem` spends a reset (`src/sw-usage.f`).
+  - It builds on current Habu master. The turn, the store's transactions,
+    the status read, installs, save-back, probes and `usage` are
+    `FSM:DEFINE` machines.
+  - Missing against kiba-mac, all in the widget:
     - model-only limits that leave the account usable (`plugin/kiba/Panel.qml:155`);
-    - the `status --json` shape the mod reads (`src/sw-cli.f:115`);
+    - the `status --json` shape the CLI now prints: the widget still reads
+      the old one (`plugin/kiba/Status.qml`);
     - Log In Again;
     - queued row actions.
-  - Habu has no SQLite binding.
-  - It does not build against Habu master: `src/sw-base.f:2` requires
-    `src/lib/errors.f`, which Habu renamed `error.f`, and `src/sw-base.f:70`
-    calls `FS-PATH-CAP`, which Habu no longer has. The build stops at the
-    first missing word, so the rest of the drift is unmeasured.
-  - No flow is a state machine; Habu's `FSM:DEFINE` (`src/lib/fsm.f`,
-    `docs/forth.md` "State machines") is unused.
 - **spark**: Ubuntu 24.04 on aarch64 with GNOME, used over ssh.
   - The widget cannot run there: it has no Hyprland and no Omarchy shell.
   - `claude` and `codex` are in `~/.local/bin`.
   - The auto-switch mod is in `~/Work/Dotfiles/.skills/claude/kiba` and
-    calls a `kiba` that is not installed.
+    calls the `kiba` in `~/.local/bin`.
   - Habu's `bin/hb` is built. There is no Swift toolchain, and SQLite has
     its runtime library but no headers.
   - A snapshot of the Mac's store is at `~/.local/share/kiba/kiba.db`.
@@ -68,15 +67,17 @@ holds that.
   - Claude keeps its credentials in a file, so there is no Keychain.
   - `add` runs the provider's login in the calling terminal, as kiba does
     today.
-- **The copied store**: no token from the Mac is used on the spark.
-  - A saved login refreshed on one machine dies on the other: both CLIs and
-    kiba's probes rotate tokens (README, Save-back).
-  - So before kiba first runs on the spark, the copy keeps its accounts and
-    history but loses its saved logins and its Mac-only install records
-    (`live`, `pending`, `adding`).
-  - Each account is then logged in again on the spark and gets its own
-    tokens.
-  - The Mac's store is untouched.
+- **The copied store**: the final copy is taken once kiba-mac, Claude and
+  Codex on the Mac have quit. It keeps its accounts and history and loses
+  its Mac-only install records (`live`, `pending`, `adding`). The Mac's
+  store is untouched.
+  - Whether its saved logins survive the move is proven once, the user's
+    choice (2026-11-13): on the spark, one saved account that is not the
+    live login is refreshed once, and its new tokens are saved into its row.
+  - A 200 keeps the copied logins. A 400 or 401 means a login refreshed on
+    one machine dies on the other (both CLIs and kiba's probes rotate
+    tokens, README, Save-back): the copy then loses its saved logins, and
+    each account is logged in again on the spark.
 - **Habu and state machines**: the user's choice (2026-11-13). kiba is
   brought up to current Habu master and its features, and rebuilt on Habu's
   state machine library: every state kiba handles is an `FSM:DEFINE` table
