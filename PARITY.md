@@ -80,8 +80,10 @@ holds that.
   everywhere.
 - **Habu and state machines**: the user's choice (2026-11-13). kiba is
   brought up to current Habu master and its features, and rebuilt on Habu's
-  state machine library: every state kiba handles is an `FSM:DEFINE` table
-  (AGENTS.md, Rules).
+  state machine library: code whose outcomes cannot all be seen in one place
+  is an `FSM:DEFINE` table, and one call's outcome, a loop over rows or a
+  straight run of steps is plain code (the user's choice, 2026-11-13;
+  AGENTS.md, Rules).
 - **Widget**: the user's choice (2026-11-13). It is brought to parity with
   kiba-mac's app for machines that run Omarchy; on the spark the CLI is the
   only front end.

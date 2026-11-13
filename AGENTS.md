@@ -72,10 +72,11 @@ checked Habu program; a thin Omarchy bar widget runs it.
 - kiba builds with the current Habu, the installed one, and never pins a
   Habu revision in scripts, tests or docs. It uses Habu's libraries for what
   they provide; a kiba word that a Habu library now covers gives way to it.
-- Every state kiba handles is an `FSM:DEFINE` table from Habu's
-  `src/lib/fsm.f` (`docs/forth.md`, "State machines"): no branch on a flag,
-  a caught error or a status read back decides what happens next outside
-  one.
+- Code whose outcomes cannot all be seen in one place is an `FSM:DEFINE`
+  table from Habu's `src/lib/fsm.f` (`docs/forth.md`, "State machines"):
+  steps that repeat or retry, phases, a half-done change to undo, an
+  exchange with a provider. One call whose outcome picks one action, a loop
+  over rows, or a run of steps that each go on or stop is plain code.
 - Never run `codex logout` or `claude auth logout` from code or tests: both
   revoke tokens server-side and kill every saved copy of that account.
   `codex login` revokes the existing login too, so `add` runs every login
