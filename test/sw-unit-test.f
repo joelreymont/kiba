@@ -1053,6 +1053,109 @@ create UT-AT-BUF 1024 allot
    P-CODEX s" whole@x.test" CMD-FORGET
    P-CODEX s" long@x.test" CMD-FORGET ;
 
+\ ---- Claude probe outcomes ----------------------------------------------------
+\ a fake curl for the Claude outcomes: the usage and profile calls answer by
+\ the bearer token, the token call by the refresh grant; sk-down's usage
+\ call fails to connect as curl does, printing 000 and exiting 7
+: UT-CLAUDE-CURL ( -- )
+   s" curl"
+   s\" #!/bin/sh\nout=; auth=; url=; grant=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) case \"$2\" in @*) auth=$(/usr/bin/grep ^Authorization: \"${2#@}\");; esac; shift;; --data-binary) grant=$(/usr/bin/cat \"${2#@}\"); shift;; -X|-m|-w) shift;; *) url=$1;; esac; shift; done\ncode=200; body='{}'\ncase \"$url\" in\n*/api/oauth/usage*) case \"$auth\" in *sk-nop) code=403; body='{\"type\":\"error\",\"error\":{\"type\":\"permission_error\",\"message\":\"OAuth authentication is currently not allowed for this organization.\",\"details\":{\"error_code\":\"oauth_not_allowed_for_organization\"}}}';; *sk-paid|*sk-free) code=429; body='{\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\",\"message\":\"Number of requests has exceeded your rate limit\"}}';; *sk-rej) code=401; body='{\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"Invalid bearer token\"}}';; *sk-down) printf 000; exit 7;; *sk-bad) body='[1]';; esac;;\n*/api/oauth/profile) case \"$auth\" in *sk-free) body='{\"organization\":{\"uuid\":\"org-f\",\"organization_type\":\"claude_free\"}}';; *) body='{\"organization\":{\"uuid\":\"org-p\",\"organization_type\":\"claude_max\"}}';; esac;;\n*/v1/oauth/token) case \"$grant\" in *r-old400*) code=400; body='{\"error\":\"invalid_grant\",\"error_description\":\"Refresh token not found or invalid\"}';; *r-old401*) code=401; body='{\"error\":\"invalid_grant\"}';; *r-hold*) code=403; body='{\"error\":\"access_denied\",\"error_description\":\"account_on_hold\",\"error_uri\":\"https://support.anthropic.com/appeal\"}';; esac;;\n*) code=404;;\nesac\nprintf '%s' \"$body\" > \"$out\"\nprintf '%s' \"$code\"\n"
+   UT-WRITE-SCRIPT ;
+
+\ expiresAt of a token still good, and of one long expired
+: UT-FAR ( -- n ) 4102444800000 ;
+: UT-PAST ( -- n ) 2 ;
+
+\ a saved Claude login holding sk-<t> and r-<t>, expiring at epoch
+\ millisecond ms
+: CREDS-TOKEN$ ( ptr u8 n n -- ptr u8 n ) {: t tu ms :}
+   SB-RESET s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-" SB-APPEND t tu SB-APPEND
+   s\" \",\"refreshToken\":\"r-" SB-APPEND t tu SB-APPEND
+   s\" \",\"expiresAt\":" SB-APPEND ms FMT:SB-U
+   s\" ,\"subscriptionType\":\"max\"}}" SB-APPEND
+   SB$ UT-AT-BUF 1024 SPAN-COPY ;
+
+: UT-OUTCOME$ ( -- ptr u8 n ) s" o@x.test" ;
+
+\ usage claude over the saved row o@x.test holding CREDS-TOKEN$ t ms; its record
+\ is then in the record readers
+: UT-CLAUDE-PROBE ( ptr u8 n n -- ) {: t tu ms :}
+   t tu ms CREDS-TOKEN$ {: l lu :}
+   P-CLAUDE UT-OUTCOME$ l lu UT-PUT
+   P-CLAUDE CMD-USAGE
+   P-CLAUDE UT-OUTCOME$ UT-RECORD ;
+
+\ the record reads state s su and note n nu
+: UT-OUTCOME= ( ptr u8 n ptr u8 n -- ) {: s su n nu :}
+   s su UT-STATE=
+   DB-USAGE-NOTE$ n nu T$= ;
+
+: UT-OUTCOME-GONE ( -- ) P-CLAUDE UT-OUTCOME$ CMD-FORGET ;
+
+\ a 403 saying the organization's plan does not allow Claude Code
+: UT-CLAUDE-NO-PLAN ( -- )
+   s" nop" UT-FAR UT-CLAUDE-PROBE
+   s" unsubscribed" s" no plan for Claude Code: Anthropic does not allow this organization's OAuth login" UT-OUTCOME=
+   UT-OUTCOME-GONE ;
+
+\ a 429 for a paid organization is a rate limit, in Anthropic's words
+: UT-CLAUDE-THROTTLED ( -- )
+   s" paid" UT-FAR UT-CLAUDE-PROBE
+   s" throttled" s" Anthropic is rate limiting usage checks (Number of requests has exceeded your rate limit); try again later" UT-OUTCOME=
+   UT-OUTCOME-GONE ;
+
+\ a 429 for an organization the profile shows unpaid is a free plan
+: UT-CLAUDE-FREE ( -- )
+   s" free" UT-FAR UT-CLAUDE-PROBE
+   s" free" s" free plan: Anthropic's profile shows no paid plan for this organization" UT-OUTCOME=
+   UT-OUTCOME-GONE ;
+
+: UT-CLAUDE-REJECTED ( -- )
+   s" rej" UT-FAR UT-CLAUDE-PROBE
+   s" expired" s" login rejected by Anthropic; log in again" UT-OUTCOME=
+   UT-OUTCOME-GONE ;
+
+\ a refresh the token endpoint refuses with 400 or 401, with its detail
+: UT-CLAUDE-REFUSED ( -- )
+   s" old400" UT-PAST UT-CLAUDE-PROBE
+   s" expired" s" access token expired and the refresh was refused (400 invalid_grant: Refresh token not found or invalid); log in again" UT-OUTCOME=
+   UT-OUTCOME-GONE
+   s" old401" UT-PAST UT-CLAUDE-PROBE
+   s" expired" s" access token expired and the refresh was refused (401 invalid_grant); log in again" UT-OUTCOME=
+   UT-OUTCOME-GONE ;
+
+\ an account on hold may lift: an error with the appeal page, login kept
+: UT-CLAUDE-ON-HOLD ( -- )
+   s" hold" UT-PAST UT-CLAUDE-PROBE
+   s" error" s" account on hold and cannot use Claude Code; view details or appeal at https://support.anthropic.com/appeal" UT-OUTCOME=
+   s" hold" UT-PAST CREDS-TOKEN$ {: l lu :}
+   P-CLAUDE UT-OUTCOME$ l lu UT-LOGIN=
+   UT-OUTCOME-GONE ;
+
+: UT-CLAUDE-UNREACHED ( -- )
+   s" down" UT-FAR UT-CLAUDE-PROBE
+   s" error" s" Anthropic's usage endpoint could not be reached" UT-OUTCOME=
+   UT-OUTCOME-GONE ;
+
+: UT-CLAUDE-UNREADABLE ( -- )
+   s" bad" UT-FAR UT-CLAUDE-PROBE
+   s" error" s" Anthropic's usage endpoint sent an answer that is not a JSON object" UT-OUTCOME=
+   UT-OUTCOME-GONE ;
+
+\ every outcome of a saved Claude login's probe, as kiba-mac's ClaudeProbe
+\ records it; the shared fake curl is back afterwards
+: UT-CLAUDE-OUTCOMES ( -- )
+   UT-CLAUDE-CURL
+   UT-CLAUDE-NO-PLAN
+   UT-CLAUDE-THROTTLED
+   UT-CLAUDE-FREE
+   UT-CLAUDE-REJECTED
+   UT-CLAUDE-REFUSED
+   UT-CLAUDE-ON-HOLD
+   UT-CLAUDE-UNREACHED
+   UT-CLAUDE-UNREADABLE
+   UT-FAKE-CURL ;
+
 \ the fake `claude` logs its argv and writes account B into CLAUDE_CONFIG_DIR,
 \ or exits 3 when HOME holds fail-login
 : UT-FAKE-CLAUDE ( -- )
@@ -1849,6 +1952,7 @@ create UT-LIST UT-LIST-CAP allot
    UT-USAGE-REFRESHED
    UT-USAGE-REVOKED
    UT-ANSWER-READS
+   UT-CLAUDE-OUTCOMES
    UT-LIVE-EXPIRED
    UT-MIXED-USAGE
    UT-USAGE-ISOLATION
