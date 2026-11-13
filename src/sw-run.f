@@ -37,12 +37,16 @@ variable ENV-N
 variable ENV-STR-U
 
 : ENV-PUSH ( ptr u8 -- ) {: z :}
-   ENV-N @ ENV-MAX 1- >= if E-SW-CAPACITY throw then
+   ENV-N @ ENV-MAX 1- >= if
+      s" variables in a command's environment" ENV-MAX 1- LIMIT$ TOO-MANY
+   then
    z ENV-N @ ENV-TABLE !
    1 ENV-N +! ;
 
 : ENV-DEFINE ( ptr u8 n ptr u8 n -- ) {: name nu val vu :}
-   ENV-STR-U @ nu + vu + 2 + ENV-STR-CAP > if E-SW-CAPACITY throw then
+   ENV-STR-U @ nu + vu + 2 + ENV-STR-CAP > if
+      s" bytes in a command's environment" ENV-STR-CAP LIMIT$ TOO-MANY
+   then
    ENV-STR ENV-STR-U @ + {: z :}
    name z nu BYTE-COPY
    EQUALS z nu + c!

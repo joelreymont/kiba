@@ -3,6 +3,7 @@ require src/lib/error.f
 require src/lib/string.f
 require src/lib/prelude.f
 require src/lib/fs.f
+require src/lib/fmt.f
 
 package SW
 
@@ -67,10 +68,37 @@ $3D constant EQUALS
 : ERR-NOTE ( ptr u8 n -- )
    ERR-PART s\" \n" ERR-PART ;
 
+private
+
+256 constant TOO-MANY-CAP
+create TOO-MANY-BUF TOO-MANY-CAP allot   variable TOO-MANY-U
+
+public
+
+\ E-SW-CAPACITY, keeping what overflowed, cut to TOO-MANY-CAP, for its
+\ reason; kiba-mac's form is "<what> (limit <n>)"
+: TOO-MANY ( ptr u8 n -- ) {: a u :}
+   u TOO-MANY-CAP min {: k :}
+   a TOO-MANY-BUF k BYTE-COPY
+   k TOO-MANY-U !
+   E-SW-CAPACITY throw ;
+
+: TOO-MANY$ ( -- ptr u8 n ) TOO-MANY-BUF TOO-MANY-U @ ;
+
+private
+
+: SB-LIMIT ( n -- )
+   s"  (limit " SB-APPEND FMT:SB-INT s" )" SB-APPEND ;
+
+\ "<what> (limit <n>)", built in SB
+: LIMIT$ ( ptr u8 n n -- ptr u8 n ) {: a u cap :}
+   SB-RESET a u SB-APPEND cap SB-LIMIT SB$ ;
+
+public
+
 \ copy a span into caller storage with an explicit capacity and length cell
 : SPAN! ( ptr u8 n ptr u8 ptr n n -- ) {: a u dst up cap :}
-   u 0 < if E-SW-CAPACITY throw then
-   u cap > if E-SW-CAPACITY throw then
+   u cap > if s" bytes in a value" cap LIMIT$ TOO-MANY then
    a dst u BYTE-COPY
    u up ! ;
 
@@ -158,7 +186,9 @@ variable B64-OUT
    B64-BITS @ 6 + B64-BITS !
    B64-BITS @ 8 >= if
       B64-BITS @ 8 - B64-BITS !
-      B64-OUT @ cap >= if E-SW-CAPACITY throw then
+      B64-OUT @ cap >= if
+         s" bytes in a decoded base64url value" cap LIMIT$ TOO-MANY
+      then
       B64-ACC @ B64-BITS @ rshift $FF and dst B64-OUT @ + c!
       1 B64-OUT +!
    then ;

@@ -90,7 +90,9 @@ private
    SQL-OK <> if SQL-OP$ SQL-FAIL then ;
 
 : SQL-Z ( ptr u8 n -- ptr u8 ) {: a u :}
-   u SQL-Z-CAP >= if E-SW-CAPACITY throw then
+   u SQL-Z-CAP >= if
+      s" bytes in an SQL script" SQL-Z-CAP 1- LIMIT$ TOO-MANY
+   then
    a SQL-Z-BUF u BYTE-COPY
    0 SQL-Z-BUF u + c!
    SQL-Z-BUF ;

@@ -1419,11 +1419,19 @@ variable UT-V
    [: DB-OPEN ;] E-SW-DB-VERSION TTHROWSQ
    [: P-CLAUDE DB-LIST ;] E-SW-DB TTHROWSQ ;
 
+\ a seventeenth limit is E-SW-CAPACITY, whose reason names what overflowed
+: UT-DB-TOO-MANY ( -- )
+   s\" {\"fetchedAt\":1,\"limits\":[],\"note\":\"\",\"state\":\"ok\"}" DB-USAGE-DECODE
+   16 0 ?do s" w" 1 s" r" DB-LIMIT+ loop
+   [: s" w" 1 s" r" DB-LIMIT+ ;] E-SW-CAPACITY TTHROWSQ
+   E-SW-CAPACITY REASON$ s" kiba: too many: limits in a usage record (limit 16)" T$= ;
+
 : UT-DB ( -- )
    UT-DB-OPEN
    UT-DB-PUT
    UT-DB-FETCH
    UT-DB-USAGE
+   UT-DB-TOO-MANY
    UT-DB-PENDING
    UT-DB-ROLLBACK
    UT-STATUS-JSON

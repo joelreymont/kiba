@@ -4,6 +4,7 @@ require src/lib/memory.f
 require src/lib/fs-mutate.f
 require src/lib/json.f
 require src/lib/span.f
+require src/lib/fmt.f
 
 package SW
 
@@ -23,6 +24,11 @@ TYPED-VARIABLE BACK-A ptr u8   variable BACK-U    \ the credentials read back af
 create LINK-BUF PATH-CAP allot  variable LINK-U
 create DEST-BUF PATH-CAP allot  variable DEST-U
 8 constant LINK-HOPS
+
+\ E-SW-CAPACITY for a document over BUF-CAP, in kiba-mac's words
+: DOC-TOO-BIG ( -- )
+   SB-RESET s" bytes in a JSON document (limit " SB-APPEND
+   BUF-CAP $100000 / FMT:SB-INT s"  MiB)" SB-APPEND SB$ TOO-MANY ;
 
 : ALLOC-ONE ( ptr ptr u8 -- )
    BUF-CAP MEM-ALLOC-BYTES drop swap ! ;

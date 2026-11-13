@@ -9,7 +9,7 @@ package SW
 : OUT-RESET ( -- ) 0 OUT-U ! ;
 
 : OUT+ ( ptr u8 n -- ) {: a u :}
-   OUT-U @ u + BUF-CAP > if E-SW-CAPACITY throw then
+   OUT-U @ u + BUF-CAP > if DOC-TOO-BIG then
    a OUT-BUF OUT-U @ + u BYTE-COPY
    OUT-U @ u + OUT-U ! ;
 

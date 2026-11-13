@@ -163,14 +163,20 @@ variable HTTP-CODE                  \ the last answer's status, -1 when there wa
 \ go through a 0600 file (`-H @file`) rather than argv, which every local
 \ user can read from /proc; the body lands in a file and the HTTP status on
 \ stdout, redirected into a second file before exec.
+\ E-SW-CAPACITY unless n more bytes fit
+: HDR-ROOM ( n -- )
+   HDR-U @ + HDR-CAP > if
+      s" bytes in a request's headers" HDR-CAP LIMIT$ TOO-MANY
+   then ;
+
 : HDR-LINE+ ( ptr u8 n -- ) {: a u :}
-   HDR-U @ u + 1+ HDR-CAP > if E-SW-CAPACITY throw then
+   u 1+ HDR-ROOM
    a HDR-BUF HDR-U @ + u BYTE-COPY
    LF HDR-BUF HDR-U @ + u + c!
    HDR-U @ u + 1+ HDR-U ! ;
 
 : HDR ( ptr u8 n ptr u8 n -- ) {: name nu val vu :}
-   HDR-U @ nu + 2 + vu + 1+ HDR-CAP > if E-SW-CAPACITY throw then
+   nu 2 + vu + 1+ HDR-ROOM
    name HDR-BUF HDR-U @ + nu BYTE-COPY
    $3A HDR-BUF HDR-U @ + nu + c!
    $20 HDR-BUF HDR-U @ + nu + 1+ c!
@@ -178,7 +184,7 @@ variable HTTP-CODE                  \ the last answer's status, -1 when there wa
    val vu HDR-LINE+ ;
 
 : BEARER ( ptr u8 n -- ) {: t tu :}
-   HDR-U @ 22 + tu + 1+ HDR-CAP > if E-SW-CAPACITY throw then
+   22 tu + 1+ HDR-ROOM
    s" Authorization: Bearer " HDR-BUF HDR-U @ + swap BYTE-COPY
    HDR-U @ 22 + HDR-U !
    t tu HDR-LINE+ ;
@@ -332,7 +338,7 @@ create TEXT-HDR BUF:HDR-BYTES allot
    TEXT-HDR TEXT-CAP BUF:N>BLEN BUF:RESET
    TEXT-HDR JSON:READ-STR-APPEND
    TEXT-HDR BUF:SPAN$ BUF:BLEN>N {: a u :}
-   u cap > if E-SW-CAPACITY throw then
+   u cap > if s" bytes in a JSON string" cap LIMIT$ TOO-MANY then
    a dst u BYTE-COPY u ;
 
 \ key's string decoded into dst; -1 when absent or of another kind
@@ -435,7 +441,7 @@ variable LINE-GAP                   \ bool: a separator run waits for the next s
 \ CFG holds the document; each change splices OUT and copies it back.
 : SPLICE-CFG ( n n ptr u8 n -- ) {: off len v vu :}
    0 OUT-U !
-   off vu + CFG-U @ off len + - + BUF-CAP > if E-SW-CAPACITY throw then
+   off vu + CFG-U @ off len + - + BUF-CAP > if DOC-TOO-BIG then
    CFG-BUF OUT-BUF off BYTE-COPY
    v OUT-BUF off + vu BYTE-COPY
    CFG-BUF off len + + OUT-BUF off vu + + CFG-U @ off len + - BYTE-COPY

@@ -44,7 +44,7 @@ public
    rc E-SW-NAME = if s" kiba: account name has unsafe characters" exit then
    rc E-SW-JSON = if s" kiba: a login file is missing an expected field" exit then
    rc E-SW-LOGIN = if s" kiba: provider login did not complete" exit then
-   rc E-SW-CAPACITY = if s" kiba: too many saved accounts or a file over 4 MiB" exit then
+   rc E-SW-CAPACITY = if SB-RESET s" kiba: too many: " SB-APPEND TOO-MANY$ SB-APPEND SB$ exit then
    rc E-SW-NO-CLI = if s" kiba: provider command is not on PATH" exit then
    rc E-SW-BASE64 = if s" kiba: id_token is not base64url" exit then
    rc E-SW-ENV = if s" kiba: HOME is not set" exit then

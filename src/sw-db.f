@@ -23,7 +23,9 @@ create SQL-TEXT SQL-TEXT-CAP allot   variable SQL-TEXT-U
 : SQL$ ( -- ptr u8 n ) SQL-TEXT SQL-TEXT-U @ ;
 
 : SQL+ ( ptr u8 n -- ) {: a u :}
-   SQL-TEXT-U @ u + SQL-TEXT-CAP > if E-SW-CAPACITY throw then
+   SQL-TEXT-U @ u + SQL-TEXT-CAP > if
+      s" bytes in an SQL statement" SQL-TEXT-CAP LIMIT$ TOO-MANY
+   then
    a SQL-TEXT SQL-TEXT-U @ + u BYTE-COPY
    SQL-TEXT-U @ u + SQL-TEXT-U ! ;
 
@@ -84,7 +86,9 @@ public
 \ label, percent used, reset instant
 : DB-LIMIT+ ( ptr u8 n n ptr u8 n -- ) {: la lu pct ra ru :}
    REC-LIM-N @ {: i :}
-   i REC-LIM-MAX >= if E-SW-CAPACITY throw then
+   i REC-LIM-MAX >= if
+      s" limits in a usage record" REC-LIM-MAX LIMIT$ TOO-MANY
+   then
    la lu i LABEL-ROW i LABEL-U REC-LABEL-CAP SPAN!
    pct i PCT-CELL !
    ra ru i RESET-ROW i RESET-U REC-RESET-CAP SPAN!
@@ -695,6 +699,11 @@ DYNAMIC-BUFFER ADD-LIVE u8   variable ADD-LIVE-U
    a 0 ADD-LIVE size BYTE-COPY
    u ADD-LIVE-U ! 1 FOUND-N ! ;
 
+\ E-SW-CAPACITY for an email whose every slot holds another org
+: FULL-SLOTS ( n -- ) {: id :}
+   SB-RESET s" logins saved under " SB-APPEND id EMAIL$ SB-APPEND
+   SLOT-TRIES SB-LIMIT SB$ TOO-MANY ;
+
 public
 
 \ the slot the identity's login saves to, read without touching the row
@@ -707,7 +716,7 @@ public
    0 HIT-K ! 0 FREE-K !
    SLOT-TRIES 1+ 1 ?do i id CANDIDATE-CHECK loop
    HIT-K @ 0= if FREE-K @ HIT-K ! then
-   HIT-K @ 0= if E-SW-CAPACITY throw then
+   HIT-K @ 0= if id FULL-SLOTS then
    HIT-K @ id EMAIL$ CANDIDATE ;
 
 \ the name installed last; false before the first install
