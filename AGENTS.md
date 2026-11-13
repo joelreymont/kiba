@@ -9,8 +9,7 @@ checked Habu program; a thin Omarchy bar widget runs it.
 - kiba does on Linux everything kiba-mac does (`~/Work/kiba-mac`, whose
   `DESIGN.md` is its contract): it has fallen behind and is brought up to
   par.
-- `PARITY.md` holds the parity design: what exists, what is settled, and
-  what is still the user's to choose.
+- `PARITY.md` holds the parity design: what exists and what is settled.
 
 ## Habu code
 
@@ -26,7 +25,8 @@ checked Habu program; a thin Omarchy bar widget runs it.
   `sw-claude.f` and `sw-codex.f` save and install per provider, `sw-store.f`
   slot naming and listing, `sw-run.f` provider commands in the foreground,
   `sw-usage.f` usage probes through `curl`, `sw-cli.f` the commands, `kiba.f`
-  the entry and `MAIN`.
+  the entry and `MAIN`. This split is today's folder-store code, which the
+  parity rebuild (`PARITY.md`) replaces.
 - Library words come from a checkout of [Habu](https://github.com/joelreymont/habu)
   named by `HABU` (default `~/Work/habu`). `build.sh` and `test.sh` run
   `bin/hb` from that checkout, so relative `require src/lib/...` resolves there.
@@ -39,6 +39,7 @@ checked Habu program; a thin Omarchy bar widget runs it.
 - The store lock is re-entrant within a process and records its owner's pid;
   network calls in `sw-usage.f` run outside it and every slot write takes it
   through a `WITH-LOCK` quotation that reads its account from module cells.
+  This lock guards today's folder store, which the parity rebuild replaces.
 
 ## Layout
 
@@ -66,6 +67,12 @@ checked Habu program; a thin Omarchy bar widget runs it.
 
 ## Rules
 
+- kiba builds against current Habu master and uses its libraries for what
+  they provide; a kiba word that a Habu library now covers gives way to it.
+- Every state kiba handles is an `FSM:DEFINE` table from Habu's
+  `src/lib/fsm.f` (`docs/forth.md`, "State machines"): no branch on a flag,
+  a caught error or a status read back decides what happens next outside
+  one.
 - Never run `codex logout` or `claude auth logout` from code or tests: both
   revoke tokens server-side and kill every saved copy of that account.
   `codex login` revokes the existing login too, so `add` runs every login

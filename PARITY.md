@@ -1,9 +1,9 @@
 # Parity with kiba-mac
 
 The goal (AGENTS.md): kiba does on Linux everything kiba-mac does, and
-kiba-mac's `DESIGN.md` is the contract. This file holds what exists, what is
-settled and what is still the user's to choose. It does not restate
-kiba-mac's behaviour; `DESIGN.md` holds that.
+kiba-mac's `DESIGN.md` is the contract. This file holds what exists and
+what is settled. It does not restate kiba-mac's behaviour; `DESIGN.md`
+holds that.
 
 ## What exists
 
@@ -36,6 +36,12 @@ kiba-mac's behaviour; `DESIGN.md` holds that.
     - Log In Again;
     - queued row actions.
   - Habu has no SQLite binding.
+  - It does not build against Habu master: `src/sw-base.f:2` requires
+    `src/lib/errors.f`, which Habu renamed `error.f`, and `src/sw-base.f:70`
+    calls `FS-PATH-CAP`, which Habu no longer has. The build stops at the
+    first missing word, so the rest of the drift is unmeasured.
+  - No flow is a state machine; Habu's `FSM:DEFINE` (`src/lib/fsm.f`,
+    `docs/forth.md` "State machines") is unused.
 - **spark**: Ubuntu 24.04 on aarch64 with GNOME, used over ssh.
   - The widget cannot run there: it has no Hyprland and no Omarchy shell.
   - `claude` and `codex` are in `~/.local/bin`.
@@ -71,11 +77,13 @@ kiba-mac's behaviour; `DESIGN.md` holds that.
   - Each account is then logged in again on the spark and gets its own
     tokens.
   - The Mac's store is untouched.
+- **Habu and state machines**: the user's choice (2026-11-13). kiba is
+  brought up to current Habu master and its features, and rebuilt on Habu's
+  state machine library: every state kiba handles is an `FSM:DEFINE` table
+  (AGENTS.md, Rules).
+- **Widget**: the user's choice (2026-11-13). It is brought to parity with
+  kiba-mac's app for machines that run Omarchy; on the spark the CLI is the
+  only front end.
 - **Not part of parity**: a `usage --json` report, finding the login shell's
   PATH (a CLI run from a shell already has it), and any history command,
   daemon or background switcher. The mod already schedules and picks.
-
-## The user's to choose
-
-1. **The widget.** It cannot run on the spark. Its parity matters only where
-   Omarchy runs.
