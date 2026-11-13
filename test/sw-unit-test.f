@@ -1070,6 +1070,24 @@ create UT-AT-BUF 1024 allot
    P-CLAUDE CMD-USAGE
    P-CLAUDE s" a@x.test" UT-RECORD s" ok" UT-STATE= ;
 
+\ live Claude files mixed over the installed row's expired token: the save-back
+\ is reported, and the installed name is probed as live, so its expired token
+\ is reported and never refreshed
+: UT-MIXED-USAGE ( -- )
+   CLAUDE-CREDS$ CREDS-A-OLD$ WRITE-PRIVATE
+   P-CLAUDE CMD-SAVE
+   CLAUDE-CONFIG$ CFG-B$ WRITE-PRIVATE
+   P-CLAUDE UT-USAGE-ERR
+   UT-ERR$ READ-FILE$
+   s\" claude: live login not saved: the live Claude files name different accounts; switch to an account to repair them\n" T$=
+   P-CLAUDE s" a@x.test" UT-RECORD s" expired" UT-STATE=
+   DB-USAGE-NOTE$ s" access token expired; Claude Code refreshes it on its next run" T$=
+   P-CLAUDE s" a@x.test" UT-LAST-LIVE 1 T=
+   P-CLAUDE s" a@x.test" CREDS-A-OLD$ UT-LOGIN=
+   CLAUDE-CONFIG$ CFG-BA$ WRITE-PRIVATE
+   CLAUDE-CREDS$ CREDS-A$ WRITE-PRIVATE
+   P-CLAUDE CMD-SAVE ;
+
 \ one provider's unreadable live file does not stop the other's probe; the
 \ command fails once both have run
 : UT-USAGE-ISOLATION ( -- )
@@ -1597,6 +1615,7 @@ create UT-LIST UT-LIST-CAP allot
    UT-USAGE-REVOKED
    UT-ANSWER-READS
    UT-LIVE-EXPIRED
+   UT-MIXED-USAGE
    UT-USAGE-ISOLATION
    UT-DAMAGED-LIVE-SLOT
    UT-DAMAGED-NOT-CLAIMED

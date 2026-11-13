@@ -292,10 +292,33 @@ create LIVE-B NAME-CAP allot   variable LIVE-B-U    \ -1 when none
    p r DB-ROW-LOGIN$ live PROBE
    p r live ;
 
-\ row r probed; a probe that throws is the account's error outcome
+\ row OUTCOME-ROW of provider p probed, as live when OUTCOME-LIVE; a probe
+\ that throws is the account's error outcome, noted with the bare reason
+ENUM outcome-step sensing settled ;ENUM
+ENUM outcome-input ran threw ;ENUM
+
+variable OUTCOME-ROW                \ the row being probed
+variable OUTCOME-LIVE               \ bool: the probe reads the login as live
+variable OUTCOME-RC                 \ what the probe threw
+
+: OUTCOME-SENSE ( n -- outcome-input )
+   OUTCOME-ROW @ OUTCOME-LIVE @ [: PROBE-KEEP ;] catch {: rc :} 2drop drop
+   rc 0= if construct outcome-input ran exit then
+   rc OUTCOME-RC ! construct outcome-input threw ;
+
+: OUTCOME-NOTE ( n -- ) drop OUTCOME-RC @ BARE-REASON$ PROBE-FAILED ;
+
+FSM:DEFINE OUTCOME-STEPS ( n ) outcome-step outcome-input
+   IN sensing OUTCOME-SENSE
+      ran         -                >settled
+      threw       OUTCOME-NOTE     >settled
+   FINAL settled -
+;DEFINE
+
+\ row r of provider p probed, as live when live
 : OUTCOME ( n n bool -- ) {: p r live :}
-   p r live [: PROBE-KEEP ;] catch {: rc :} 2drop drop
-   rc 0<> if rc BARE-REASON$ PROBE-FAILED then ;
+   r OUTCOME-ROW ! live OUTCOME-LIVE !
+   p construct outcome-step sensing OUTCOME-STEPS ;
 
 : LOGIN-CHANGED? ( n -- bool ) {: r :}
    PROBE-RENEWED? 0= if false exit then
@@ -350,7 +373,7 @@ create OLD-NAME NAME-CAP allot   variable OLD-NAME-U
 \ login is probed as live, so its tokens are never refreshed; no outcome
 \ removes a login. When every saved login was probed after the second the
 \ run began, another holder's probe answered it while this one waited.
-ENUM usage-step checking saving listing probing reported failed ;ENUM
+ENUM usage-step checking saving listing listing-mixed probing reported failed ;ENUM
 ENUM check-input answered stale threw ;ENUM
 ENUM list-input listed threw ;ENUM
 ENUM probe-input recorded unrecorded finished ;ENUM
@@ -358,10 +381,8 @@ ENUM usage-turn entering left ;ENUM
 ENUM turn-input ran refused ;ENUM
 
 variable USAGE-ASKED                \ epoch second the run began
-variable USAGE-MIXED                \ bool: the save-back found the live Claude files mixed
 variable USAGE-ROW                  \ the row being probed
 variable USAGE-RC                   \ what the last failed step threw
-variable USAGE-FAILED               \ bool: a provider reported an error
 create BACK-ERR 1024 allot   variable BACK-ERR-U   \ the save-back error; empty when none
 DYNAMIC-BUFFER FAULTS u8     variable FAULTS-U     \ the provider error; empty when none
 
@@ -407,16 +428,21 @@ DYNAMIC-BUFFER FAULTS u8     variable FAULTS-U     \ the provider error; empty w
    0<> if construct check-input answered exit then
    construct check-input stale ;
 
-: ROWS-RUN ( n -- n ) {: p :}
-   p USAGE-MIXED @ LIVE-NAMES
+: ROWS-RUN ( n bool -- n bool ) {: p mixed :}
+   p mixed LIVE-NAMES
    p DB-LIST
    0 USAGE-ROW !
-   p ;
+   p mixed ;
 
-: ROWS-SENSE ( n -- list-input )
-   [: ROWS-RUN ;] catch {: rc :} drop
+\ the rows listed; mixed when the installed name's tokens are still live
+: ROWS-LIST ( n bool -- list-input )
+   [: ROWS-RUN ;] catch {: rc :} 2drop
    rc 0= if construct list-input listed exit then
    rc USAGE-RC ! construct list-input threw ;
+
+: ROWS-SENSE ( n -- list-input ) false ROWS-LIST ;
+
+: ROWS-MIXED-SENSE ( n -- list-input ) true ROWS-LIST ;
 
 : ROW-RUN ( n -- n ) {: p :}
    USAGE-ROW @ {: r :}
@@ -441,7 +467,6 @@ DYNAMIC-BUFFER FAULTS u8     variable FAULTS-U     \ the provider error; empty w
    BACK-RC @ BARE-REASON$ BACK-ERR BACK-ERR-U 1024 SPAN! ;
 
 : NOTE-MIXED ( n -- )
-   true USAGE-MIXED !
    E-SW-MIXED BACK-RC !
    NOTE-BACK ;
 
@@ -466,9 +491,12 @@ FSM:DEFINE USAGE-STEPS ( n ) usage-step check-input
    IN saving BACK-SENSE ( back-input )
       saved       -                >listing
       absent      -                >listing
-      mixed       NOTE-MIXED       >listing
+      mixed       NOTE-MIXED       >listing-mixed
       refused     NOTE-BACK        >listing
    IN listing ROWS-SENSE ( list-input )
+      listed      -                >probing
+      threw       NOTE-FAILURE     >failed
+   IN listing-mixed ROWS-MIXED-SENSE ( list-input )
       listed      -                >probing
       threw       NOTE-FAILURE     >failed
    IN probing ROW-SENSE ( probe-input )
@@ -496,20 +524,18 @@ FSM:DEFINE USAGE-TURN ( n ) usage-turn turn-input
 ;DEFINE
 
 \ the save-back error and the provider error each go to stderr as one line
-\ that starts with the provider
-: .FAULTS ( n -- ) {: p :}
-   BACK-ERR-U @ 0 > if
-      p PROVIDER$ ERR-PART s" : live login not saved: " ERR-PART BACK-ERR BACK-ERR-U @ ERR-NOTE
-      true USAGE-FAILED !
-   then
-   FAULTS-U @ 0 > if
-      p PROVIDER$ ERR-PART s" : " ERR-PART FAULTS$ ERR-NOTE
-      true USAGE-FAILED !
-   then ;
+\ that starts with the provider; true when either did
+: .FAULTS ( n -- bool ) {: p :}
+   BACK-ERR-U @ 0 > {: back :}
+   FAULTS-U @ 0 > {: faults :}
+   back if p PROVIDER$ ERR-PART s" : live login not saved: " ERR-PART BACK-ERR BACK-ERR-U @ ERR-NOTE then
+   faults if p PROVIDER$ ERR-PART s" : " ERR-PART FAULTS$ ERR-NOTE then
+   back faults or ;
 
-: USAGE-PROVIDER ( n -- ) {: p :}
+\ true when provider p reported an error
+: USAGE-PROVIDER ( n -- bool ) {: p :}
    epoch-seconds USAGE-ASKED !
-   false USAGE-MIXED ! 0 BACK-ERR-U ! FAULTS-RESET
+   0 BACK-ERR-U ! FAULTS-RESET
    p construct usage-turn entering USAGE-TURN
    p .FAULTS ;
 
@@ -521,9 +547,8 @@ public
 \ p < 0 probes every provider; once each has run, E-SW-REPORTED when any
 \ reported an error
 : CMD-USAGE ( n -- )
-   false USAGE-FAILED !
-   dup 0 < if drop P-COUNT 0 ?do i USAGE-PROVIDER loop else USAGE-PROVIDER then
-   USAGE-FAILED @ if E-SW-REPORTED throw then ;
+   dup 0 < if drop false P-COUNT 0 ?do i USAGE-PROVIDER or loop else USAGE-PROVIDER then
+   if E-SW-REPORTED throw then ;
 
 \ p < 0 saves every provider
 : CMD-SAVE ( n -- )
