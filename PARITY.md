@@ -25,7 +25,7 @@ holds that.
   and the Omarchy widget (`plugin/kiba/`).
   - Commands: `status`, `save`, `usage`, `use`, `add`, `forget`, `redeem`
     (`src/kiba.f:46-52`).
-  - The store is kiba-mac's SQLite file, history included (`src/sw-db.f`),
+  - The store is kiba-mac's SQLite file without its history (`src/sw-db.f`),
     through kiba's own libsqlite3 binding over Habu's FFI
     (`src/sw-sqlite.f`).
   - Every command but `status` holds its provider's turn across network
@@ -58,7 +58,12 @@ holds that.
   and runs the CLI; Qt holds no account logic
   (`plugin/kiba/Status.qml:98-120`).
 - **Store**: one SQLite file at `$XDG_DATA_HOME/kiba/kiba.db`, in
-  kiba-mac's schema. There is no folder layout and no converter.
+  kiba-mac's schema without its history. There is no folder layout and no
+  converter.
+- **History**: the user's choice (2026-11-13). kiba records no usage
+  readings and no switches: nothing on Linux read them, and they were 95%
+  of the store. Opening a store that holds kiba-mac's `history` table drops
+  it and compacts the file (schema 6).
 - **CLI**: kiba-mac's contract, whose `status --json` the mod reads. On the
   spark the CLI is the only front end, so it also carries every account
   action the app has: `save`, `add` (which also logs a row in again),
@@ -69,7 +74,7 @@ holds that.
     today.
 - **The copied store**: the user's choice (2026-11-13). There is no Mac
   any more. The spark's store, copied to neubau at the same path, is the
-  Mac's last snapshot: its accounts and history stay. Saved logins are
+  Mac's last snapshot: its accounts stay. Saved logins are
   shared across machines; each one whose refresh is refused is logged in
   again on the Omarchy machine (`kiba add`), and the logins are then used
   everywhere.
@@ -81,5 +86,5 @@ holds that.
   kiba-mac's app for machines that run Omarchy; on the spark the CLI is the
   only front end.
 - **Not part of parity**: a `usage --json` report, finding the login shell's
-  PATH (a CLI run from a shell already has it), and any history command,
-  daemon or background switcher. The mod already schedules and picks.
+  PATH (a CLI run from a shell already has it), and any daemon or
+  background switcher. The mod already schedules and picks.

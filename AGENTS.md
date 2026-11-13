@@ -88,6 +88,8 @@ checked Habu program; a thin Omarchy bar widget runs it.
   process group and a terminal read then stops it with SIGTTIN.
 - Credential files and account directories are written `0600`/`0700` and
   replaced atomically.
+- kiba keeps no history: the store holds saved logins and the live and
+  in-flight markers, nothing that grows with each probe or switch.
 - Every `curl` request names its client: `KIBA-UA$`, except the usage and
   reset calls, where the ChatGPT ones keep `codex-cli` and the Claude ones
   carry Claude Code's `claude-cli/<version>` (`CLAUDE-UA$`), which alone

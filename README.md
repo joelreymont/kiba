@@ -102,9 +102,10 @@ absent when the provider said nothing about limit resets. `state` is one of:
   keeps the bare email, the next are `email #2`, `email #3`. A login is matched
   to its name by organization, never by position.
 - **Store**: one SQLite file, `$XDG_DATA_HOME/kiba/kiba.db` (default
-  `~/.local/share/kiba`), in kiba-mac's schema: each saved login, the live
-  install records, and a history of every probe and switch. Its directory is
-  `0700`; every write is a transaction. A store from a newer kiba is refused.
+  `~/.local/share/kiba`), in kiba-mac's schema without its history: each
+  saved login and the live install records. Its directory is `0700`; every
+  write is a transaction. A store from a newer kiba is refused; an older one
+  loses its history table and is compacted on its next open.
 - **Turns**: every command but `status` holds its provider's turn, a lock
   shared by every kiba process, from start to end, network calls included.
   Waiters take it in the order they arrived and give up after two minutes;
@@ -134,8 +135,8 @@ absent when the provider said nothing about limit resets. `state` is one of:
 
 `kiba usage` answers "which account still has room". For every saved account
 it asks the provider's own usage endpoint with that account's saved token,
-through `curl`, and records the answer, any refreshed tokens and a history
-event in one transaction:
+through `curl`, and records the answer and any refreshed tokens in one
+transaction:
 
 - Claude: `GET https://api.anthropic.com/api/oauth/usage` with the OAuth
   access token. Windows: `Session (5-hour)`, `Weekly (7-day)`, and every

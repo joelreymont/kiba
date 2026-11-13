@@ -17,13 +17,6 @@ create LIVE-ROW NAME-CAP allot   variable LIVE-ROW-U
 \ empty when there was no login
 : LIVE-ROW$ ( -- ptr u8 n ) LIVE-ROW LIVE-ROW-U @ ;
 
-\ identity id from row r's email, org and plan
-: ROW-IDENTITY ( n n -- ) {: r id :}
-   id NO-IDENTITY
-   r DB-ROW-EMAIL$ id EMAIL-ROW id F-EMAIL LEN-CELL EMAIL-CAP SPAN!
-   r DB-ROW-ORG$ id ORG-ROW id F-ORG LEN-CELL ORG-CAP SPAN!
-   r DB-ROW-PLAN$ id PLAN-ROW id F-PLAN LEN-CELL PLAN-CAP SPAN! ;
-
 \ the live login as one read: its login and profile (length -1 for none),
 \ the identity in ID-LIVE; false when there is none
 : LIVE-LOGIN ( n -- ptr u8 n ptr u8 n bool )
@@ -87,15 +80,12 @@ variable SWAP-RC                  \ what the failed live write threw
 : SWAP$ ( -- ptr u8 n ) SWAP-NAME SWAP-NAME-U @ ;
 : CLAIM$ ( -- ptr u8 n ) HELD-CLAIM HELD-CLAIM-U @ ;
 
-\ the completed install of the name, whose row's identity is in ID-SLOT, at
-\ the clock's time once the live files are written
+\ the completed install of the name, noted at the clock's time once the
+\ live files are written
 : NOTE-SWITCH ( n ptr u8 n -- ) {: p a u :}
-   DB-NOW-US {: at :}
-   p a u ID-SLOT at DB-APPEND-SWITCH
-   p a u at 1000000 / true DB-NOTE-INSTALLED ;
+   p a u epoch-seconds true DB-NOTE-INSTALLED ;
 
-\ the row's profile into OBJ and login into SDOC, both checked, and its
-\ identity into ID-SLOT
+\ the row's profile into OBJ and login into SDOC, both checked
 : CLAUDE-ROW ( -- )
    P-CLAUDE SWAP$ DB-FETCH 0= if E-SW-NO-ACCOUNT throw then
    0 DB-ROW-PROFILE$ {: pa pu :}
@@ -104,8 +94,7 @@ variable SWAP-RC                  \ what the failed live write threw
    OBJ$ CHECK-OBJECT
    SWAP$ CHECK-SLOT-EMAIL
    0 DB-ROW-LOGIN$ SDOC-BUF SDOC-U BUF-CAP SPAN!
-   SDOC$ CHECK-CREDS
-   0 ID-SLOT ROW-IDENTITY ;
+   SDOC$ CHECK-CREDS ;
 
 \ what installing SWAP$ writes, and the live state it replaces: the config
 \ in CFG and the credentials in FILE (length -1 for none), whether an
@@ -163,7 +152,7 @@ ENUM restore-input known unknown ;ENUM
 
 : SWAP-CLEAR ( n -- ) CLAIM$ DB-CLEAR-PENDING ;
 
-\ the switch, the installed name and time, and the claim's end commit together
+\ the installed name and time and the claim's end commit together
 : SWAP-RECORD ( n -- ) {: p :}
    p SWAP$ NOTE-SWITCH
    p CLAIM$ DB-CLEAR-PENDING ;
@@ -229,7 +218,6 @@ FSM:DEFINE INSTALLING ( n ) install-state swap-input
    0 DB-ROW-LOGIN$ SDOC-BUF SDOC-U BUF-CAP SPAN!
    SDOC$ ID-SLOT CODEX-IDENTITY 0= if E-SW-JSON throw then
    a u ID-SLOT EMAIL$ NAME-FOR-EMAIL? 0= if E-SW-MISMATCH throw then
-   0 ID-SLOT ROW-IDENTITY
    SDOC$ PUT-AUTH
    P-CODEX a u NOTE-SWITCH ;
 

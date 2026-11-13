@@ -345,32 +345,20 @@ FSM:DEFINE OUTCOME-STEPS ( n ) outcome-step outcome-input
 : LOGIN-CHANGED? ( n -- bool ) {: r :}
    PROBE-DOC$ r DB-ROW-LOGIN$ STR= 0= ;
 
-\ ID-SLOT carries the plan the provider named, when it named one
-: PLAN-OVER ( -- )
-   PROBED-PLAN$ {: a u :}
-   u 0 < if exit then
-   a u ID-SLOT PLAN-ROW ID-SLOT F-PLAN LEN-CELL PLAN-CAP SPAN! ;
-
-\ row r's outcome in one transaction: the usage record and the plan the
-\ provider named, any refreshed login, and the usage event under the plan
-\ committed with it; live is whether the probe read the login as live. A
-\ login the provider revoked keeps its row, listed until it is forgotten.
-: RECORD ( n n bool -- ) {: p r live :}
-   r ID-SLOT ROW-IDENTITY
-   PLAN-OVER
-   DB-NOW-US {: at :}
+\ row r's usage record, the plan the provider named and any refreshed login,
+\ in one transaction; a login the provider revoked keeps its row
+: RECORD ( n n -- ) {: p r :}
    r DB-ROW-NAME$ {: a u :}
    r LOGIN-CHANGED? {: changed :}
    [: p a u PROBED-PLAN$ DB-SET-USAGE
-      changed if p a u PROBE-DOC$ DB-SET-LOGIN then
-      p a u ID-SLOT live at DB-APPEND-USAGE ;] DB-WRITE ;
+      changed if p a u PROBE-DOC$ DB-SET-LOGIN then ;] DB-WRITE ;
 
 \ probes the saved login a u and records the outcome, for an operation that
 \ holds p's turn; E-SW-NO-ACCOUNT when there is no such login
 : PROBE-IN-TURN ( n ptr u8 n bool -- ) {: p a u live :}
    p a u DB-FETCH 0= if E-SW-NO-ACCOUNT throw then
    p 0 live OUTCOME
-   p 0 live RECORD ;
+   p 0 RECORD ;
 
 create OLD-NAME NAME-CAP allot   variable OLD-NAME-U
 
@@ -469,7 +457,7 @@ DYNAMIC-BUFFER FAULTS u8     variable FAULTS-U     \ the provider error; empty w
    USAGE-ROW @ {: r :}
    r DB-ROW-NAME$ LIVE-NAME? {: live :}
    p r live OUTCOME
-   p r live RECORD
+   p r RECORD
    p ;
 
 : ROW-SENSE ( n -- probe-input )

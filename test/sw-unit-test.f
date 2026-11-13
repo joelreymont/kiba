@@ -255,19 +255,11 @@ DYNAMIC-BUFFER UT-BIG u8   variable UT-BIG-U
    s\" {\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-a\",\"organizationName\":\"Org A\"}}" ;
 
 variable UT-N
-variable UT-SW0
 create UT-LOCKED-BUF 256 allot   variable UT-LOCKED-U
 create UT-REAL-BUF 256 allot     variable UT-REAL-U
 
 : UT-STORE ( [ -- ] -- ) {: body :}
    DB-OPEN [: body execute ;] [: DB-CLOSE ;] finally ;
-
-: UT-COUNT-SWITCHES ( n -- ) {: p :}
-   s" SELECT count(*) FROM history WHERE provider = ? AND kind = 'switch'" s" test"
-   [: p PROVIDER$ DB-TEXT+ ;] [: 0 DB-COL-INT UT-N ! ;] DB-QUERY ;
-
-: UT-SWITCHES ( n -- n ) {: p :}
-   0 UT-N ! [: p UT-COUNT-SWITCHES ;] UT-STORE UT-N @ ;
 
 : UT-LOGIN= ( n ptr u8 n ptr u8 n -- ) {: p a u l lu :}
    [: p a u DB-FETCH TTRUE 0 DB-ROW-LOGIN$ l lu T$= ;] UT-STORE ;
@@ -340,11 +332,10 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
    P-CLAUDE s" a@x.test" CREDS-A9$ UT-LOGIN=
    P-CLAUDE s" b@x.test" UT-INSTALLED=
    P-CLAUDE UT-PENDING? TFALSE
-   P-CLAUDE UT-SWITCHES 1 T=
    P-CLAUDE LIVE-IDENTITY TTRUE ID-LIVE EMAIL$ s" b@x.test" T$=
    [: P-CLAUDE s" nobody@x" CMD-USE ;] E-SW-NO-ACCOUNT TTHROWSQ
    P-CLAUDE UT-PENDING? TFALSE
-   P-CLAUDE UT-SWITCHES 1 T= ;
+   P-CLAUDE s" b@x.test" UT-INSTALLED= ;
 
 : UT-STORE-USE-CODEX ( -- )
    CODEX-AUTH$ AUTH-C9$ WRITE-PRIVATE
@@ -352,8 +343,7 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
    CODEX-AUTH$ READ-FILE$ AUTH-D$ T$=
    P-CODEX s" c@x.test" AUTH-C9$ UT-LOGIN=
    P-CODEX s" d@x.test" UT-INSTALLED=
-   P-CODEX UT-PENDING? TFALSE
-   P-CODEX UT-SWITCHES 1 T= ;
+   P-CODEX UT-PENDING? TFALSE ;
 
 \ taking Codex's live name leaves the Claude rows a caller listed
 : UT-NAME-KEEPS-ROWS ( -- )
@@ -467,13 +457,12 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
 
 \ credentials that cannot be read stop the switch before anything is written
 : UT-CREDS-DIR ( -- )
-   P-CLAUDE UT-SWITCHES UT-SW0 !
    UT-NO-CREDS
    CLAUDE-CREDS$ ENSURE-PRIVATE
    [: P-CLAUDE s" b@x.test" CMD-USE ;] E-FS-IO TTHROWSQ
    CLAUDE-CONFIG$ READ-FILE$ CFG-ONLY-A$ T$=
    P-CLAUDE UT-PENDING? TFALSE
-   P-CLAUDE UT-SWITCHES UT-SW0 @ T=
+   P-CLAUDE s" a@x.test" UT-INSTALLED=
    CLAUDE-CREDS$ FS:REMOVE-DIR
    CLAUDE-CREDS$ CREDS-A9$ WRITE-PRIVATE ;
 
@@ -504,13 +493,11 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
 \ pending before, the files are known to be the pair from before, so the
 \ claim is cleared and nothing is recorded
 : UT-RESTORED ( -- )
-   P-CLAUDE UT-SWITCHES UT-SW0 !
    UT-LINK-CREDS
    [: P-CLAUDE s" b@x.test" CMD-USE ;] E-FS-OPEN TTHROWSQ
    CLAUDE-CONFIG$ READ-FILE$ CFG-ONLY-A$ T$=
    UT-REAL$ READ-FILE$ CREDS-A9$ T$=
    P-CLAUDE UT-PENDING? TFALSE
-   P-CLAUDE UT-SWITCHES UT-SW0 @ T=
    P-CLAUDE s" a@x.test" UT-INSTALLED=
    UT-UNLINK-CREDS ;
 
@@ -538,10 +525,9 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
 
 : UT-MISMATCH ( -- )
    [: UT-PUT-Z ;] UT-STORE
-   P-CODEX UT-SWITCHES UT-SW0 !
    [: P-CODEX s" z@x.test" CMD-USE ;] E-SW-MISMATCH TTHROWSQ
    CODEX-AUTH$ READ-FILE$ AUTH-D$ T$=
-   P-CODEX UT-SWITCHES UT-SW0 @ T=
+   P-CODEX s" d@x.test" UT-INSTALLED=
    P-CODEX s" z@x.test" CMD-FORGET ;
 
 : UT-PUT-BAD ( -- )
@@ -574,11 +560,10 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
    [: P-CLAUDE s" q@x.test" DB-FETCH TTRUE
       0 DB-ROW-PLAN$ nip 0 T= ;] UT-STORE
    P-CLAUDE s" a@x.test" CMD-USE
-   P-CLAUDE UT-SWITCHES UT-SW0 !
    [: P-CLAUDE s" q@x.test" CMD-USE ;] E-SW-JSON TTHROWSQ
    CLAUDE-CREDS$ READ-FILE$ CREDS-A9$ T$=
    P-CLAUDE UT-PENDING? TFALSE
-   P-CLAUDE UT-SWITCHES UT-SW0 @ T=
+   P-CLAUDE s" a@x.test" UT-INSTALLED=
    P-CLAUDE s" q@x.test" CMD-FORGET ;
 
 \ API-key Codex logins are saved and restored under a fixed name
@@ -749,8 +734,6 @@ variable UT-LOG0
    l UT-LOG0 @ + lu UT-LOG0 @ - ;
 
 \ ---- usage on the store ------------------------------------------------------
-variable UT-C0
-variable UT-X0
 create UT-HELD 32 allot
 create UT-ERR-PATH 256 allot   variable UT-ERR-U
 
@@ -878,29 +861,25 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
 : UT-ROW-LOGIN ( n ptr u8 n [ ptr u8 n -- ] -- ) {: p a u check :}
    [: p a u DB-FETCH TTRUE 0 DB-ROW-LOGIN$ check execute ;] UT-STORE ;
 
-: UT-COUNT-USAGES ( n -- ) {: p :}
-   s" SELECT count(*) FROM history WHERE provider = ? AND kind = 'usage'" s" test"
-   [: p PROVIDER$ DB-TEXT+ ;] [: 0 DB-COL-INT UT-N ! ;] DB-QUERY ;
-
-\ the usage events provider p has recorded
-: UT-USAGES ( n -- n ) {: p :}
-   0 UT-N ! [: p UT-COUNT-USAGES ;] UT-STORE UT-N @ ;
-
-: UT-QUERY-LIVE ( n ptr u8 n -- ) {: p a u :}
-   s\" SELECT instr(details, '\"live\":true') > 0 FROM history WHERE provider = ? AND kind = 'usage' AND name = ? ORDER BY id DESC LIMIT 1" s" test"
-   [: p PROVIDER$ DB-TEXT+ a u DB-TEXT+ ;] [: 0 DB-COL-INT UT-N ! ;] DB-QUERY ;
-
-\ 1 when row p a u's last usage event was read live, 0 when not, -1 when
-\ it has none
-: UT-LAST-LIVE ( n ptr u8 n -- n ) {: p a u :}
-   -1 UT-N ! [: p a u UT-QUERY-LIVE ;] UT-STORE UT-N @ ;
-
 \ row p a u's record replaced by an ok one fetched at epoch second at
 : UT-SET-AT ( n ptr u8 n n -- ) {: p a u at :}
    SB-RESET s\" {\"fetchedAt\":" SB-APPEND at FMT:SB-U
    s\" ,\"limits\":[],\"note\":\"\",\"state\":\"ok\"}" SB-APPEND SB$ DB-USAGE-DECODE
    DB-USAGE-AT at T=
    [: [: p a u UT-BUF -1 DB-SET-USAGE ;] DB-WRITE ;] UT-STORE ;
+
+1 constant UT-OLD-AT                  \ a fetchedAt every probe moves past
+
+\ row p a u's record fetched at UT-OLD-AT, so a probe shows in it
+: UT-AGE ( n ptr u8 n -- ) UT-OLD-AT UT-SET-AT ;
+
+\ whether a probe recorded row p a u's outcome since UT-AGE
+: UT-PROBED? ( n ptr u8 n -- bool ) UT-RECORD DB-USAGE-AT UT-OLD-AT > ;
+
+\ a@x.test is Claude's one saved login
+: UT-CLAUDE-ONLY-A ( -- )
+   [: P-CLAUDE DB-LIST DB-ROW# 1 T=
+      0 DB-ROW-NAME$ s" a@x.test" T$= ;] UT-STORE ;
 
 : UT-USAGE-CLAUDE ( -- )
    P-CLAUDE s" a@x.test" UT-RECORD s" ok" UT-STATE=
@@ -914,7 +893,6 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    2 DB-LIMIT-RESETS$ s" 2026-09-22T13:00:00+00:00" T$=
    DB-USAGE-AT 0 > TTRUE
    DB-RESETS? TFALSE
-   P-CLAUDE s" a@x.test" UT-LAST-LIVE 1 T=
    CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
    P-CLAUDE s" a@x.test" CREDS-A$ UT-LOGIN=
    P-CLAUDE s" b@x.test" UT-RECORD s" ok" UT-STATE=
@@ -922,7 +900,6 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    0 DB-LIMIT-PERCENT 12 T=
    1 DB-LIMIT-PERCENT 1 T=
    1 DB-LIMIT-LABEL$ s" Weekly (7-day)" T$=
-   P-CLAUDE s" b@x.test" UT-LAST-LIVE 0 T=
    P-CLAUDE s" e@x.test" UT-RECORD s" error" UT-STATE=
    DB-USAGE-NOTE$ s" Anthropic's token endpoint answered 429" T$=
    P-CLAUDE s" e@x.test" CREDS-E$ UT-LOGIN=
@@ -936,7 +913,6 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    0 DB-LIMIT-PERCENT 100 T=
    0 DB-LIMIT-RESETS$ s" 2026-09-20T11:37:00Z" T$=
    P-CODEX s" c@x.test" s" pro" UT-PLAN=
-   P-CODEX s" c@x.test" UT-LAST-LIVE 1 T=
    CODEX-AUTH$ READ-FILE$ AUTH-C$ T$=
    P-CODEX s" d@x.test" UT-RECORD s" ok" UT-STATE=
    DB-LIMIT# 2 T=
@@ -1018,6 +994,17 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    P-CLAUDE s" t@x.test" [: UT-RENEWED-T ;] UT-ROW-LOGIN
    P-CLAUDE s" t@x.test" CMD-FORGET ;
 
+\ each saved login UT-USAGE probes, every one there is
+: UT-USAGE-ROWS ( [ n ptr u8 n -- ] -- ) {: each :}
+   [: P-CLAUDE DB-LIST DB-ROW# 4 T= P-CODEX DB-LIST DB-ROW# 3 T= ;] UT-STORE
+   P-CLAUDE s" a@x.test" each execute
+   P-CLAUDE s" b@x.test" each execute
+   P-CLAUDE s" e@x.test" each execute
+   P-CLAUDE s" f@x.test" each execute
+   P-CODEX s" c@x.test" each execute
+   P-CODEX s" d@x.test" each execute
+   P-CODEX s" y@x.test" each execute ;
+
 \ live claude a@x.test (sk-a) and codex c@x.test, saved back first; saved
 \ b@x.test refreshes its expired token, e@x.test's refresh is rate limited
 \ (an error, not a dead login), f@x.test has no refresh token; saved
@@ -1029,11 +1016,9 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    P-CLAUDE s" e@x.test" CREDS-E$ UT-PUT
    P-CLAUDE s" f@x.test" CREDS-F$ UT-PUT
    P-CODEX s" y@x.test" AUTH-Y$ UT-PUT
-   P-CLAUDE UT-USAGES UT-C0 !
-   P-CODEX UT-USAGES UT-X0 !
+   [: UT-AGE ;] UT-USAGE-ROWS
    -1 CMD-USAGE
-   P-CLAUDE UT-USAGES UT-C0 @ 4 + T=
-   P-CODEX UT-USAGES UT-X0 @ 3 + T=
+   [: UT-PROBED? TTRUE ;] UT-USAGE-ROWS
    UT-USAGE-CLAUDE
    UT-USAGE-CODEX
    UT-USAGE-LOG
@@ -1284,7 +1269,6 @@ create UT-OFF-PATH 256 allot
    CODEX-AUTH$ READ-FILE$ AUTH-C$ T$=
    P-CODEX s" d@x.test" [: UT-RENEWED-D ;] UT-ROW-LOGIN
    P-CODEX s" d@x.test" UT-RECORD s" ok" UT-STATE=
-   P-CODEX s" d@x.test" UT-LAST-LIVE 0 T=
    P-CODEX s" c@x.test" AUTH-C9$ UT-LOGIN=
    P-CODEX LOGIN-HOME-PUBLIC$ FS:DIR? TFALSE
    LOG$ READ-FILE$ {: l lu :}
@@ -1346,10 +1330,11 @@ create UT-OFF-PATH 256 allot
    P-CLAUDE UT-ADDING? TFALSE
    P-CLAUDE CMD-SAVE ;
 
-\ the live account's expired token is reported, never sent
+\ a's login with its access token expired
 : CREDS-A-OLD$ ( -- ptr u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-a-old\",\"refreshToken\":\"r-a\",\"expiresAt\":1,\"subscriptionType\":\"max\"}}" ;
 
+\ the live account's expired token is reported, never sent
 : UT-LIVE-EXPIRED ( -- )
    CLAUDE-CREDS$ CREDS-A-OLD$ WRITE-PRIVATE
    P-CLAUDE CMD-USAGE
@@ -1375,7 +1360,7 @@ create UT-OFF-PATH 256 allot
    s\" claude: live login not saved: the live Claude files name different accounts; switch to an account to repair them\n" T$=
    P-CLAUDE s" a@x.test" UT-RECORD s" expired" UT-STATE=
    DB-USAGE-NOTE$ s" access token expired; Claude Code refreshes it on its next run" T$=
-   P-CLAUDE s" a@x.test" UT-LAST-LIVE 1 T=
+   CLAUDE-CREDS$ READ-FILE$ CREDS-A-OLD$ T$=
    P-CLAUDE s" a@x.test" CREDS-A-OLD$ UT-LOGIN=
    CLAUDE-CONFIG$ CFG-BA$ WRITE-PRIVATE
    CLAUDE-CREDS$ CREDS-A$ WRITE-PRIVATE
@@ -1385,11 +1370,13 @@ create UT-OFF-PATH 256 allot
 \ command fails once both have run
 : UT-USAGE-ISOLATION ( -- )
    CLAUDE-CONFIG$ s" {not json" WRITE-PRIVATE
-   P-CODEX UT-USAGES UT-X0 !
+   P-CODEX s" c@x.test" UT-AGE
+   P-CODEX s" d@x.test" UT-AGE
    -1 UT-USAGE-ERR
    UT-ERR$ READ-FILE$
    s\" claude: live login not saved: a login file is not valid JSON\nclaude: a login file is not valid JSON\n" T$=
-   P-CODEX UT-USAGES UT-X0 @ 2 + T=
+   P-CODEX s" c@x.test" UT-PROBED? TTRUE
+   P-CODEX s" d@x.test" UT-PROBED? TTRUE
    P-CODEX s" c@x.test" UT-RECORD s" ok" UT-STATE=
    CLAUDE-CONFIG$ CFG-BA$ WRITE-PRIVATE ;
 
@@ -1416,7 +1403,7 @@ create UT-OFF-PATH 256 allot
    P-CLAUDE s" a@x.test" UT-RECORD s" missing" UT-STATE=
    DB-USAGE-NOTE$ s" no access token saved; log in again" T$=
    P-CLAUDE s" a@x.test #2" UT-RECORD s" ok" UT-STATE=
-   P-CLAUDE s" a@x.test #2" UT-LAST-LIVE 1 T=
+   CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
    P-CLAUDE s" a@x.test" CMD-FORGET
    P-CLAUDE s" a@x.test #2" CMD-FORGET
    P-CLAUDE UT-LIVE-NAME s" a@x.test" T$=
@@ -1428,11 +1415,12 @@ create UT-OFF-PATH 256 allot
 \ a pending install stops the probe before anything is probed or refreshed
 : UT-UNREPAIRED ( -- )
    [: [: P-CLAUDE s" b@x.test" DB-NOTE-PENDING UT-HOLD ;] DB-WRITE ;] UT-STORE
-   P-CLAUDE UT-USAGES UT-C0 !
+   UT-CLAUDE-ONLY-A
+   P-CLAUDE s" a@x.test" UT-AGE
    P-CLAUDE UT-USAGE-ERR
    UT-ERR$ READ-FILE$
    s\" claude: live login not saved: the live Claude files name different accounts; switch to an account to repair them\nclaude: the claude switch to b@x.test did not finish; nothing is probed or refreshed until a switch completes\n" T$=
-   P-CLAUDE UT-USAGES UT-C0 @ T=
+   P-CLAUDE s" a@x.test" UT-PROBED? TFALSE
    E-SW-UNREPAIRED REASON$
    s" kiba: the claude switch to b@x.test did not finish; nothing is probed or refreshed until a switch completes" T$=
    [: [: P-CLAUDE UT-HELD 32 DB-CLEAR-PENDING ;] DB-WRITE ;] UT-STORE
@@ -1441,13 +1429,15 @@ create UT-OFF-PATH 256 allot
 \ a record the store refuses is reported under its account's name; the
 \ other account is still recorded
 : UT-UNRECORDED ( -- )
+   P-CODEX s" c@x.test" UT-AGE
+   P-CODEX s" d@x.test" UT-AGE
    [: s" CREATE TRIGGER ut_refuse BEFORE UPDATE OF usage ON account WHEN NEW.name = 'd@x.test' BEGIN SELECT RAISE(ABORT, 'refused by the test'); END" s" test" DB-EXEC ;] UT-STORE
-   P-CODEX UT-USAGES UT-X0 !
    P-CODEX UT-USAGE-ERR
    [: s" DROP TRIGGER ut_refuse" s" test" DB-EXEC ;] UT-STORE
    UT-ERR$ READ-FILE$
    s\" codex: d@x.test: usage not recorded: the account database refused: set usage: refused by the test\n" T$=
-   P-CODEX UT-USAGES UT-X0 @ 1+ T= ;
+   P-CODEX s" c@x.test" UT-PROBED? TTRUE
+   P-CODEX s" d@x.test" UT-PROBED? TFALSE ;
 
 \ when every saved login was probed after the run began, the recorded
 \ outcomes are reported and nothing is probed
@@ -1456,50 +1446,69 @@ create UT-OFF-PATH 256 allot
    epoch-seconds 100000 + {: later :}
    P-CODEX s" c@x.test" later UT-SET-AT
    P-CODEX s" d@x.test" later UT-SET-AT
-   P-CODEX UT-USAGES UT-X0 !
    LOG$ READ-FILE$ nip {: lu :}
    P-CODEX CMD-USAGE
-   P-CODEX UT-USAGES UT-X0 @ T=
    LOG$ READ-FILE$ nip lu T=
    P-CODEX s" c@x.test" UT-RECORD DB-USAGE-AT later T=
+   P-CODEX s" d@x.test" UT-RECORD DB-USAGE-AT later T=
    P-CODEX s" c@x.test" 1 UT-SET-AT
    P-CODEX s" d@x.test" 1 UT-SET-AT ;
 
+: UT-SET-LOGIN ( n ptr u8 n ptr u8 n -- ) {: p a u l lu :}
+   [: [: p a u l lu DB-SET-LOGIN ;] DB-WRITE ;] UT-STORE ;
+
 \ use probes the login it installs as live, then the one it saved back as
-\ saved
+\ saved: d's rejected token is reported, never renewed
 : UT-USE-PROBES ( -- )
-   P-CODEX UT-USAGES UT-X0 !
+   P-CODEX s" d@x.test" AUTH-D$ UT-SET-LOGIN
+   P-CODEX s" c@x.test" UT-AGE
+   P-CODEX s" d@x.test" UT-AGE
+   UT-LOG-MARK
    P-CODEX s" d@x.test" CMD-USE
-   P-CODEX UT-USAGES UT-X0 @ 2 + T=
-   P-CODEX s" d@x.test" UT-LAST-LIVE 1 T=
-   P-CODEX s" c@x.test" UT-LAST-LIVE 0 T=
-   P-CODEX s" d@x.test" UT-RECORD s" ok" UT-STATE=
+   P-CODEX s" d@x.test" UT-PROBED? TTRUE
+   P-CODEX s" c@x.test" UT-PROBED? TTRUE
+   UT-LOG-NEW$ s" auth.openai.com/oauth/token" CONTAINS? TFALSE
+   P-CODEX s" d@x.test" UT-RECORD s" expired" UT-STATE=
+   DB-USAGE-NOTE$ s" access token rejected; run codex once to refresh it" T$=
    P-CODEX s" c@x.test" CMD-USE
-   CODEX-AUTH$ READ-FILE$ AUTH-C$ T$= ;
+   CODEX-AUTH$ READ-FILE$ AUTH-C$ T$=
+   P-CODEX s" d@x.test" AUTH-D2$ UT-SET-LOGIN ;
 
 : OAUTH-N$ ( -- ptr u8 n )
    s\" {\"accountUuid\":\"u3\",\"emailAddress\":\"n@x.test\",\"organizationUuid\":\"org-n\"}" ;
 
-\ a login whose token the fake usage answers ok
-: CREDS-N$ ( -- ptr u8 n )
-   s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-b-new\",\"refreshToken\":\"r-n\",\"expiresAt\":4102444800000,\"subscriptionType\":\"pro\"}}" ;
+\ a login whose token has expired; the fake usage never answers it ok
+: CREDS-N-OLD$ ( -- ptr u8 n )
+   s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-n-old\",\"refreshToken\":\"r-n\",\"expiresAt\":1,\"subscriptionType\":\"pro\"}}" ;
 
 \ the Claude row n@x.test, with the profile an install splices in
 : UT-PUT-N ( -- )
    OAUTH-N$ ID-SLOT CLAUDE-OAUTH-IDENTITY
-   [: [: P-CLAUDE s" n@x.test" ID-SLOT CREDS-N$ OAUTH-N$ false DB-PUT ;] DB-WRITE ;] UT-STORE ;
+   [: [: P-CLAUDE s" n@x.test" ID-SLOT CREDS-N-OLD$ OAUTH-N$ false DB-PUT ;] DB-WRITE ;] UT-STORE ;
+
+\ a refresh request for refresh token r, as the fake curl logs it
+: UT-GRANT$ ( ptr u8 n -- ptr u8 n ) {: r ru :}
+   SB-RESET s\" body {\"grant_type\":\"refresh_token\",\"refresh_token\":\"" SB-APPEND
+   r ru SB-APPEND s\" \"" SB-APPEND SB$ ;
 
 \ a Claude use probes the login it installs as live, then the one it saved
-\ back as saved
+\ back as saved: only the saved login's expired token is refreshed
 : UT-USE-PROBES-CLAUDE ( -- )
    UT-PUT-N
-   P-CLAUDE UT-USAGES UT-C0 !
+   CLAUDE-CREDS$ CREDS-A-OLD$ WRITE-PRIVATE
+   P-CLAUDE s" n@x.test" UT-AGE
+   P-CLAUDE s" a@x.test" UT-AGE
+   UT-LOG-MARK
    P-CLAUDE s" n@x.test" CMD-USE
-   P-CLAUDE UT-USAGES UT-C0 @ 2 + T=
-   P-CLAUDE s" n@x.test" UT-LAST-LIVE 1 T=
-   P-CLAUDE s" a@x.test" UT-LAST-LIVE 0 T=
-   P-CLAUDE s" n@x.test" UT-RECORD s" ok" UT-STATE=
+   P-CLAUDE s" n@x.test" UT-PROBED? TTRUE
+   P-CLAUDE s" a@x.test" UT-PROBED? TTRUE
+   CLAUDE-CREDS$ READ-FILE$ CREDS-N-OLD$ T$=
+   P-CLAUDE s" n@x.test" UT-RECORD s" expired" UT-STATE=
+   DB-USAGE-NOTE$ s" access token expired; Claude Code refreshes it on its next run" T$=
    P-CLAUDE s" a@x.test" UT-RECORD s" ok" UT-STATE=
+   UT-LOG-NEW$ s" r-a" UT-GRANT$ CONTAINS? TTRUE
+   UT-LOG-NEW$ s" r-n" UT-GRANT$ CONTAINS? TFALSE
+   P-CLAUDE s" a@x.test" CREDS-A$ UT-SET-LOGIN
    P-CLAUDE s" a@x.test" CMD-USE
    CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
    CLAUDE-CONFIG$ READ-FILE$ CFG-BA$ T$=
@@ -1508,17 +1517,15 @@ create UT-OFF-PATH 256 allot
 \ ---- redeem ------------------------------------------------------------------
 create UT-AUTH-BUF 256 allot
 
-\ row p a u's record replaced by an ok one offering a reset of program g
-\ under grant w
+\ row p a u's record replaced by an ok one fetched at UT-OLD-AT, offering
+\ a reset of program g under grant w
 : UT-OFFER ( n ptr u8 n ptr u8 n ptr u8 n -- ) {: p a u g gu w wu :}
-   SB-RESET s\" {\"fetchedAt\":1,\"limits\":[],\"note\":\"\",\"resets\":{\"count\":1,\"grant\":\"" SB-APPEND
+   SB-RESET s\" {\"fetchedAt\":" SB-APPEND UT-OLD-AT FMT:SB-U
+   s\" ,\"limits\":[],\"note\":\"\",\"resets\":{\"count\":1,\"grant\":\"" SB-APPEND
    w wu SB-APPEND s\" \",\"program\":\"" SB-APPEND g gu SB-APPEND
    s\" \"},\"state\":\"ok\"}" SB-APPEND SB$ DB-USAGE-DECODE
    DB-RESETS? TTRUE
    [: [: p a u UT-BUF -1 DB-SET-USAGE ;] DB-WRITE ;] UT-STORE ;
-
-: UT-SET-LOGIN ( n ptr u8 n ptr u8 n -- ) {: p a u l lu :}
-   [: [: p a u l lu DB-SET-LOGIN ;] DB-WRITE ;] UT-STORE ;
 
 : CREDS-R$ ( -- ptr u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-r\",\"refreshToken\":\"r-r\",\"expiresAt\":4102444800000,\"subscriptionType\":\"max\"}}" ;
@@ -1572,11 +1579,9 @@ create UT-AUTH-BUF 256 allot
    P-CLAUDE s" r@x.test" s" org-r" CREDS-R$ UT-PUT-ORG
    [: P-CLAUDE s" r@x.test" CMD-REDEEM ;] E-SW-NO-RESETS TTHROWSQ
    E-SW-NO-RESETS REASON$ s" kiba: no limit resets are available for r@x.test" T$=
-   P-CLAUDE UT-USAGES UT-C0 !
    UT-LOG-MARK
    s" w-reset" s" Limit reset for r@x.test" UT-CLAUDE-WORD
-   P-CLAUDE UT-USAGES UT-C0 @ 1+ T=
-   P-CLAUDE s" r@x.test" UT-LAST-LIVE 0 T=
+   P-CLAUDE s" r@x.test" UT-PROBED? TTRUE
    UT-LOG-NEW$ {: l lu :}
    l lu s" https://api.anthropic.com/api/organizations/org-r/reset_rate_limits Authorization: Bearer sk-r" CONTAINS? TTRUE
    l lu s\" body {\"program\":\"cedar_ember\",\"grant_id\":\"w-reset\",\"request_id\":\"" CONTAINS? TTRUE
@@ -1652,9 +1657,9 @@ create UT-AUTH-BUF 256 allot
    P-CODEX s" d@x.test" s" " s" " UT-OFFER
    UT-LOG-MARK
    P-CODEX s" d@x.test" CMD-REDEEM
+   P-CODEX s" d@x.test" UT-PROBED? TTRUE
    s" d@x.test" REDEEMED$ s" Limit reset for d@x.test" T$=
    P-CODEX s" d@x.test" [: UT-RENEWED-D ;] UT-ROW-LOGIN
-   P-CODEX s" d@x.test" UT-LAST-LIVE 0 T=
    UT-LOG-NEW$ {: l lu :}
    l lu s" /rate-limit-reset-credits/consume Authorization: Bearer at-d" CONTAINS? TTRUE
    l lu s" https://auth.openai.com/oauth/token" CONTAINS? TTRUE
@@ -1850,12 +1855,16 @@ variable UT-V
 : USAGE-LIT$ ( -- ptr u8 n )
    s\" {\"fetchedAt\":1700000000,\"limits\":[{\"label\":\"Session (5-hour)\",\"percent\":30,\"resetsAt\":\"2026-11-13T10:00:00Z\"},{\"label\":\"Weekly \\/ Opus\",\"percent\":-1,\"resetsAt\":\"\"}],\"note\":\"a\\/b \\\"q\\\"\\n\",\"resets\":{\"count\":2,\"grant\":\"g-1\",\"program\":\"cedar_ember\"},\"state\":\"throttled\"}" ;
 
+\ the first column of the last row sql selects; 0 when it selects none
+: UT-DB-INT ( ptr u8 n -- n ) {: a u :}
+   0 UT-V !
+   a u s" test" [: ;] [: 0 DB-COL-INT UT-V ! ;] DB-QUERY
+   UT-V @ ;
+
 : UT-DB-OPEN ( -- )
    $61 UT-NUL c! 0 UT-NUL 1+ c! $62 UT-NUL 2 + c!
    DB-OPEN
-   0 UT-V !
-   s" PRAGMA user_version" s" test" [: ;] [: 0 DB-COL-INT UT-V ! ;] DB-QUERY
-   UT-V @ 5 T= ;
+   s" PRAGMA user_version" UT-DB-INT 6 T= ;
 
 : UT-DB-PUT ( -- )
    CFG-A$ CREDS-A$ ID-SLOT CLAUDE-IDENTITY TTRUE
@@ -1868,7 +1877,6 @@ variable UT-V
 : UT-DB-FETCH ( -- )
    P-CLAUDE s" b@x.test" DB-FETCH TTRUE DB-ROW# 1 T=
    0 DB-ROW-NAME$ s" b@x.test" T$=
-   0 DB-ROW-EMAIL$ s" a@x.test" T$=
    0 DB-ROW-ORG$ s" org-a" T$=
    0 DB-ROW-PLAN$ s" max" T$=
    0 DB-ROW-LOGIN$ UT-NUL 3 T$=
@@ -1999,9 +2007,26 @@ variable UT-OUT-U
    CLAUDE-CREDS$ CREDS-A$ WRITE-PRIVATE
    [: P-CLAUDE s" n@x.test" DB-REMOVE ;] DB-WRITE ;
 
+\ sixteen 64 KiB rows of a version 5 store's history
+: UT-HISTORY-FILL ( -- )
+   s" PRAGMA user_version = 5" s" test" DB-EXEC
+   s" CREATE TABLE history (id INTEGER PRIMARY KEY, provider TEXT, details BLOB)"
+   s" test" DB-EXEC
+   s" CREATE INDEX history_provider ON history(provider, id)" s" test" DB-EXEC
+   s" WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 16) INSERT INTO history (provider, details) SELECT 'claude', zeroblob(65536) FROM n"
+   s" test" DB-EXEC ;
+
+\ the next open drops the history and compacts the store: no page is free
+: UT-DB-COMPACT ( -- )
+   UT-HISTORY-FILL
+   DB-CLOSE DB-OPEN
+   s" SELECT count(*) FROM sqlite_schema WHERE tbl_name = 'history'" UT-DB-INT 0 T=
+   s" PRAGMA user_version" UT-DB-INT 6 T=
+   s" PRAGMA freelist_count" UT-DB-INT 0 T= ;
+
 \ a newer schema is refused and leaves the store closed
 : UT-DB-VERSION ( -- )
-   s" PRAGMA user_version = 6" s" test" DB-EXEC
+   s" PRAGMA user_version = 7" s" test" DB-EXEC
    DB-CLOSE
    [: DB-OPEN ;] E-SW-DB-VERSION TTHROWSQ
    [: P-CLAUDE DB-LIST ;] E-SW-DB TTHROWSQ ;
@@ -2024,6 +2049,7 @@ variable UT-OUT-U
    UT-STATUS-JSON
    UT-STATUS-ERROR
    UT-STATUS-REASON
+   UT-DB-COMPACT
    UT-DB-VERSION ;
 
 : UT-NAMES ( -- )
@@ -2141,7 +2167,6 @@ create UT-LIST UT-LIST-CAP allot
    P-CODEX CMD-USAGE
    P-CODEX s" c@x.test" UT-RECORD s" expired" UT-STATE=
    s" access token rejected; run codex once to refresh it" UT-NOTE=
-   P-CODEX s" c@x.test" UT-LAST-LIVE 1 T=
    UT-LOG-NEW$ s" Bearer at-c" CONTAINS? TTRUE
    UT-LOG-NEW$ s" auth.openai.com/oauth/token" CONTAINS? TFALSE
    CODEX-AUTH$ READ-FILE$ AUTH-C$ T$= ;
@@ -2358,7 +2383,8 @@ create UT-WRAP-BUF 1024 allot
    UT-TURN$ FS:>PATHZ open-rd {: fd :}
    fd >FD FS-LOCK:TRY TTRUE
    300 TURN-WAIT-MS !
-   P-CLAUDE UT-USAGES UT-C0 !
+   UT-CLAUDE-ONLY-A
+   P-CLAUDE s" a@x.test" UT-AGE
    UT-LOG-MARK
    P-CLAUDE UT-USAGE-ERR
    120000 TURN-WAIT-MS !
@@ -2366,7 +2392,7 @@ create UT-WRAP-BUF 1024 allot
    UT-ERR$ READ-FILE$
    s\" claude: another kiba holds that provider's turn\n" T$=
    UT-LOG-NEW$ nip 0 T=
-   P-CLAUDE UT-USAGES UT-C0 @ T= ;
+   P-CLAUDE s" a@x.test" UT-PROBED? TFALSE ;
 
 : UT-MAIN ( -- )
    T-RESET

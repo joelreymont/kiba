@@ -1,19 +1,17 @@
-\ sw-db.f - the account store: saved logins, the live and in-flight markers
-\ and the history, in one SQLite database, plus the usage record's codec.
+\ sw-db.f - the account store: saved logins and the live and in-flight
+\ markers, in one SQLite database, plus the usage record's codec.
 \ Every read fills the row table, which the next read replaces; every write
 \ runs inside DB-WRITE's transaction.
 require ../src/sw-sqlite.f
 require ../src/sw-identity.f
-require src/lib/error.f
 require src/lib/entropy.f
-require src/lib/ffi-abi.f
 require src/lib/fsm.f
 require src/lib/fmt.f
 require src/lib/json.f
 
 package SW
 
-5 constant DB-VERSION            \ the schema this build writes
+6 constant DB-VERSION            \ the schema this build writes
 
 \ ---- SQL text ---------------------------------------------------------------
 1024 constant SQL-TEXT-CAP
@@ -157,26 +155,18 @@ create ENC-ONE 1 allot
 
 : ENC-KEY ( ptr u8 n -- ) $22 ENC-C ENC+ $22 ENC-C $3A ENC-C ;
 
-\ the share of a window left, null for a window with no reading
-: ENC-LEFT ( n -- ) {: pct :}
-   s" left" ENC-KEY
-   pct 0 < if s" null" ENC+ exit then
-   100 pct - 0 max ENC-INT ;
-
-\ history details give each limit its share left as well
-: ENC-LIMIT ( n bool -- ) {: i left :}
+: ENC-LIMIT ( n -- ) {: i :}
    $7B ENC-C
    s" label" ENC-KEY i DB-LIMIT-LABEL$ ENC-STR ENC-COMMA
-   left if i DB-LIMIT-PERCENT ENC-LEFT ENC-COMMA then
    s" percent" ENC-KEY i DB-LIMIT-PERCENT ENC-INT ENC-COMMA
    s" resetsAt" ENC-KEY i DB-LIMIT-RESETS$ ENC-STR
    $7D ENC-C ;
 
-: ENC-LIMITS ( bool -- ) {: left :}
+: ENC-LIMITS ( -- )
    s" limits" ENC-KEY $5B ENC-C
    DB-LIMIT# 0 ?do
       i 0 > if ENC-COMMA then
-      i left ENC-LIMIT
+      i ENC-LIMIT
    loop
    $5D ENC-C ENC-COMMA ;
 
@@ -189,10 +179,10 @@ create ENC-ONE 1 allot
    s" program" ENC-KEY DB-RESETS-PROGRAM$ ENC-STR
    $7D ENC-C ENC-COMMA ;
 
-: ENC-HEAD ( bool -- ) {: left :}
+: ENC-HEAD ( -- )
    0 ENC-U ! $7B ENC-C
    s" fetchedAt" ENC-KEY DB-USAGE-AT ENC-INT ENC-COMMA
-   left ENC-LIMITS ;
+   ENC-LIMITS ;
 
 : ENC-TAIL ( -- )
    s" note" ENC-KEY DB-USAGE-NOTE$ ENC-STR ENC-COMMA
@@ -200,16 +190,10 @@ create ENC-ONE 1 allot
    s" state" ENC-KEY DB-USAGE-STATE DB-STATE$ ENC-STR
    $7D ENC-C ;
 
-\ a usage event's details: the record plus whether the probe read it live
-: ENC-DETAILS ( bool -- ) {: live :}
-   true ENC-HEAD
-   s" live" ENC-KEY live if s" true" else s" false" then ENC+ ENC-COMMA
-   ENC-TAIL ;
-
 public
 
 \ the record's stored form, valid until the next encode
-: DB-USAGE-ENCODE ( -- ptr u8 n ) false ENC-HEAD ENC-TAIL ENC$ ;
+: DB-USAGE-ENCODE ( -- ptr u8 n ) ENC-HEAD ENC-TAIL ENC$ ;
 
 \ ---- the decoder ------------------------------------------------------------
 \ A record that does not decode reads as unreadable, as kiba-mac's does:
@@ -400,7 +384,6 @@ public
 
 : DB-ROW# ( -- n ) ROW-N @ ;
 : DB-ROW-NAME$ ( n -- ptr u8 n ) 0 ROW-TEXT$ ;
-: DB-ROW-EMAIL$ ( n -- ptr u8 n ) 1 ROW-TEXT$ ;
 : DB-ROW-ORG$ ( n -- ptr u8 n ) 2 ROW-TEXT$ ;
 : DB-ROW-PLAN$ ( n -- ptr u8 n ) 3 ROW-TEXT$ ;
 \ Claude: the credentials.json bytes; Codex: the auth.json bytes
@@ -434,16 +417,9 @@ private
    SQL-RESET s" CREATE TABLE IF NOT EXISTS adding (provider TEXT PRIMARY KEY," SQL+
    s" live BLOB, service TEXT NOT NULL) WITHOUT ROWID" SQL+ SCHEMA-RUN ;
 
-: HISTORY-TABLE ( -- )
-   SQL-RESET s" CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY," SQL+
-   s" provider TEXT NOT NULL, kind TEXT NOT NULL, at_us INTEGER NOT NULL," SQL+
-   s" name TEXT NOT NULL, email TEXT NOT NULL, org TEXT NOT NULL," SQL+
-   s" plan TEXT NOT NULL, details TEXT NOT NULL)" SQL+ SCHEMA-RUN
-   s" CREATE INDEX IF NOT EXISTS history_provider ON history(provider, id)"
-   s" schema" DB-EXEC ;
-
 variable FOUND-N
 variable FOUND-AT
+variable STORE-VERSION               \ the user_version the last open read
 
 \ whether sql selects a row
 : ROW-FOUND? ( ptr u8 n -- bool ) {: a u :}
@@ -454,6 +430,7 @@ variable FOUND-AT
 : CHECK-VERSION ( -- )
    0 FOUND-N !
    s" PRAGMA user_version" s" schema" [: ;] [: 0 DB-COL-INT FOUND-N ! ;] DB-QUERY
+   FOUND-N @ STORE-VERSION !
    FOUND-N @ DB-VERSION > if E-SW-DB-VERSION throw then ;
 
 \ adds a column an older store lacks, when the probe finds none
@@ -473,11 +450,12 @@ variable FOUND-AT
    s" SELECT 1 FROM pragma_table_info('live') WHERE name = 'installed_at'"
    s" ALTER TABLE live ADD COLUMN installed_at INTEGER" MIGRATE ;
 
-\ a store a newer build wrote is refused untouched
+\ a store a newer build wrote is refused untouched; the history table and
+\ its index, which only stores below version 6 hold, are dropped
 : SCHEMA ( -- )
    CHECK-VERSION
-   SQL-RESET s" PRAGMA user_version = " SQL+ DB-VERSION FMT:INT$ SQL+ SCHEMA-RUN
-   ACCOUNT-TABLE MARKER-TABLES HISTORY-TABLE
+   ACCOUNT-TABLE MARKER-TABLES
+   s" DROP TABLE IF EXISTS history" s" schema" DB-EXEC
    MIGRATIONS ;
 
 \ ---- the write transaction ---------------------------------------------------
@@ -574,8 +552,11 @@ public
 \ ---- opening ------------------------------------------------------------------
 private
 
-ENUM open-state closed ready ;ENUM
-ENUM open-input applied refused ;ENUM
+\ A store below DB-VERSION, a new one reading 0 included, is compacted and
+\ then stamped; a throw after the already-open check disconnects and rethrows.
+ENUM open-state closed compacting ready ;ENUM
+ENUM open-input current older refused ;ENUM
+ENUM compact-input compacted refused ;ENUM
 variable OPEN-CODE
 
 : OPEN-RUN ( -- )
@@ -586,15 +567,35 @@ variable OPEN-CODE
 : OPEN-SENSE ( n -- open-input )
    drop SQL-H @ 0<> if s" open" s" the store is already open" DB-THROW then
    [: OPEN-RUN ;] catch {: rc :} rc OPEN-CODE !
-   rc 0= if construct open-input applied exit then
-   construct open-input refused ;
+   rc 0<> if construct open-input refused exit then
+   STORE-VERSION @ DB-VERSION = if construct open-input current exit then
+   construct open-input older ;
+
+: VERSION-SET ( -- )
+   SQL-RESET s" PRAGMA user_version = " SQL+ DB-VERSION FMT:INT$ SQL+
+   SQL$ s" version" DB-EXEC ;
+
+\ SQLite refuses VACUUM inside a transaction; the stamp follows it, so a
+\ failed VACUUM runs again on the next open
+: COMPACT-RUN ( -- )
+   s" VACUUM" s" compact" DB-EXEC
+   [: VERSION-SET ;] DB-WRITE ;
+
+: COMPACT-SENSE ( n -- compact-input )
+   drop [: COMPACT-RUN ;] catch {: rc :} rc OPEN-CODE !
+   rc 0= if construct compact-input compacted exit then
+   construct compact-input refused ;
 
 : OPEN-REFUSE ( n -- ) drop SQL-DISCONNECT OPEN-CODE @ throw ;
 
 FSM:DEFINE OPENING ( n ) open-state open-input
    IN closed OPEN-SENSE
-      applied - >ready
+      current - >ready
+      older   - >compacting
       refused OPEN-REFUSE >closed
+   IN compacting COMPACT-SENSE ( compact-input )
+      compacted - >ready
+      refused   OPEN-REFUSE >closed
    FINAL ready -
 ;DEFINE
 
@@ -852,45 +853,5 @@ public
 : DB-CLEAR-ADDING ( n -- ) {: p :}
    s" DELETE FROM adding WHERE provider = ?" s" clear adding"
    [: p PROVIDER$ DB-TEXT+ ;] TX-RUN ;
-
-\ ---- history: append-only events; identity and usage, never login bytes ----------
-private
-
-PROCESS-SYMBOLS
-FUNCTION: NOW-CALL clock_gettime ( n ptr u8 -- i32 )
-   1 16 WRITES-BYTES
-;FUNCTION
-
-0 constant CLOCK-REALTIME
-create NOW-SPEC 16 allot                  \ struct timespec: tv_sec, tv_nsec
-
-: HISTORY-SQL ( -- )
-   SQL-RESET s" INSERT INTO history" SQL+
-   s"  (provider, kind, at_us, name, email, org, plan, details)" SQL+
-   s"  VALUES (?, ?, ?, ?, ?, ?, ?, ?)" SQL+ ;
-
-public
-
-\ microseconds since the Unix epoch
-: DB-NOW-US ( -- n )
-   CLOCK-REALTIME NOW-SPEC NOW-CALL 0<> if E-TIME-CLOCK throw then
-   NOW-SPEC @ 1000000 * NOW-SPEC 8 + @ 1000 / + ;
-
-\ a probe's outcome for the saved login: identity id carries the plan
-\ committed with it, live whether the probe read the login as live, at the
-\ instant in epoch microseconds; the details are the usage record
-: DB-APPEND-USAGE ( n ptr u8 n n bool n -- ) {: p a u id live at :}
-   live ENC-DETAILS
-   HISTORY-SQL SQL$ s" append usage" [:
-      p PROVIDER$ DB-TEXT+ s" usage" DB-TEXT+ at DB-INT+
-      a u DB-TEXT+ id IDENTITY+ ENC$ DB-TEXT+
-   ;] TX-RUN ;
-
-\ the completed install of the saved login, whose row holds identity id
-: DB-APPEND-SWITCH ( n ptr u8 n n n -- ) {: p a u id at :}
-   HISTORY-SQL SQL$ s" append switch" [:
-      p PROVIDER$ DB-TEXT+ s" switch" DB-TEXT+ at DB-INT+
-      a u DB-TEXT+ id IDENTITY+ s" {}" DB-TEXT+
-   ;] TX-RUN ;
 
 ;package
