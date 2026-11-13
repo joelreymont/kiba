@@ -10,8 +10,6 @@ require src/lib/fmt.f
 
 package SW
 
-variable CMD-P
-
 \ ---- reasons ----------------------------------------------------------------
 \ the switch E-SW-UNREPAIRED names: its provider and the name it installs
 variable UNREPAIRED-P
@@ -24,12 +22,6 @@ public
    s"  switch to " SB-APPEND UNREPAIRED-NAME UNREPAIRED-NAME-U @ SB-APPEND
    s"  did not finish; nothing is probed or refreshed until a switch completes" SB-APPEND SB$ ;
 
-\ LOCK$ builds through the same string builder, so it goes first
-: LOCKED-REASON$ ( -- ptr u8 n )
-   LOCK$ {: l lu :}
-   SB-RESET s" kiba: another kiba holds the store lock; remove " SB-APPEND
-   l lu SB-APPEND s"  if it is stale" SB-APPEND SB$ ;
-
 \ CLAUDE-CONFIG$ builds through the same string builder, so it goes first
 : ORPHAN-REASON$ ( -- ptr u8 n )
    CLAUDE-CONFIG$ {: c cu :}
@@ -41,7 +33,6 @@ public
    rc E-SW-NO-LIVE = if s" kiba: no live login to save" exit then
    rc E-SW-NO-ACCOUNT = if s" kiba: no such saved account" exit then
    rc E-SW-NAME = if s" kiba: account name has unsafe characters" exit then
-   rc E-SW-LOCKED = if LOCKED-REASON$ exit then
    rc E-SW-JSON = if s" kiba: a login file is missing an expected field" exit then
    rc E-SW-LOGIN = if s" kiba: provider login did not complete" exit then
    rc E-SW-CAPACITY = if s" kiba: too many saved accounts or a file over 4 MiB" exit then

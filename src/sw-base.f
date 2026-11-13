@@ -16,7 +16,6 @@ public
 -100002 constant E-SW-NO-LIVE     \ the provider has no live login to save
 -100003 constant E-SW-NO-ACCOUNT  \ the named account is not saved
 -100004 constant E-SW-NAME        \ an account name carries unsafe bytes
--100005 constant E-SW-LOCKED      \ another kiba holds the store lock
 -100006 constant E-SW-JSON        \ a provider file lacks an expected field
 -100007 constant E-SW-LOGIN       \ the provider login command failed
 -100008 constant E-SW-CAPACITY    \ a fixed buffer is too small

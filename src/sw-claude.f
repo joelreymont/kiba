@@ -1,11 +1,9 @@
-\ sw-claude.f - Claude Code's live login: read, saved to slots, and written.
+\ sw-claude.f - Claude Code's live login: read and written.
 require ../src/sw-identity.f
 require ../src/sw-db.f
 
 package SW
 
-: CREDS-NAME$ ( -- ptr u8 n ) s" credentials.json" ;
-: OAUTH-NAME$ ( -- ptr u8 n ) s" oauth-account.json" ;
 : OAUTH-KEY$ ( -- ptr u8 n ) s" oauthAccount" ;
 
 : OUT-RESET ( -- ) 0 OUT-U ! ;
@@ -50,8 +48,6 @@ package SW
 
 public
 
-EXPORT CREDS-NAME$
-
 \ loads both live documents; false when Claude Code has no login
 : CLAUDE-LIVE-IDENTITY ( -- bool )
    CLAUDE-CONFIG$ FS:FILE? 0= if ID-LIVE NO-IDENTITY false exit then
@@ -59,21 +55,6 @@ EXPORT CREDS-NAME$
    CLAUDE-CONFIG$ CFG-BUF CFG-U READ-INTO
    CLAUDE-CREDS$ FILE-BUF FILE-U READ-INTO
    ID-LIVE CLAUDE-IDENTITY ;
-
-\ the two live documents are read here, so a slot read between naming the
-\ account and saving it cannot put another login's bytes in the slot
-: CLAUDE-SAVE-LIVE ( ptr u8 n -- ) {: a u :}
-   CLAUDE-CONFIG$ CFG-BUF CFG-U READ-INTO 2drop
-   CLAUDE-CREDS$ FILE-BUF FILE-U READ-INTO 2drop
-   P-CLAUDE a u SLOT-DIR$ ENSURE-PRIVATE
-   P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ FILE$ WRITE-PRIVATE
-   CFG$ OAUTH-KEY$ DOC-OBJ-SPAN {: off len :}
-   P-CLAUDE a u OAUTH-NAME$ SLOT-FILE$ CFG-BUF off + len WRITE-PRIVATE ;
-
-: CLAUDE-SLOT-PLAN ( ptr u8 n -- ) {: a u :}
-   ID-SLOT NO-IDENTITY
-   P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ FS:FILE? 0= if exit then
-   P-CLAUDE a u CREDS-NAME$ SLOT-FILE$ READ-SLOT$ ID-SLOT CLAUDE-PLAN ;
 
 \ ---- the live login over the store ----------------------------------------
 private

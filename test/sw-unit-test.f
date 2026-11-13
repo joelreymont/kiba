@@ -11,7 +11,6 @@ package SW-TEST
 using SW
 
 create UT-BUF 256 allot
-create UT-PID 32 allot
 
 : SPAN-COPY ( ptr u8 n ptr u8 n -- ptr u8 n ) {: a u dst cap :}
    u cap > if E-SW-CAPACITY throw then
@@ -150,22 +149,6 @@ create UT-PID 32 allot
    s" /a/b/c" DIRNAME s" /a/b" T$=
    s" /x" DIRNAME s" /" T$=
    s" x" DIRNAME nip 0 T= ;
-
-: UT-NOOP ( -- ) ;
-: UT-NESTED ( -- ) [: UT-NOOP ;] WITH-LOCK ;
-: UT-BOOM ( -- ) E-SW-JSON throw ;
-: UT-LOCKED-BOOM ( -- ) [: UT-BOOM ;] WITH-LOCK ;
-
-: UT-LOCK ( -- )
-   LOCK-STORE
-   UT-NESTED
-   LOCK$ FS:DIR? TTRUE
-   UNLOCK-STORE
-   [: UT-LOCKED-BOOM ;] E-SW-JSON TTHROWSQ
-   LOCK$ FS:DIR? TFALSE
-   E-SW-LOCKED REASON$ s" kiba: another kiba holds the store lock; remove " STARTS-WITH? TTRUE
-   E-SW-LOCKED REASON$ s"  if it is stale" ENDS-WITH? TTRUE
-   E-SW-LOCKED REASON$ LOCK$ CONTAINS? TTRUE ;
 
 : UT-LIVE-A ( -- )
    CLAUDE-CREDS$ DIRNAME ENSURE-PRIVATE
@@ -551,27 +534,11 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
    P-CLAUDE s" a@x.test" CMD-FORGET
    [: P-CLAUDE DB-LIST DB-ROW# 0 T= ;] UT-STORE ;
 
-\ usage and add still keep slot folders: claude a; codex c and d,
-\ with A and C live
-: UT-SLOT ( n -- ) dup LIVE-IDENTITY TTRUE SAVE-LIVE ;
-
-: UT-SEED-SLOTS ( -- )
-   UT-LIVE-B
-   P-CODEX UT-SLOT
+\ live claude a and codex c for the add and usage tests
+: UT-LIVE-AC ( -- )
    CLAUDE-CONFIG$ CFG-BA$ WRITE-PRIVATE
    CLAUDE-CREDS$ CREDS-A$ WRITE-PRIVATE
-   CODEX-AUTH$ AUTH-C$ WRITE-PRIVATE
-   P-CLAUDE UT-SLOT
-   P-CODEX UT-SLOT ;
-
-\ a damaged slot still lists
-: UT-DAMAGED-SLOT ( -- )
-   P-CLAUDE s" bad@x.test" SLOT-DIR$ ENSURE-PRIVATE
-   P-CLAUDE s" bad@x.test" s" credentials.json" SLOT-FILE$ s" garbage" WRITE-PRIVATE
-   P-CLAUDE s" bad@x.test" s" oauth-account.json" SLOT-FILE$ s\" {\"emailAddress\":\"bad@x.test\"}" WRITE-PRIVATE
-   P-CLAUDE LIST-ACCOUNTS ACCT# 2 T=
-   CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
-   P-CLAUDE s" bad@x.test" SLOT-DIR$ FS:REMOVE-TREE ;
+   CODEX-AUTH$ AUTH-C$ WRITE-PRIVATE ;
 
 : UT-WRITE-SCRIPT ( ptr u8 n ptr u8 n -- ) {: n nu body bu :}
    HOME$ {: h hu :}
@@ -1035,22 +1002,6 @@ create UT-ERR-PATH 256 allot   variable UT-ERR-U
    P-CODEX s" c@x.test" CMD-USE
    CODEX-AUTH$ READ-FILE$ AUTH-C$ T$= ;
 
-\ a lock left by a dead process is taken over; a live holder is respected
-: UT-STALE-LOCK ( -- )
-   LOCK$ ENSURE-PRIVATE
-   LOCK$ {: l lu :}
-   SB-RESET l lu SB-APPEND s" /pid" SB-APPEND SB$ UT-BUF 256 SPAN-COPY {: f fu :}
-   f fu s" 999999999" WRITE-PRIVATE
-   UT-NESTED
-   LOCK$ FS:DIR? TFALSE
-   LOCK$ ENSURE-PRIVATE
-   SB-RESET getpid FMT:SB-U SB$ UT-PID 32 SPAN-COPY {: pt ptu :}
-   f fu pt ptu WRITE-PRIVATE
-   f fu READ-FILE$ pt ptu T$=
-   [: UT-NESTED ;] E-SW-LOCKED TTHROWSQ
-   f fu FS:REMOVE-FILE
-   LOCK$ FS:REMOVE-DIR ;
-
 \ ---- the SQLite store -------------------------------------------------------
 create UT-NUL 3 allot                 \ a login blob holding a NUL byte
 create UT-CLAIM 32 allot
@@ -1188,18 +1139,6 @@ variable UT-V
    s" a@x.test #10" NAME-EMAIL s" a@x.test" T$=
    s" a@x.test" NAME-EMAIL s" a@x.test" T$= ;
 
-\ marker files outside <provider>/<name>/ are not accounts
-: UT-STRAY-MARKERS ( -- )
-   P-CODEX PROVIDER-DIR$ {: d du :}
-   SB-RESET d du SB-APPEND s" /auth.json" SB-APPEND SB$ s" {}" WRITE-PRIVATE
-   P-CODEX s" c@x.test" s" sub" SLOT-FILE$ ENSURE-PRIVATE
-   P-CODEX s" c@x.test" s" sub/auth.json" SLOT-FILE$ s" {}" WRITE-PRIVATE
-   P-CODEX LIST-ACCOUNTS ACCT# 2 T=
-   0 ACCT-NAME s" c@x.test" T$=
-   1 ACCT-NAME s" d@x.test" T$=
-   SB-RESET d du SB-APPEND s" /auth.json" SB-APPEND SB$ FS:REMOVE-FILE
-   P-CODEX s" c@x.test" s" sub" SLOT-FILE$ FS:REMOVE-TREE ;
-
 \ ---- the per-provider turn ---------------------------------------------------
 create UT-QUEUE PATH-CAP allot   variable UT-QUEUE-U
 create UT-TURN PATH-CAP allot    variable UT-TURN-U
@@ -1266,7 +1205,6 @@ create UT-LIST UT-LIST-CAP allot
    UT-STRINGS
    UT-READER-RECOVERS
    UT-DOC-CLOSE
-   UT-LOCK
    UT-STORE-SAVE
    UT-STORE-USE
    UT-STORE-USE-CODEX
@@ -1286,9 +1224,7 @@ create UT-LIST UT-LIST-CAP allot
    UT-UNRESTORED
    UT-ORPHAN
    UT-STORE-FORGET
-   UT-SEED-SLOTS
-   UT-DAMAGED-SLOT
-   UT-STRAY-MARKERS
+   UT-LIVE-AC
    UT-ADD
    UT-ADD-EMPTY
    UT-ADD-CLAUDE
@@ -1305,7 +1241,6 @@ create UT-LIST UT-LIST-CAP allot
    UT-UNRECORDED
    UT-USAGE-CHECKED
    UT-USE-PROBES
-   UT-STALE-LOCK
    UT-NAMES
    UT-DB
    UT-TURN-ROUND
