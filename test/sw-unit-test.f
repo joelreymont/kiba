@@ -574,7 +574,7 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
 \ grant id, a Codex one the word after "at-w-" in its token
 : UT-FAKE-CURL ( -- )
    s" curl"
-   s\" #!/bin/sh\nout=; auth=; url=; grant=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) case \"$2\" in @*) auth=$(/usr/bin/grep ^Authorization: \"${2#@}\"); echo \"hdrmode $(/usr/bin/stat -c %a \"${2#@}\")\" >> \"$KIBA_TEST_LOG\"; echo \"ua $(/usr/bin/grep ^User-Agent: \"${2#@}\")\" >> \"$KIBA_TEST_LOG\";; *) echo \"argvheader $2\" >> \"$KIBA_TEST_LOG\";; esac; shift;; --data-binary) echo \"data $2\" >> \"$KIBA_TEST_LOG\"; grant=$(/usr/bin/cat \"${2#@}\"); echo \"body $grant\" >> \"$KIBA_TEST_LOG\"; shift;; -X|-m|-w) shift;; *) url=$1;; esac; shift; done\necho \"$url $auth\" >> \"$KIBA_TEST_LOG\"\ncode=200; body='{}'\ncase \"$url\" in\n*api.anthropic.com/api/oauth/usage\\?cedar_ember=1\\&at_wall=1) case \"$auth\" in *sk-a) body='{\"five_hour\":{\"utilization\":56.25,\"resets_at\":\"2026-09-15T14:00:00+00:00\"},\"seven_day\":{\"utilization\":100,\"resets_at\":\"2026-09-21T11:00:00+00:00\"},\"limits\":[{\"kind\":\"session\",\"group\":\"session\",\"scope\":null,\"percent\":56},{\"kind\":\"weekly_scoped\",\"group\":\"weekly\",\"scope\":{\"model\":{\"id\":null,\"display_name\":\"Fable\"},\"surface\":null},\"percent\":48,\"resets_at\":\"2026-09-22T13:00:00+00:00\"}]}';; *sk-b-new) body='{\"five_hour\":{\"utilization\":12.4,\"resets_at\":\"2026-09-15T15:00:00+00:00\"},\"seven_day_oauth_apps\":{\"utilization\":0.5,\"resets_at\":\"\"}}';; *) code=401; body='{\"error\":\"expired\"}';; esac;;\n*platform.claude.com/v1/oauth/token) case \"$grant\" in *r-e*) code=429; body='{\"error\":{\"type\":\"rate_limit_error\"}}';; *) body='{\"access_token\":\"sk-b-new\",\"refresh_token\":\"r-b-new\",\"expires_in\":3600,\"refresh_token_expires_in\":2592000}';; esac;;\n*chatgpt.com/backend-api/wham/usage) case \"$auth\" in *at-c) body='{\"plan_type\":\"pro\",\"rate_limit\":{\"allowed\":false,\"limit_reached\":true,\"primary_window\":{\"used_percent\":100,\"limit_window_seconds\":604800,\"reset_after_seconds\":433078,\"reset_at\":1789904220},\"secondary_window\":null}}';; *at-d2) body='{\"rate_limit\":{\"primary_window\":{\"used_percent\":12,\"limit_window_seconds\":18000,\"reset_at\":1789489142},\"secondary_window\":{\"used_percent\":40,\"limit_window_seconds\":604800,\"reset_at\":1790075942}}}';; *at-dup) body='{\"rate_limit\":{\"primary_window\":{\"used_percent\":10,\"limit_window_seconds\":18000,\"used_percent\":20}}}';; *at-whole) body='{\"rate_limit\":{\"primary_window\":{\"used_percent\":30,\"limit_window_seconds\":6048e2,\"reset_at\":1789904220.0}},\"rate_limit_reset_credits\":{\"available_count\":2.0}}';; *at-long) body='{\"plan_type\":\"ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\",\"rate_limit\":{\"primary_window\":{\"used_percent\":30,\"limit_window_seconds\":18000}}}';; *at-w-*) body='{}';; *at-z|*at-y) code=401; body='{\"error\":{\"code\":\"token_revoked\"}}';; *) code=401; body='{\"error\":{\"code\":\"token_expired\"}}';; esac;;\n*auth.openai.com/oauth/token) case \"$grant\" in *rt-z*) code=401; body='{\"error\":\"invalid_grant\"}';; *rt-y*) code=503; body='';; *) body='{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d2\",\"refresh_token\":\"rt-d2\"}';; esac;;\n*api.anthropic.com/api/organizations/*/reset_rate_limits) case \"$auth\" in *sk-a) code=401; body='{\"error\":\"expired\"}';; *) word=$(printf '%s' \"$grant\" | /usr/bin/sed -n 's/.*\"grant_id\":\"w-\\([a-z_]*\\)\".*/\\1/p'); [ -n \"$word\" ] || word=reset; body='{\"result\":\"'\"$word\"'\"}';; esac;;\n*chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume) case \"$auth\" in *at-w-*) body='{\"code\":\"'\"${auth##*at-w-}\"'\"}';; *at-d2) body='{\"code\":\"reset\"}';; *) code=401; body='{\"error\":{\"code\":\"token_expired\"}}';; esac;;\n*) code=404;;\nesac\nprintf '%s' \"$body\" > \"$out\"\nprintf '%s' \"$code\"\n"
+   s\" #!/bin/sh\nout=; auth=; url=; grant=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) case \"$2\" in @*) auth=$(/usr/bin/grep ^Authorization: \"${2#@}\"); echo \"hdrmode $(/usr/bin/stat -c %a \"${2#@}\")\" >> \"$KIBA_TEST_LOG\"; echo \"ua $(/usr/bin/grep ^User-Agent: \"${2#@}\")\" >> \"$KIBA_TEST_LOG\";; *) echo \"argvheader $2\" >> \"$KIBA_TEST_LOG\";; esac; shift;; --data-binary) echo \"data $2\" >> \"$KIBA_TEST_LOG\"; grant=$(/usr/bin/cat \"${2#@}\"); echo \"body $grant\" >> \"$KIBA_TEST_LOG\"; shift;; -X|-m|-w) shift;; *) url=$1;; esac; shift; done\necho \"$url $auth\" >> \"$KIBA_TEST_LOG\"\ncode=200; body='{}'\ncase \"$url\" in\n*api.anthropic.com/api/oauth/usage\\?cedar_ember=1\\&at_wall=1) case \"$auth\" in *sk-a) body='{\"five_hour\":{\"utilization\":56.25,\"resets_at\":\"2026-09-15T14:00:00+00:00\"},\"seven_day\":{\"utilization\":100,\"resets_at\":\"2026-09-21T11:00:00+00:00\"},\"limits\":[{\"kind\":\"session\",\"group\":\"session\",\"scope\":null,\"percent\":56},{\"kind\":\"weekly_scoped\",\"group\":\"weekly\",\"scope\":{\"model\":{\"id\":null,\"display_name\":\"Fable\"},\"surface\":null},\"percent\":48,\"resets_at\":\"2026-09-22T13:00:00+00:00\"}]}';; *sk-b-new) body='{\"five_hour\":{\"utilization\":12.4,\"resets_at\":\"2026-09-15T15:00:00+00:00\"},\"seven_day_oauth_apps\":{\"utilization\":0.5,\"resets_at\":\"\"}}';; *) code=401; body='{\"error\":\"expired\"}';; esac;;\n*platform.claude.com/v1/oauth/token) case \"$grant\" in *r-e*) code=429; body='{\"error\":{\"type\":\"rate_limit_error\"}}';; *) body='{\"access_token\":\"sk-b-new\",\"refresh_token\":\"r-b-new\",\"expires_in\":3600,\"refresh_token_expires_in\":2592000}';; esac;;\n*chatgpt.com/backend-api/wham/usage) case \"$auth\" in *at-c) body='{\"plan_type\":\"pro\",\"rate_limit\":{\"allowed\":false,\"limit_reached\":true,\"primary_window\":{\"used_percent\":100,\"limit_window_seconds\":604800,\"reset_after_seconds\":433078,\"reset_at\":1789904220},\"secondary_window\":null}}';; *at-d2) body='{\"rate_limit\":{\"primary_window\":{\"used_percent\":12,\"limit_window_seconds\":18000,\"reset_at\":1789489142},\"secondary_window\":{\"used_percent\":40,\"limit_window_seconds\":604800,\"reset_at\":1790075942}}}';; *at-dup) body='{\"rate_limit\":{\"primary_window\":{\"used_percent\":10,\"limit_window_seconds\":18000,\"used_percent\":20}}}';; *at-whole) body='{\"rate_limit\":{\"primary_window\":{\"used_percent\":30,\"limit_window_seconds\":6048e2,\"reset_at\":1789904220.0}},\"rate_limit_reset_credits\":{\"available_count\":2.0}}';; *at-long) body='{\"plan_type\":\"ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\",\"rate_limit\":{\"primary_window\":{\"used_percent\":30,\"limit_window_seconds\":18000}}}';; *at-w-*) body='{}';; *at-z|*at-y) code=401; body='{\"error\":{\"code\":\"token_revoked\"}}';; *) code=401; body='{\"error\":{\"code\":\"token_expired\"}}';; esac;;\n*auth.openai.com/oauth/token) case \"$grant\" in *rt-z*) code=401; body='{\"error\":\"invalid_grant\"}';; *rt-y*) code=503; body='';; *) body='{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d2\",\"refresh_token\":\"rt-d2\"}';; esac;;\n*api.anthropic.com/api/organizations/*/reset_rate_limits) case \"$auth\" in *sk-a|*sk-s) code=401; body='{\"error\":\"expired\"}';; *) word=$(printf '%s' \"$grant\" | /usr/bin/sed -n 's/.*\"grant_id\":\"w-\\([a-z_]*\\)\".*/\\1/p'); [ -n \"$word\" ] || word=reset; body='{\"result\":\"'\"$word\"'\"}';; esac;;\n*chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume) case \"$auth\" in *at-w-*) body='{\"code\":\"'\"${auth##*at-w-}\"'\"}';; *at-d2) body='{\"code\":\"reset\"}';; *at-z) code=401; body='{\"error\":{\"code\":\"token_revoked\"}}';; *) code=401; body='{\"error\":{\"code\":\"token_expired\"}}';; esac;;\n*) code=404;;\nesac\nprintf '%s' \"$body\" > \"$out\"\nprintf '%s' \"$code\"\n"
    UT-WRITE-SCRIPT ;
 
 : AUTH-D2$ ( -- ptr u8 n )
@@ -1163,6 +1163,28 @@ variable UT-LOG0
    P-CODEX s" w@x.test" CMD-REDEEM
    s" w@x.test" REDEEMED$ t tu T$= ;
 
+\ byte i of a request id: a dash at 8, 13, 18 and 23, else an uppercase
+\ hex digit
+: UT-RID-C ( n n -- bool ) {: c i :}
+   i 8 = i 13 = or i 18 = or i 23 = or if c $2D = exit then
+   c STR-DIGIT? c [char] A >= c [char] F <= and or ;
+
+\ where the request id starts in the log, -1 when none is logged
+: UT-RID-AT ( ptr u8 n -- n ) {: l lu :}
+   l lu s\" \"request_id\":\"" FIND-SUB MATCH option
+     none OF -1 ENDOF
+     some OF IDX>N 14 + ENDOF
+   ;MATCH ;
+
+\ the first request id in the log is 36 bytes as UUID().uuidString writes
+\ them, then the closing quote
+: UT-RID ( ptr u8 n -- ) {: l lu :}
+   l lu UT-RID-AT {: at :}
+   at 0 >= TTRUE
+   at 36 + lu < TTRUE
+   l at + 36 + c@ [char] " T=
+   36 0 ?do l at + i + c@ i UT-RID-C TTRUE loop ;
+
 \ a saved Claude login's reset is asked of its organization with the
 \ offer's grant, then the login is probed again; every word maps to its
 \ outcome, and an unknown one is the endpoint's error
@@ -1178,6 +1200,7 @@ variable UT-LOG0
    UT-LOG-NEW$ {: l lu :}
    l lu s" https://api.anthropic.com/api/organizations/org-r/reset_rate_limits Authorization: Bearer sk-r" CONTAINS? TTRUE
    l lu s\" body {\"program\":\"cedar_ember\",\"grant_id\":\"w-reset\",\"request_id\":\"" CONTAINS? TTRUE
+   l lu UT-RID
    l lu s" ua User-Agent: claude-cli/2.1.282 (external, cli)" CONTAINS? TTRUE
    s" w-already_used" s" That reset was already used" UT-CLAUDE-WORD
    s" w-not_limited" s" r@x.test is not at a limit; nothing was spent" UT-CLAUDE-WORD
@@ -1193,6 +1216,33 @@ variable UT-LOG0
    [: P-CLAUDE s" r@x.test" CMD-REDEEM ;] E-SW-REMOTE TTHROWSQ
    E-SW-REMOTE REASON$ s\" kiba: Anthropic's reset endpoint sent an unknown result \"bogus\"" T$=
    P-CLAUDE s" r@x.test" CREDS-R$ UT-LOGIN=
+   P-CLAUDE s" r@x.test" CMD-FORGET ;
+
+: CREDS-S$ ( -- ptr u8 n )
+   s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-s\",\"refreshToken\":\"r-s\",\"expiresAt\":4102444800000,\"subscriptionType\":\"pro\"}}" ;
+
+\ a saved Claude login's rejected reset renews its token, which is saved
+\ back, and the reset is sent again
+: UT-REDEEM-RENEWED ( -- )
+   P-CLAUDE s" s@x.test" s" org-s" CREDS-S$ UT-PUT-ORG
+   P-CLAUDE s" s@x.test" s" cedar_ember" s" w-reset" UT-OFFER
+   UT-LOG-MARK
+   P-CLAUDE s" s@x.test" CMD-REDEEM
+   s" s@x.test" REDEEMED$ s" Limit reset for s@x.test" T$=
+   P-CLAUDE s" s@x.test" [: UT-RENEWED-B ;] UT-ROW-LOGIN
+   UT-LOG-NEW$ {: l lu :}
+   l lu s" /org-s/reset_rate_limits Authorization: Bearer sk-s" CONTAINS? TTRUE
+   l lu s" https://platform.claude.com/v1/oauth/token" CONTAINS? TTRUE
+   l lu s" /org-s/reset_rate_limits Authorization: Bearer sk-b-new" CONTAINS? TTRUE
+   P-CLAUDE s" s@x.test" CMD-FORGET ;
+
+\ the organization reaches the URL as one path segment, whatever it holds
+: UT-REDEEM-SEGMENT ( -- )
+   P-CLAUDE s" r@x.test" s" a/b?c" CREDS-R$ UT-PUT-ORG
+   P-CLAUDE s" r@x.test" s" cedar_ember" s" w-reset" UT-OFFER
+   UT-LOG-MARK
+   P-CLAUDE s" r@x.test" CMD-REDEEM
+   UT-LOG-NEW$ s" /api/organizations/a%2Fb%3Fc/reset_rate_limits " CONTAINS? TTRUE
    P-CLAUDE s" r@x.test" CMD-FORGET ;
 
 \ the live login's rejected token is its CLI's to refresh: no refresh is
@@ -1236,6 +1286,20 @@ variable UT-LOG0
    s" no_credit" s" No limit resets left for w@x.test" UT-CODEX-WORD
    s" already_redeemed" s" That reset was already used" UT-CODEX-WORD
    P-CODEX s" w@x.test" CMD-FORGET ;
+
+\ a saved Codex login revoked by a sign-out: its reset is rejected and
+\ the renewal refused, and the login is left as it was
+: UT-REDEEM-REVOKED ( -- )
+   P-CODEX s" z@x.test" AUTH-Z$ UT-PUT
+   P-CODEX s" z@x.test" s" " s" " UT-OFFER
+   UT-LOG-MARK
+   [: P-CODEX s" z@x.test" CMD-REDEEM ;] E-SW-REMOTE TTHROWSQ
+   E-SW-REMOTE REASON$ s" kiba: login revoked by a sign-out at chatgpt.com or in codex; log in again" T$=
+   UT-LOG-NEW$ {: l lu :}
+   l lu s" /rate-limit-reset-credits/consume Authorization: Bearer at-z" CONTAINS? TTRUE
+   l lu s" https://auth.openai.com/oauth/token" CONTAINS? TTRUE
+   P-CODEX s" z@x.test" AUTH-Z$ UT-LOGIN=
+   P-CODEX s" z@x.test" CMD-FORGET ;
 
 \ ---- the SQLite store -------------------------------------------------------
 create UT-NUL 3 allot                 \ a login blob holding a NUL byte
@@ -1480,8 +1544,11 @@ create UT-LIST UT-LIST-CAP allot
    UT-USAGE-CHECKED
    UT-USE-PROBES
    UT-REDEEM-CLAUDE
+   UT-REDEEM-RENEWED
+   UT-REDEEM-SEGMENT
    UT-REDEEM-LIVE
    UT-REDEEM-CODEX
+   UT-REDEEM-REVOKED
    UT-NAMES
    UT-DB
    UT-TURN-ROUND

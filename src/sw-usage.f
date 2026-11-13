@@ -1304,28 +1304,22 @@ create RID-BUF 36 allot
 : RESET-WORD$ ( -- ptr u8 n ) RESET-WORD RESET-WORD-U @ ;
 : REMOTE! ( ptr u8 n -- ) REMOTE-NOTE REMOTE-NOTE-U TEXT-CAP SPAN! ;
 
-\ byte i of the id at its place in the text: two digits a byte, and a dash
-\ before bytes 4, 6, 8 and 10
-: RID-AT ( n -- n ) {: i :}
-   i 2 *
-   i 4 >= if 1+ then i 6 >= if 1+ then
-   i 8 >= if 1+ then i 10 >= if 1+ then ;
-
+\ byte i of the id as two uppercase digits, after a dash before bytes 4,
+\ 6, 8 and 10
 : RID-BYTE ( n -- ) {: i :}
-   RID-RAW i + c@ {: b :}
-   i RID-AT {: at :}
-   b 4 rshift HEX-C RID-BUF at + c!
-   b 15 and HEX-C RID-BUF at 1+ + c! ;
+   i 4 = i 6 = or i 8 = or i 10 = or if $2D SB-APPEND-C then
+   RID-RAW i + c@ 2 FMT:SB-HEX-WIDTH ;
 
-\ a random version 4 UUID in lowercase: each request is told apart by it
+\ a random version 4 UUID in uppercase, as UUID().uuidString writes it:
+\ each request is told apart by it
 : REQUEST-ID$ ( -- ptr u8 n )
    RID-RAW 16 ENTROPY:FILL
    RID-RAW 6 + c@ $0F and $40 or RID-RAW 6 + c!
    RID-RAW 8 + c@ $3F and $80 or RID-RAW 8 + c!
-   16 0 ?do i RID-BYTE loop
-   $2D RID-BUF 8 + c! $2D RID-BUF 13 + c!
-   $2D RID-BUF 18 + c! $2D RID-BUF 23 + c!
-   RID-BUF 36 ;
+   SB-RESET 16 0 ?do i RID-BYTE loop
+   SB$ {: s su :}
+   s RID-BUF su BYTE-COPY
+   RID-BUF su ;
 
 \ the writer's text kept as the request body, which a refresh's own body
 \ would overwrite in the writer
@@ -1360,13 +1354,31 @@ create RID-BUF 36 allot
    s" redeem_request_id" id idu JSON:WRITE-FIELD-S
    JSON:WRITE-OBJECT-END BODY! ;
 
+\ RFC 3986's unreserved bytes, which a path segment carries as they are
+: UNRESERVED? ( n -- bool ) {: c :}
+   c ASCII-UPPER {: up :}
+   up [char] A >= up [char] Z <= and
+   c STR-DIGIT? or
+   c [char] - = or c [char] . = or
+   c [char] _ = or c [char] ~ = or ;
+
+: SB-SEGMENT-C ( n -- ) {: c :}
+   c UNRESERVED? if c SB-APPEND-C exit then
+   $25 SB-APPEND-C c 2 FMT:SB-HEX-WIDTH ;
+
+\ the text appended as one URL path segment, as appending(component:)
+\ writes it: every other byte as %XX, so none can end the segment
+: SB-SEGMENT ( ptr u8 n -- ) {: s su :}
+   su 0 ?do s i + c@ SB-SEGMENT-C loop ;
+
 \ the reset is asked of row r's organization; E-SW-JSON when it names none
 : CLAUDE-RESET-PREPARE ( n -- ) {: r :}
    r DB-ROW-ORG$ {: o ou :}
    ou 0= if E-SW-JSON throw then
    r DB-ROW-USAGE drop
    CLAUDE-RESET-BODY
-   SB-RESET CLAUDE-ORGS-URL$ SB-APPEND o ou SB-APPEND CLAUDE-RESET-PATH$ SB-APPEND
+   SB-RESET CLAUDE-ORGS-URL$ SB-APPEND
+   o ou SB-SEGMENT CLAUDE-RESET-PATH$ SB-APPEND
    SB$ RESET-URL RESET-URL-U PATH! ;
 
 : CODEX-RESET-PREPARE ( -- )
