@@ -1221,21 +1221,22 @@ create UT-AT-BUF 1024 allot
    UT-CLAUDE-UNREADABLE
    UT-FAKE-CURL ;
 
-\ the fake `claude` logs its argv and writes account B into CLAUDE_CONFIG_DIR,
+\ the fake `claude` logs its argv and every CLAUDE_CONFIG_DIR row execve gave
+\ it, which sh collapses to one, then writes account B into CLAUDE_CONFIG_DIR,
 \ or exits 3 when HOME holds fail-login
 : UT-FAKE-CLAUDE ( -- )
    s" claude"
-   s\" #!/bin/sh\necho \"claude $* cfg=$CLAUDE_CONFIG_DIR\" >> \"$KIBA_TEST_LOG\"\nif [ -e \"$HOME/fail-login\" ]; then exit 3; fi\nprintf '%s' '{\"oauthAccount\":{\"accountUuid\":\"u2\",\"emailAddress\":\"b@x.test\",\"organizationUuid\":\"org-b\"}}' > \"$CLAUDE_CONFIG_DIR/.claude.json\"\nprintf '%s' '{\"claudeAiOauth\":{\"accessToken\":\"sk-b\",\"refreshToken\":\"r-b\",\"expiresAt\":2,\"scopes\":[\"user:inference\"],\"subscriptionType\":\"pro\"}}' > \"$CLAUDE_CONFIG_DIR/.credentials.json\"\n"
+   s\" #!/bin/sh\necho \"claude $* cfg=$CLAUDE_CONFIG_DIR\" >> \"$KIBA_TEST_LOG\"\n/usr/bin/tr '\\0' '\\n' < /proc/$$/environ | while IFS= read -r l; do case \"$l\" in CLAUDE_CONFIG_DIR=*) echo \"env $l\";; esac; done >> \"$KIBA_TEST_LOG\"\nif [ -e \"$HOME/fail-login\" ]; then exit 3; fi\nprintf '%s' '{\"oauthAccount\":{\"accountUuid\":\"u2\",\"emailAddress\":\"b@x.test\",\"organizationUuid\":\"org-b\"}}' > \"$CLAUDE_CONFIG_DIR/.claude.json\"\nprintf '%s' '{\"claudeAiOauth\":{\"accessToken\":\"sk-b\",\"refreshToken\":\"r-b\",\"expiresAt\":2,\"scopes\":[\"user:inference\"],\"subscriptionType\":\"pro\"}}' > \"$CLAUDE_CONFIG_DIR/.credentials.json\"\n"
    UT-WRITE-SCRIPT ;
 
 \ `add` logs in inside a throwaway home: the live login stays where it is,
 \ the new login is saved under its name, and the home is gone afterwards;
 \ the new row is then probed as saved, its 401 renewing its token.
-\ the fake `codex` records where it ran and writes AUTH-D on success, or
-\ nothing when HOME holds empty-login
+\ the fake `codex` records where it ran and every CODEX_HOME row execve gave
+\ it, then writes AUTH-D on success, or nothing when HOME holds empty-login
 : UT-FAKE-CODEX ( -- )
    s" codex"
-   s\" #!/bin/sh\necho \"codexhome $CODEX_HOME\" >> \"$KIBA_TEST_LOG\"\nif [ -e \"$HOME/.codex/auth.json\" ]; then echo present >> \"$KIBA_TEST_LOG\"; else echo absent >> \"$KIBA_TEST_LOG\"; fi\nif [ -e \"$HOME/fail-login\" ]; then exit 3; fi\nif [ -e \"$HOME/empty-login\" ]; then exit 0; fi\nprintf '%s' '{\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d\",\"refresh_token\":\"rt-d\",\"account_id\":\"acct\"}}' > \"$CODEX_HOME/auth.json\"\n"
+   s\" #!/bin/sh\necho \"codexhome $CODEX_HOME\" >> \"$KIBA_TEST_LOG\"\n/usr/bin/tr '\\0' '\\n' < /proc/$$/environ | while IFS= read -r l; do case \"$l\" in CODEX_HOME=*) echo \"env $l\";; esac; done >> \"$KIBA_TEST_LOG\"\nif [ -e \"$HOME/.codex/auth.json\" ]; then echo present >> \"$KIBA_TEST_LOG\"; else echo absent >> \"$KIBA_TEST_LOG\"; fi\nif [ -e \"$HOME/fail-login\" ]; then exit 3; fi\nif [ -e \"$HOME/empty-login\" ]; then exit 0; fi\nprintf '%s' '{\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d\",\"refresh_token\":\"rt-d\",\"account_id\":\"acct\"}}' > \"$CODEX_HOME/auth.json\"\n"
    UT-WRITE-SCRIPT ;
 
 \ HOME's file f, made or removed by the test to steer the fake codex
@@ -1325,6 +1326,61 @@ create UT-OFF-PATH 256 allot
    f fu FS:REMOVE-FILE
    P-CLAUDE LIVE-IDENTITY TTRUE ID-LIVE EMAIL$ s" a@x.test" T$=
    P-CLAUDE CMD-SAVE ;
+
+\ ---- a variable in kiba's own environment ------------------------------------
+\ GETENV and PROC-ENV-INHERIT-MISSING read the startup envp cell, which libc's
+\ setenv never changes: a test points that cell at a copy with one row added
+DYNAMIC-BUFFER UT-ENVP ptr u8
+create UT-ENV-ROW 512 allot
+
+: UT-ENVP! ( ptr ptr u8 -- ) ENV-DATA ENVP-CELL CELL / ptr-field ! ;
+
+: UT-ENV-ROWS ( -- n ) 0 begin dup ENVP 0= 0= while 1+ repeat ;
+
+: UT-ENV-ROW! ( ptr u8 n ptr u8 n -- ) {: name nu val vu :}
+   SB-RESET name nu SB-APPEND s" =" SB-APPEND val vu SB-APPEND
+   0 SB-APPEND-C SB$ UT-ENV-ROW 512 SPAN-COPY 2drop ;
+
+\ body runs with name=val in this process's environment, and the startup
+\ environment is back afterwards
+: UT-WITH-ENV ( ptr u8 n ptr u8 n [ -- ] -- ) {: name nu val vu body :}
+   ENVP-BASE {: old :}
+   name nu val vu UT-ENV-ROW!
+   UT-ENV-ROWS {: n :}
+   n 2 + UT-ENVP-RESERVE
+   n 0 ?do i ENVP i UT-ENVP ! loop
+   UT-ENV-ROW n UT-ENVP !
+   NULL-PTR n 1+ UT-ENVP !
+   0 UT-ENVP UT-ENVP!
+   [: body execute ;] [: old UT-ENVP! ;] finally ;
+
+create UT-REAL 256 allot
+
+: UT-DIR-TAIL$ ( n -- ptr u8 n )
+   P-CLAUDE = if s" /.claude" exit then
+   s" /.codex" ;
+
+\ a provider's home variable set in kiba's own environment never reaches
+\ the login, which gets exactly the throwaway login dir under that name
+: UT-LOGIN-ENV ( n ptr u8 n -- ) {: p var vu :}
+   s" /real-home" UT-HOME-FILE$ UT-REAL 256 SPAN-COPY {: r ru :}
+   UT-LOG-MARK
+   var vu r ru [: var vu GETENV r ru T$= p s" " CMD-ADD ;] UT-WITH-ENV
+   s" CLAUDE_CONFIG_DIR" GETENV nip 0 T=
+   s" CODEX_HOME" GETENV nip 0 T=
+   UT-LOG-NEW$ r ru CONTAINS? TFALSE
+   p LOGIN-HOME-PUBLIC$ UT-BUF 256 SPAN-COPY {: h hu :}
+   SB-RESET s" env " SB-APPEND var vu SB-APPEND s" =" SB-APPEND
+   h hu SB-APPEND
+   p UT-DIR-TAIL$ SB-APPEND s\" \n" SB-APPEND
+   UT-LOG-NEW$ SB$ CONTAINS? TTRUE ;
+
+: UT-LOGIN-ENVS ( -- )
+   UT-FAKE-CLAUDE
+   P-CLAUDE s" CLAUDE_CONFIG_DIR" UT-LOGIN-ENV
+   P-CLAUDE s" b@x.test" CMD-FORGET
+   UT-FAKE-CODEX
+   P-CODEX s" CODEX_HOME" UT-LOGIN-ENV ;
 
 \ a's login with its access token expired
 : CREDS-A-OLD$ ( -- ptr u8 n )
@@ -2524,6 +2580,7 @@ create UT-WRAP-BUF 1024 allot
    UT-ADD-EMPTY
    UT-ADD-CLAUDE
    UT-ADD-FAILED
+   UT-LOGIN-ENVS
    UT-PCT
    UT-PCT-CALLERS
    UT-SCOPED-LONG

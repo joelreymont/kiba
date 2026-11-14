@@ -30,73 +30,30 @@ variable EXE-U
    >LEN PROC-ARGV+ ;
 
 \ ---- the child's environment ------------------------------------------------
-\ this process's environment with the provider's home variable pointing at
-\ the throwaway home; the table ends with a null entry as execve expects
-1024 constant ENV-MAX
-$1000 constant ENV-STR-CAP
-ENV-MAX TYPED-BUFFER ENV-TABLE ptr u8
-create ENV-STR ENV-STR-CAP allot
-variable ENV-N
-variable ENV-STR-U
-
-: ENV-PUSH ( ptr u8 -- ) {: z :}
-   ENV-N @ ENV-MAX 1- >= if
-      s" variables in a command's environment" ENV-MAX 1- LIMIT$ TOO-MANY
-   then
-   z ENV-N @ ENV-TABLE !
-   1 ENV-N +! ;
-
-: ENV-DEFINE ( ptr u8 n ptr u8 n -- ) {: name nu val vu :}
-   ENV-STR-U @ nu + vu + 2 + ENV-STR-CAP > if
-      s" bytes in a command's environment" ENV-STR-CAP LIMIT$ TOO-MANY
-   then
-   ENV-STR ENV-STR-U @ + {: z :}
-   name z nu BYTE-COPY
-   EQUALS z nu + c!
-   val z nu + 1+ vu BYTE-COPY
-   0 z nu + 1+ vu + c!
-   ENV-STR-U @ nu + vu + 2 + ENV-STR-U !
-   z ENV-PUSH ;
-
-: ENV-NAME= ( ptr u8 ptr u8 n -- bool ) {: z name nu :}
-   0 begin dup nu < while
-      dup z + c@ over name + c@ <> if drop false exit then
-      1+
-   repeat drop
-   nu z + c@ EQUALS = ;
-
-: ENV-OVERRIDDEN? ( ptr u8 -- bool ) {: z :}
-   z s" CLAUDE_CONFIG_DIR" ENV-NAME= if true exit then
-   z s" CODEX_HOME" ENV-NAME= ;
-
-: ENV-INHERIT-REST ( -- )
-   0 begin dup ENVP 0= 0= while
-      dup ENVP ENV-OVERRIDDEN? 0= if dup ENVP ENV-PUSH then
-      1+
-   repeat drop ;
-
 : PROVIDER-HOME-VAR$ ( n -- ptr u8 n )
    P-CLAUDE = if s" CLAUDE_CONFIG_DIR" exit then
    s" CODEX_HOME" ;
 
+\ this process's environment with the provider's home variable naming the
+\ throwaway home; a real one of that name never reaches the child, since
+\ PROC-ENV-INHERIT-MISSING skips a name already set
 : LOGIN-ENV ( n -- ) {: p :}
-   0 ENV-N ! 0 ENV-STR-U !
-   p PROVIDER-HOME-VAR$ p LOGIN-DIR$ ENV-DEFINE
-   ENV-INHERIT-REST
-   NULL$ drop ENV-N @ ENV-TABLE ! ;
+   PROC-ENV-RESET
+   p PROVIDER-HOME-VAR$ >LEN p LOGIN-DIR$ >LEN PROC-ENV-SET
+   PROC-ENV-INHERIT-MISSING ;
 
 \ the child keeps this process's group, terminal, and descriptors: the
 \ spawn primitives give a child its own process group, and a login that
 \ then reads the terminal is stopped by SIGTTIN
-: EXEC-STAGED ( ptr u8 ptr ptr u8 -- ) {: pathz argv :}
-   pathz argv 0 ENV-TABLE execve drop
+: EXEC-STAGED ( ptr u8 ptr ptr u8 ptr ptr u8 -- ) {: pathz argv envp :}
+   pathz argv envp execve drop
    s" kiba: could not start the provider command" 127 die ;
 
 : RUN-STAGED ( -- n )
-   EXE$ >LEN PROC-ARGV-PREPARE {: pathz argv :}
+   EXE$ >LEN PROC-ARGV-PREPARE PROC-ENV-PREPARE {: pathz argv envp :}
    PROC-FORK:CHECKED {: pid :}
-   pid PID>N 0= if pathz argv EXEC-STAGED then
-   PROC-ARGV-RESET
+   pid PID>N 0= if pathz argv envp EXEC-STAGED then
+   PROC-ARGV-ENV-RESET
    pid PROCESS:WAIT PROCESS:STATUS>RC RC>N ;
 
 public
