@@ -16,37 +16,33 @@ public
 
 private
 
-\ one row of every buffer and one length cell per field, per identity
+\ one row of every buffer and one lens record, per identity
 2 constant ID-COUNT
-0 constant F-EMAIL
-1 constant F-PLAN
-2 constant F-ORG
-3 constant F-COUNT
+
+\ the byte lengths of an identity's email, plan and organization
+STRUCTURE lens DERIVE addr FIELD email n FIELD plan n FIELD org n ;STRUCTURE
 
 create EMAIL-BUF ID-COUNT EMAIL-CAP * allot
 create PLAN-BUF ID-COUNT PLAN-CAP * allot
 create ORG-BUF ID-COUNT ORG-CAP * allot       \ organization or account id
-create ID-LENS ID-COUNT F-COUNT * cells allot
+ID-COUNT TYPED-BUFFER ID-LENS lens
 
 : EMAIL-ROW ( n -- ptr u8 ) EMAIL-BUF swap EMAIL-CAP * + ;
 : PLAN-ROW ( n -- ptr u8 ) PLAN-BUF swap PLAN-CAP * + ;
 : ORG-ROW ( n -- ptr u8 ) ORG-BUF swap ORG-CAP * + ;
 
-: LEN-CELL ( n n -- ptr n ) {: id f :} ID-LENS id F-COUNT * f + cells + ;
-: LEN@ ( n n -- n ) LEN-CELL @ ;
-
 \ a field DOC-STR1 or DOC-STR2 could not read is empty, not -1 bytes long
-: LEN! ( n n n -- ) {: len id f :} len 0 max id f LEN-CELL ! ;
+: LEN! ( n ptr n -- ) {: len p :} len 0 max p ! ;
 
 public
 
-: EMAIL$ ( n -- ptr u8 n ) {: id :} id EMAIL-ROW id F-EMAIL LEN@ ;
-: PLAN$ ( n -- ptr u8 n ) {: id :} id PLAN-ROW id F-PLAN LEN@ ;
-: ORG$ ( n -- ptr u8 n ) {: id :} id ORG-ROW id F-ORG LEN@ ;
+: EMAIL$ ( n -- ptr u8 n ) {: id :} id EMAIL-ROW id ID-LENS LENS-EMAIL @ ;
+: PLAN$ ( n -- ptr u8 n ) {: id :} id PLAN-ROW id ID-LENS LENS-PLAN @ ;
+: ORG$ ( n -- ptr u8 n ) {: id :} id ORG-ROW id ID-LENS LENS-ORG @ ;
 
 \ one identity cleared to empty: no login is known yet
 : NO-IDENTITY ( n -- ) {: id :}
-   F-COUNT 0 ?do 0 id i LEN! loop ;
+   0 0 0 LENS-MAKE id ID-LENS ! ;
 
 \ ---- reading a login ---------------------------------------------------------
 \ Identity.swift builds JSONFields with try where a login must be read, so a
@@ -58,7 +54,7 @@ private
 : PLAN-READ? ( ptr u8 n n -- bool ) {: cr cru id :}
    cr cru FIELDS? 0= if false exit then
    cr cru s" claudeAiOauth" s" subscriptionType" id PLAN-ROW PLAN-CAP DOC-STR2
-   id F-PLAN LEN!
+   id ID-LENS LENS-PLAN LEN!
    true ;
 
 public
@@ -67,7 +63,7 @@ public
 \ or lack the string, since the account comes from the config alone; a plan
 \ longer than PLAN-CAP is E-SW-CAPACITY
 : CLAUDE-PLAN ( ptr u8 n n -- ) {: cr cru id :}
-   cr cru id PLAN-READ? 0= if 0 id F-PLAN LEN! then ;
+   cr cru id PLAN-READ? 0= if 0 id ID-LENS LENS-PLAN LEN! then ;
 
 \ fromOAuthAccount: the oauthAccount object on its own, as saved in a slot;
 \ E-SW-JSON unless JSONFields reads it and it names an email
@@ -75,8 +71,8 @@ public
    id NO-IDENTITY
    d du CHECK-FIELDS
    d du s" emailAddress" id EMAIL-ROW EMAIL-CAP DOC-STR1
-   dup 0 <= if E-SW-JSON throw then id F-EMAIL LEN!
-   d du s" organizationUuid" id ORG-ROW ORG-CAP DOC-STR1 id F-ORG LEN! ;
+   dup 0 <= if E-SW-JSON throw then id ID-LENS LENS-EMAIL LEN!
+   d du s" organizationUuid" id ORG-ROW ORG-CAP DOC-STR1 id ID-LENS LENS-ORG LEN! ;
 
 private
 
@@ -124,8 +120,8 @@ public
 \ an API-key login has no claims; it is saved under a fixed slot name
 : CODEX-API-IDENTITY ( ptr u8 n n -- bool ) {: d du id :}
    d du CODEX-API-KEY? 0= if false exit then
-   s" api-key" id EMAIL-ROW id F-EMAIL LEN-CELL EMAIL-CAP SPAN!
-   s" apikey" id PLAN-ROW id F-PLAN LEN-CELL PLAN-CAP SPAN!
+   s" api-key" id EMAIL-ROW id ID-LENS LENS-EMAIL EMAIL-CAP SPAN!
+   s" apikey" id PLAN-ROW id ID-LENS LENS-PLAN PLAN-CAP SPAN!
    true ;
 
 \ fromAuth: the auth.json document, its identity from the id_token claims;
@@ -139,9 +135,9 @@ public
    TOK-BUF tu JWT-PAYLOAD OBJ-BUF BUF-CAP B64URL-DECODE OBJ-U !
    OBJ$ CHECK-FIELDS
    OBJ$ s" email" id EMAIL-ROW EMAIL-CAP DOC-STR1
-   dup 0 <= if E-SW-JSON throw then id F-EMAIL LEN!
-   OBJ$ s" https://api.openai.com/auth" s" chatgpt_plan_type" id PLAN-ROW PLAN-CAP DOC-STR2 id F-PLAN LEN!
-   OBJ$ s" https://api.openai.com/auth" s" chatgpt_account_id" id ORG-ROW ORG-CAP DOC-STR2 id F-ORG LEN!
+   dup 0 <= if E-SW-JSON throw then id ID-LENS LENS-EMAIL LEN!
+   OBJ$ s" https://api.openai.com/auth" s" chatgpt_plan_type" id PLAN-ROW PLAN-CAP DOC-STR2 id ID-LENS LENS-PLAN LEN!
+   OBJ$ s" https://api.openai.com/auth" s" chatgpt_account_id" id ORG-ROW ORG-CAP DOC-STR2 id ID-LENS LENS-ORG LEN!
    true ;
 
 ;package

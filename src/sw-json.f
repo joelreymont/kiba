@@ -72,20 +72,20 @@ create TEXT-HDR BUF:HDR-BYTES allot
 \ bytes, and at most u/2 + 1 containers are open at once.
 DYNAMIC-BUFFER KEY-HASHES n   \ HM:PROBE's keys: each slot's hash
 DYNAMIC-BUFFER KEY-SLOTS n    \ HM:PROBE's used: the slot's latest key + 1
-DYNAMIC-BUFFER KEY-LIST n     \ KEY-CELLS cells per key
+\ a member's key: link is the slot's earlier key + 1, or 0; off and len place
+\ it in KEY-ROOM
+STRUCTURE member DERIVE addr
+   FIELD link n FIELD object n FIELD off n FIELD len n
+;STRUCTURE
+DYNAMIC-BUFFER KEY-LIST member
 DYNAMIC-BUFFER KEY-ROOM u8    \ the decoded keys, end to end
 DYNAMIC-BUFFER OPEN-IDS n     \ per open container, its opening byte's address
 variable KEY-CAP   variable ROOM-CAP   variable KEY-N   variable KEY-END
 variable OPEN-N
 
-\ a key's cells: 0 the slot's earlier key + 1, or 0; 1 its object; 2 and 3
-\ its offset and length in KEY-ROOM
-4 constant KEY-CELLS
 $7FFFFFFFFFFFFFFF constant ANY-DEPTH
 $CBF29CE484222325 constant FNV-BASIS
 $100000001B3 constant FNV-PRIME
-
-: KEY-CELL ( n n -- ptr n ) swap KEY-CELLS * + KEY-LIST ;
 
 \ the least power of two that is at least twice keys
 : TABLE-CAP ( n -- n ) {: keys :}
@@ -99,7 +99,7 @@ $100000001B3 constant FNV-PRIME
 
 : SIZE-KEYS ( n -- ) {: du :}
    du 5 / 1+ {: keys :}
-   keys SIZE-TABLE  keys KEY-CELLS * KEY-LIST-RESERVE
+   keys SIZE-TABLE  keys KEY-LIST-RESERVE
    du KEY-ROOM-RESERVE  du ROOM-CAP !  0 KEY-END !
    du 2 / 1+ OPEN-IDS-RESERVE  0 OPEN-N ! ;
 
@@ -113,17 +113,17 @@ $100000001B3 constant FNV-PRIME
    u 0 ?do a i + c@ xor FNV-PRIME * loop ;
 
 : KEY-AT$ ( n -- ptr u8 n ) {: e :}
-   e 2 KEY-CELL @ KEY-ROOM  e 3 KEY-CELL @ ;
+   e KEY-LIST MEMBER-OFF @ KEY-ROOM  e KEY-LIST MEMBER-LEN @ ;
 
 : SAME-KEY? ( n n ptr u8 n -- bool ) {: e obj a u :}
-   e 1 KEY-CELL @ obj <> if false exit then
+   e KEY-LIST MEMBER-OBJECT @ obj <> if false exit then
    e KEY-AT$ a u STR= ;
 
 \ whether the keys listed from link, a key + 1 or 0, hold obj's key a u
 : LISTED? ( n n ptr u8 n -- bool ) {: link obj a u :}
    link begin dup 0<> while
       1- dup obj a u SAME-KEY? if drop true exit then
-      0 KEY-CELL @
+      KEY-LIST MEMBER-LINK @
    repeat drop false ;
 
 \ the key at the reader, decoded after the keys before it
@@ -135,8 +135,8 @@ $100000001B3 constant FNV-PRIME
 \ obj's key of u bytes, just decoded, becomes slot's latest key, hashed h
 : KEEP-KEY ( n n n n -- ) {: slot h obj u :}
    KEY-N @ {: e :}
-   slot KEY-SLOTS @ e 0 KEY-CELL !  obj e 1 KEY-CELL !
-   KEY-END @ e 2 KEY-CELL !  u e 3 KEY-CELL !
+   slot KEY-SLOTS @ e KEY-LIST MEMBER-LINK !  obj e KEY-LIST MEMBER-OBJECT !
+   KEY-END @ e KEY-LIST MEMBER-OFF !  u e KEY-LIST MEMBER-LEN !
    h slot KEY-HASHES !  e 1+ slot KEY-SLOTS !
    1 KEY-N +!  u KEY-END +! ;
 

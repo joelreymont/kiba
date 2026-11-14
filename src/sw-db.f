@@ -349,7 +349,8 @@ public
 private
 
 DYNAMIC-BUFFER ROW-BYTES u8   variable ROW-BYTES-U
-DYNAMIC-BUFFER ROW-SPANS n
+STRUCTURE col DERIVE addr FIELD off n FIELD len n ;STRUCTURE
+DYNAMIC-BUFFER ROW-SPANS col
 variable ROW-N
 variable ROW-COLS
 
@@ -357,7 +358,7 @@ variable ROW-COLS
    ROW-COLS ! 0 ROW-N ! 0 ROW-BYTES-U !
    1 ROW-BYTES-RESERVE ;
 
-: SPAN-AT ( n n -- n ) {: r c :} r ROW-COLS @ * c + 2 * ;
+: SPAN-AT ( n n -- n ) {: r c :} r ROW-COLS @ * c + ;
 
 : ROW-BYTES+ ( ptr u8 n -- n ) {: a u :}
    ROW-BYTES-U @ {: off :}
@@ -368,19 +369,19 @@ variable ROW-COLS
 
 : KEEP-COL ( n -- ) {: c :}
    c DB-COL-BYTES {: a u :}
-   a u 0 max ROW-BYTES+ ROW-N @ c SPAN-AT ROW-SPANS !
-   u ROW-N @ c SPAN-AT 1+ ROW-SPANS ! ;
+   a u 0 max ROW-BYTES+ ROW-N @ c SPAN-AT ROW-SPANS COL-OFF !
+   u ROW-N @ c SPAN-AT ROW-SPANS COL-LEN ! ;
 
 \ copies the current result row into the table
 : ROW-KEEP ( -- )
-   ROW-N @ 1+ ROW-COLS @ * 2 * ROW-SPANS-RESERVE
+   ROW-N @ 1+ ROW-COLS @ * ROW-SPANS-RESERVE
    ROW-COLS @ 0 ?do i KEEP-COL loop
    ROW-N @ 1+ ROW-N ! ;
 
 \ a column as stored; length -1 for NULL
 : ROW-SPAN ( n n -- ptr u8 n ) {: r c :}
-   r c SPAN-AT ROW-SPANS @ {: off :}
-   r c SPAN-AT 1+ ROW-SPANS @ {: u :}
+   r c SPAN-AT ROW-SPANS COL-OFF @ {: off :}
+   r c SPAN-AT ROW-SPANS COL-LEN @ {: u :}
    u 0 < if NULL-PTR BYTE-VIEW -1 exit then
    off ROW-BYTES u ;
 
