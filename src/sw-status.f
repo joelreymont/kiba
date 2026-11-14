@@ -3,9 +3,14 @@
 require ../src/sw-db.f
 require ../src/sw-claude.f
 require ../src/sw-codex.f
+require ../src/sw-base.f
+require ../src/sw-identity.f
+require ../src/sw-store.f
 require src/lib/fsm.f
 require src/lib/fmt.f
 require src/lib/byte-buffer.f
+require src/lib/prelude.f
+require src/lib/string.f
 
 package SW
 

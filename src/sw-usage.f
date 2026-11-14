@@ -9,6 +9,11 @@
 require ../src/sw-store.f
 require ../src/sw-run.f
 require ../src/sw-db.f
+require ../src/sw-base.f
+require ../src/sw-paths.f
+require ../src/sw-io.f
+require ../src/sw-json.f
+require ../src/sw-identity.f
 require src/lib/date.f
 require src/lib/json.f
 require src/lib/byte-buffer.f
@@ -16,6 +21,14 @@ require src/lib/decimal.f
 require src/lib/fsm.f
 require src/lib/fmt.f
 require src/lib/entropy.f
+require src/lib/adt/option.f
+require src/lib/fs-mutate.f
+require src/lib/fs.f
+require src/lib/prelude.f
+require src/lib/process-argv.f
+require src/lib/process-fork.f
+require src/lib/process.f
+require src/lib/string.f
 
 package SW
 

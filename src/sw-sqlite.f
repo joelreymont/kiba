@@ -3,10 +3,13 @@
 \ A failed call throws E-SW-DB; DB-ERROR$ then holds its operation and
 \ sqlite3_errmsg.
 require ../src/sw-io.f
+require ../src/sw-base.f
 require src/lib/ffi-abi.f
 require src/lib/fsm.f
 require src/lib/fs.f
 require src/lib/fs-mutate.f
+require src/lib/prelude.f
+require src/lib/string.f
 
 package SW
 

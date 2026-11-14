@@ -12,6 +12,8 @@
 \ unlink it first; its creator then finds the lock busy or no link left, and
 \ joins again.
 require ../src/sw-io.f
+require ../src/sw-base.f
+require ../src/sw-paths.f
 require src/lib/fs.f
 require src/lib/fs-list.f
 require src/lib/fs-lock.f
@@ -21,6 +23,8 @@ require src/lib/task.f
 require src/lib/time.f
 require src/lib/fmt.f
 require src/lib/string.f
+require src/lib/error.f
+require src/lib/prelude.f
 
 package SW
 

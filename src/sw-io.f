@@ -1,11 +1,15 @@
 \ sw-io.f - runtime buffers, the JSON writer, and private file writes.
 require ../src/sw-paths.f
+require ../src/sw-base.f
 require src/lib/memory.f
 require src/lib/fs-mutate.f
 require src/lib/json.f
 require src/lib/byte-buffer.f
 require src/lib/span.f
 require src/lib/fmt.f
+require src/lib/error.f
+require src/lib/fs.f
+require src/lib/string.f
 
 package SW
 

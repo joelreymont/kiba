@@ -2,12 +2,15 @@
 \ documents and provider answers alike, as kiba-mac's JSONDoc and JSONFields
 \ read them.
 require ../src/sw-io.f
+require ../src/sw-base.f
 require src/lib/float.f
 require src/lib/json.f
 require src/lib/byte-buffer.f
 require src/lib/decimal.f
 require src/lib/hashmap.f
 require src/lib/string.f
+require src/lib/adt/option.f
+require src/lib/prelude.f
 
 package SW
 

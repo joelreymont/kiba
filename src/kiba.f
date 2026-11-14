@@ -1,5 +1,9 @@
 \ kiba.f - entry point: argument dispatch and process exit.
 require ../src/sw-cli.f
+require ../src/sw-base.f
+require ../src/sw-io.f
+require src/lib/prelude.f
+require src/lib/string.f
 
 package SW
 

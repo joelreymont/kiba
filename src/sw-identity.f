@@ -1,5 +1,10 @@
 \ sw-identity.f - the email and plan of a login, live or saved.
 require ../src/sw-json.f
+require ../src/sw-base.f
+require ../src/sw-io.f
+require src/lib/adt/option.f
+require src/lib/prelude.f
+require src/lib/string.f
 
 package SW
 

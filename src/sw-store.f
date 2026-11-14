@@ -3,7 +3,13 @@
 require ../src/sw-claude.f
 require ../src/sw-codex.f
 require ../src/sw-db.f
+require ../src/sw-base.f
+require ../src/sw-paths.f
+require ../src/sw-io.f
+require ../src/sw-json.f
+require ../src/sw-identity.f
 require src/lib/fsm.f
+require src/lib/prelude.f
 
 package SW
 

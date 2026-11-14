@@ -2,6 +2,16 @@
 \ Run through test.sh: HOME, XDG_DATA_HOME, and PATH must point at a scratch tree.
 require ../src/kiba.f
 require ../src/sw-turn.f
+require ../src/sw-base.f
+require ../src/sw-paths.f
+require ../src/sw-io.f
+require ../src/sw-json.f
+require ../src/sw-identity.f
+require ../src/sw-sqlite.f
+require ../src/sw-db.f
+require ../src/sw-store.f
+require ../src/sw-usage.f
+require ../src/sw-cli.f
 require src/lib/test.f
 require src/lib/fs-list.f
 require src/lib/fs-lock.f
@@ -11,6 +21,15 @@ require src/lib/spawn.f
 require src/lib/time.f
 require src/lib/test/stderr.f
 require src/lib/test/runner.f
+require src/lib/adt/option.f
+require src/lib/error.f
+require src/lib/fmt.f
+require src/lib/fs-mutate.f
+require src/lib/fs.f
+require src/lib/json.f
+require src/lib/prelude.f
+require src/lib/span.f
+require src/lib/string.f
 
 package SW-TEST
 using SW

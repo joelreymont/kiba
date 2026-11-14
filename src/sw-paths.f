@@ -2,6 +2,8 @@
 require ../src/sw-base.f
 require src/lib/fs.f
 require src/lib/fs-mutate.f
+require src/lib/prelude.f
+require src/lib/string.f
 
 package SW
 

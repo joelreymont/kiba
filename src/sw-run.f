@@ -1,11 +1,14 @@
 \ sw-run.f - provider login commands, run in the foreground inside a
 \ throwaway home.
 require ../src/sw-base.f
+require ../src/sw-paths.f
 require src/lib/fmt.f
 require src/lib/process.f
 require src/lib/process-argv.f
 require src/lib/process-env.f
 require src/lib/process-fork.f
+require src/lib/adt/option.f
+require src/lib/prelude.f
 
 package SW
 

@@ -1,6 +1,14 @@
 \ sw-claude.f - Claude Code's live login: read and written.
 require ../src/sw-identity.f
 require ../src/sw-db.f
+require ../src/sw-base.f
+require ../src/sw-paths.f
+require ../src/sw-io.f
+require ../src/sw-json.f
+require src/lib/fs-mutate.f
+require src/lib/fs.f
+require src/lib/prelude.f
+require src/lib/string.f
 
 package SW
 

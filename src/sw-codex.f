@@ -1,5 +1,9 @@
 \ sw-codex.f - the Codex CLI's live login: read and written.
 require ../src/sw-identity.f
+require ../src/sw-base.f
+require ../src/sw-paths.f
+require ../src/sw-io.f
+require src/lib/prelude.f
 
 package SW
 
