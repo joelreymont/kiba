@@ -354,8 +354,6 @@ ENUM usage-step checking saving listing listing-mixed probing reported failed ;E
 ENUM check-input answered stale threw ;ENUM
 ENUM list-input listed threw ;ENUM
 ENUM probe-input recorded unrecorded finished ;ENUM
-ENUM usage-turn entering left lost ;ENUM
-ENUM turn-input ran refused unwritten ;ENUM
 
 variable USAGE-ASKED                \ epoch second the run began
 variable USAGE-ROW                  \ the row being probed
@@ -495,34 +493,21 @@ FSM:DEFINE USAGE-STEPS ( n ) usage-step check-input
    faults if p PROVIDER$ ERR-PART s" : " ERR-PART FAULTS$ ERR-NOTE then
    back faults or ;
 
-: USAGE-IN-TURN ( n -- n ) {: p :}
-   p [: p construct usage-step checking USAGE-STEPS ;] STORE-TURN
-   p ;
-
-: USAGE-TURN-SENSE ( n -- turn-input )
-   [: USAGE-IN-TURN ;] catch {: rc :} drop
-   rc 0= if construct turn-input ran exit then
-   rc E-SW-OUTPUT = if construct turn-input unwritten exit then
-   rc USAGE-RC ! construct turn-input refused ;
+: USAGE-IN-TURN ( n -- ) {: p :}
+   p [: p construct usage-step checking USAGE-STEPS ;] STORE-TURN ;
 
 \ when stdout refused the report, stderr still gets what provider p collected
-: OUTPUT-LOST ( n -- )
-   .FAULTS drop E-SW-OUTPUT throw ;
-
-FSM:DEFINE USAGE-TURN ( n ) usage-turn turn-input
-   IN entering USAGE-TURN-SENSE
-      ran         -                >left
-      refused     NOTE-FAILURE     >left
-      unwritten   -                >lost
-   FINAL left -
-   FINAL lost OUTPUT-LOST
-;DEFINE
+: USAGE-TURN ( n -- ) {: p :}
+   [: p USAGE-IN-TURN ;] catch {: rc :}
+   rc 0= if exit then
+   rc E-SW-OUTPUT = if p .FAULTS drop E-SW-OUTPUT throw then
+   rc USAGE-RC ! p NOTE-FAILURE ;
 
 \ true when provider p reported an error
 : USAGE-PROVIDER ( n -- bool ) {: p :}
    epoch-seconds USAGE-ASKED !
    BACK-ERR 64 BUF:N>BLEN BUF:RESET FAULTS-RESET
-   p construct usage-turn entering USAGE-TURN
+   p USAGE-TURN
    p .FAULTS ;
 
 public
@@ -609,49 +594,15 @@ create LINE-BUF 256 allot
    LOGIN-ROOT-CLEAR
    p LOGIN-HOME$ FS:DIR? if p LOGIN-HOME$ FS:REMOVE-TREE then ;
 
-\ The login runs, then the new login is read from the throwaway home, which
-\ LOGIN-ROOT names, and saved under its name. E-SW-LOGIN when the login
-\ fails; E-SW-NO-LIVE when it left no login.
-ENUM add-state signing importing added ;ENUM
-ENUM sign-input signed-in failed ;ENUM
-ENUM import-input saved none ;ENUM
-\ the account the user is asked to sign in to; empty when none was named
-create ADD-EMAIL NAME-CAP allot   variable ADD-EMAIL-U
-
-: ADD-EMAIL$ ( -- ptr u8 n ) ADD-EMAIL ADD-EMAIL-U @ ;
-
-\ the login's exit status
-: ADD-LOGIN ( n -- n ) ADD-EMAIL$ NAME-EMAIL LOGIN ;
-
-: ADD-SIGN ( n -- sign-input ) {: p :}
-   p ADD-EMAIL$ ADD-PAUSE
-   p ADD-LOGIN 0= if construct sign-input signed-in exit then
-   construct sign-input failed ;
-
-: ADD-IMPORT ( n -- import-input ) {: p :}
+\ ADD-BEGIN's LOGIN-ROOT points the live paths at the throwaway home, so
+\ PUT-LIVE reads the new login there and saves it under its own name
+: ADD-RUN ( n ptr u8 n -- ) {: p e eu :}
+   p ADD-BEGIN
+   p e eu ADD-PAUSE
+   p e eu NAME-EMAIL LOGIN 0<> if E-SW-LOGIN throw then
    0 LIVE-ROW-U !
    [: p PUT-LIVE ;] DB-WRITE
-   LIVE-ROW$ nip 0= if construct import-input none exit then
-   construct import-input saved ;
-
-: LOGIN-FAILED ( n -- ) drop E-SW-LOGIN throw ;
-
-: NO-LOGIN ( n -- ) drop E-SW-NO-LIVE throw ;
-
-FSM:DEFINE ADD-STEPS ( n ) add-state sign-input
-   IN signing ADD-SIGN
-      signed-in -             >importing
-      failed    LOGIN-FAILED  >added
-   IN importing ADD-IMPORT ( import-input )
-      saved     -             >added
-      none      NO-LOGIN      >added
-   FINAL added -
-;DEFINE
-
-: ADD-RUN ( n ptr u8 n -- ) {: p e eu :}
-   e eu ADD-EMAIL ADD-EMAIL-U NAME-CAP SPAN!
-   p ADD-BEGIN
-   p construct add-state signing ADD-STEPS ;
+   LIVE-ROW$ nip 0= if E-SW-NO-LIVE throw then ;
 
 : ADD-TURN ( n ptr u8 n -- ) {: p e eu :}
    [: p e eu ADD-RUN ;] [: p ADD-END ;] finally ;
