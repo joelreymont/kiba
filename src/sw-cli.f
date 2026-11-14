@@ -248,11 +248,6 @@ private
    p [: p SAVE-LIVE-ROW ;] STORE-TURN
    p .SAVED ;
 
-\ use's save-back: the live login is saved first so its refreshed tokens are
-\ kept, and noted as installed, since the live files hold its login. Mixed
-\ live files are left for the install to repair; any other failure stops
-\ the switch before anything is written, so no login is overwritten unsaved.
-ENUM back-state saving kept stopped ;ENUM
 ENUM back-input saved absent mixed refused ;ENUM
 variable BACK-RC
 
@@ -267,20 +262,19 @@ variable BACK-RC
    dup E-SW-MIXED = if drop 2drop construct back-input mixed exit then
    BACK-RC ! 2drop construct back-input refused ;
 
+\ the live files hold the login just saved, so it is the installed one
 : BACK-NOTE ( n -- ) {: p :}
    [: p LIVE-ROW$ 0 false DB-NOTE-INSTALLED ;] DB-WRITE ;
 
-: BACK-RETHROW ( n -- ) drop BACK-RC @ throw ;
-
-FSM:DEFINE SAVE-BACK-ROW ( n ) back-state back-input
-   IN saving BACK-SENSE
-      saved   BACK-NOTE  >kept
-      absent  -          >kept
-      mixed   -          >kept
-      refused -          >stopped
-   FINAL kept    -
-   FINAL stopped BACK-RETHROW
-;DEFINE
+\ the live login is saved before a switch, so no login is overwritten
+\ unsaved; mixed live files are left for the install to repair
+: SAVE-BACK ( n -- ) {: p :}
+   p BACK-SENSE MATCH back-input
+      saved OF p BACK-NOTE ENDOF
+      absent OF ENDOF
+      mixed OF ENDOF
+      refused OF BACK-RC @ throw ENDOF
+   ;MATCH ;
 
 \ ---- probing saved logins ----------------------------------------------------
 \ The saved names whose tokens the CLI is using: the live identity's, and
@@ -314,37 +308,11 @@ create LIVE-B NAME-CAP allot   variable LIVE-B-U    \ -1 when none
    LIVE-B-U @ 0 >= if a u LIVE-B LIVE-B-U @ STR= exit then
    false ;
 
-: PROBE-KEEP ( n n bool -- n n bool ) {: p r live :}
-   p r DB-ROW-LOGIN$ live PROBE
-   p r live ;
-
-\ row OUTCOME-ROW of provider p probed, as live when OUTCOME-LIVE; a probe
-\ that throws is the account's error outcome, noted with the bare reason
-ENUM outcome-step sensing settled ;ENUM
-ENUM outcome-input ran threw ;ENUM
-
-variable OUTCOME-ROW                \ the row being probed
-variable OUTCOME-LIVE               \ bool: the probe reads the login as live
-variable OUTCOME-RC                 \ what the probe threw
-
-: OUTCOME-SENSE ( n -- outcome-input )
-   OUTCOME-ROW @ OUTCOME-LIVE @ [: PROBE-KEEP ;] catch {: rc :} 2drop drop
-   rc 0= if construct outcome-input ran exit then
-   rc OUTCOME-RC ! construct outcome-input threw ;
-
-: OUTCOME-NOTE ( n -- ) drop OUTCOME-RC @ BARE-REASON$ PROBE-FAILED ;
-
-FSM:DEFINE OUTCOME-STEPS ( n ) outcome-step outcome-input
-   IN sensing OUTCOME-SENSE
-      ran         -                >settled
-      threw       OUTCOME-NOTE     >settled
-   FINAL settled -
-;DEFINE
-
-\ row r of provider p probed, as live when live
+\ a probe that throws becomes row r's error outcome, not the command's failure
 : OUTCOME ( n n bool -- ) {: p r live :}
-   r OUTCOME-ROW ! live OUTCOME-LIVE !
-   p construct outcome-step sensing OUTCOME-STEPS ;
+   [: p r DB-ROW-LOGIN$ live PROBE ;] catch {: rc :}
+   rc 0= if exit then
+   rc BARE-REASON$ PROBE-FAILED ;
 
 \ the probe of row r left a login other than the row's, byte for byte; the
 \ probe's login points into the row table until a renewal, so no store read
@@ -372,7 +340,7 @@ create OLD-NAME NAME-CAP allot   variable OLD-NAME-U
 \ after the install the new login is probed as live, then the login saved
 \ back as saved: its usage came from a live probe, which never refreshes
 : USE-RUN ( n ptr u8 n -- ) {: p a u :}
-   p construct back-state saving SAVE-BACK-ROW
+   p SAVE-BACK
    LIVE-ROW$ OLD-NAME OLD-NAME-U NAME-CAP SPAN!
    p a u INSTALL
    p a u true PROBE-IN-TURN
