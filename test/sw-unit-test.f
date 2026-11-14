@@ -622,6 +622,71 @@ create UT-INNER-BUF 256 allot
    CODEX-AUTH$ FS:REMOVE-FILE
    r ru CODEX-AUTH$ FS:RENAME-FILE ;
 
+create UT-REL-BUF PATH-CAP allot
+create UT-LINK-TEXT PATH-CAP allot
+4096 constant UT-CFG0-CAP
+create UT-CFG0 UT-CFG0-CAP allot   variable UT-CFG0-U
+
+\ where a relative link at p whose text is f points
+: UT-SIBLING$ ( ptr u8 n ptr u8 n -- ptr u8 n )
+   {: p pu f fu :}
+   p pu DIRNAME {: d du :}
+   SB-RESET d du SB-APPEND s" /" SB-APPEND f fu SB-APPEND
+   SB$ UT-REL-BUF PATH-CAP SPAN-COPY ;
+
+: UT-LINK$ ( ptr u8 n -- ptr u8 n )
+   FS:>PATHZ UT-LINK-TEXT PATH-CAP readlink {: n :}
+   n 0 < if E-FS-IO throw then
+   UT-LINK-TEXT n ;
+
+\ live file p moved to where text f points from p's directory, and p made
+\ a link whose text is f
+: UT-REL-LINK ( ptr u8 n ptr u8 n -- )
+   {: p pu f fu :}
+   p pu f fu UT-SIBLING$ {: r ru :}
+   r ru DIRNAME ENSURE-PRIVATE
+   p pu r ru FS:RENAME-FILE
+   f fu p pu FS:MAKE-SYMLINK ;
+
+\ p is still a link whose text is f, and the file f names holds w
+: UT-REL-HOLDS ( ptr u8 n ptr u8 n ptr u8 n -- )
+   {: p pu f fu w wu :}
+   p pu FS:SYMLINK? TTRUE
+   p pu UT-LINK$ f fu T$=
+   p pu f fu UT-SIBLING$ READ-FILE$ w wu T$= ;
+
+: UT-REL-UNLINK ( ptr u8 n ptr u8 n -- )
+   {: p pu f fu :}
+   p pu FS:REMOVE-FILE
+   p pu f fu UT-SIBLING$ p pu FS:RENAME-FILE ;
+
+: UT-REL-CODEX ( -- )
+   CODEX-AUTH$ s" real-auth.json" UT-REL-LINK
+   P-CODEX s" c@x.test" CMD-USE
+   CODEX-AUTH$ s" real-auth.json" AUTH-C9$ UT-REL-HOLDS
+   P-CODEX s" d@x.test" CMD-USE
+   CODEX-AUTH$ s" real-auth.json" AUTH-D$ UT-REL-HOLDS
+   CODEX-AUTH$ s" real-auth.json" UT-REL-UNLINK ;
+
+\ the config before the test is put back afterwards
+: UT-REL-CLAUDE ( -- )
+   CLAUDE-CONFIG$ READ-FILE$ UT-CFG0 UT-CFG0-CAP SPAN-COPY UT-CFG0-U ! drop
+   CLAUDE-CONFIG$ CFG-A$ WRITE-PRIVATE
+   CLAUDE-CONFIG$ s" kiba-dots/claude.json" UT-REL-LINK
+   P-CLAUDE s" b@x.test" CMD-USE
+   CLAUDE-CONFIG$ s" kiba-dots/claude.json" CFG-AB$ UT-REL-HOLDS
+   P-CLAUDE s" a@x.test" CMD-USE
+   CLAUDE-CONFIG$ s" kiba-dots/claude.json" CFG-A$ UT-REL-HOLDS
+   CLAUDE-CONFIG$ s" kiba-dots/claude.json" UT-REL-UNLINK
+   CLAUDE-CONFIG$ s" kiba-dots" UT-SIBLING$ FS:REMOVE-DIR
+   CLAUDE-CONFIG$ UT-CFG0 UT-CFG0-U @ WRITE-PRIVATE ;
+
+\ a live file that is a relative symlink stays one, its text as it was: a
+\ switch writes the file the text names from the link's own directory
+: UT-REL-SYMLINK ( -- )
+   UT-REL-CODEX
+   UT-REL-CLAUDE ;
+
 \ a failed write leaves the old file whole and no temp beside it: refused
 \ before the temp exists, in a directory nothing can be written in, and
 \ after, by a rename onto a directory
@@ -2226,6 +2291,29 @@ variable UT-OUT-U
    UT-STATUS-TEXT$ UT-WANT$ CONTAINS? TTRUE
    [: P-CLAUDE s" m@x.test" DB-REMOVE ;] DB-WRITE ;
 
+\ w@x.test's record: the session and the week stored after a model window,
+\ and a window with no reading
+: UT-FIGURES-ROW ( -- )
+   s\" {\"fetchedAt\":1,\"limits\":[],\"note\":\"\",\"state\":\"ok\"}" DB-USAGE-DECODE
+   s" Weekly / Opus" 91 s" 2026-11-21T00:00:00Z" DB-LIMIT+
+   s" Weekly (7-day)" 60 s" 2026-11-20T00:00:00Z" DB-LIMIT+
+   s" Weekly / Sonnet" -1 s" " DB-LIMIT+
+   s" Session (5-hour)" 30 s" 2026-11-14T10:00:00Z" DB-LIMIT+
+   CFG-A$ CREDS-A$ ID-SLOT CLAUDE-IDENTITY TTRUE
+   [: P-CLAUDE s" w@x.test" ID-SLOT CREDS-A$ OAUTH-A$ true DB-PUT ;] DB-WRITE ;
+
+: FIGURES-LIT$ ( -- ptr u8 n )
+   s\" {\"active\":false,\"name\":\"w@x.test\",\"plan\":\"max\",\"usage\":{\"fetchedAt\":1,\"limits\":[{\"label\":\"Weekly \\/ Opus\",\"left\":9,\"percent\":91,\"resetsAt\":\"2026-11-21T00:00:00Z\"},{\"label\":\"Weekly (7-day)\",\"left\":40,\"percent\":60,\"resetsAt\":\"2026-11-20T00:00:00Z\"},{\"label\":\"Weekly \\/ Sonnet\",\"percent\":-1,\"resetsAt\":\"\"},{\"label\":\"Session (5-hour)\",\"left\":70,\"percent\":30,\"resetsAt\":\"2026-11-14T10:00:00Z\"}],\"note\":\"\",\"state\":\"ok\"}}" ;
+
+\ the text gives the session, the week, then the other windows with a
+\ reading; JSON keeps the record's order and gives each window with a
+\ reading the percent left
+: UT-STATUS-FIGURES ( -- )
+   UT-FIGURES-ROW
+   STATUS-JSON$ FIGURES-LIT$ CONTAINS? TTRUE
+   UT-STATUS-TEXT$ s\" \n    w@x.test (max)  70% · 40% · 9%\n" CONTAINS? TTRUE
+   [: P-CLAUDE s" w@x.test" DB-REMOVE ;] DB-WRITE ;
+
 \ the live read's reason is the one it stopped on, though decoding a row's
 \ usage overflows another buffer before the error is written
 : UT-STATUS-REASON ( -- )
@@ -2304,6 +2392,7 @@ create UT-LABEL 200 allot   create UT-RESET 100 allot
    UT-DB-LONG-ERROR
    UT-STATUS-JSON
    UT-STATUS-MANY
+   UT-STATUS-FIGURES
    UT-STATUS-ERROR
    UT-STATUS-REASON
    UT-DB-COMPACT
@@ -2651,6 +2740,145 @@ create UT-WRAP-BUF 1024 allot
    UT-LOG-NEW$ nip 0 T=
    P-CLAUDE s" a@x.test" UT-PROBED? TFALSE ;
 
+\ ---- kiba as a program -------------------------------------------------------
+\ MAIN ends the process through die, so a child runs it: the hb running this
+\ suite loads src/kiba.f and a file that calls MAIN. The child's HOME and
+\ store are its own, and no fake is on its PATH, so a probe calls nothing.
+create UT-HB PATH-CAP allot
+create UT-PROG PATH-CAP allot    variable UT-PROG-U
+create UT-AT PATH-CAP allot      variable UT-AT-U
+create UT-CHILD PATH-CAP allot   variable UT-CHILD-U   \ the child's HOME
+create UT-CC PATH-CAP allot      variable UT-CC-U      \ its CLAUDE_CONFIG_DIR
+create UT-CX PATH-CAP allot      variable UT-CX-U      \ its CODEX_HOME
+$1A4 constant UT-MODE-OUT                              \ 0644
+
+\ directory d's entry f, f starting with a slash
+: UT-AT$ ( ptr u8 n ptr u8 n -- ptr u8 n )
+   {: d du f fu :}
+   SB-RESET d du SB-APPEND f fu SB-APPEND SB$ UT-AT UT-AT-U PATH!
+   UT-AT UT-AT-U @ ;
+
+: UT-CHILD$ ( -- ptr u8 n ) UT-CHILD UT-CHILD-U @ ;
+: UT-CC$ ( -- ptr u8 n ) UT-CC UT-CC-U @ ;
+: UT-CX$ ( -- ptr u8 n ) UT-CX UT-CX-U @ ;
+
+\ the child's HOME, HOME's entry f
+: UT-CHILD! ( ptr u8 n -- ) HOME$ 2swap UT-AT$ UT-CHILD UT-CHILD-U PATH! ;
+
+: UT-HB$ ( -- ptr u8 n )
+   s" /proc/self/exe" FS:>PATHZ UT-HB PATH-CAP readlink {: n :}
+   n 0 < if E-FS-IO throw then
+   UT-HB n ;
+
+: UT-KIBA-F$ ( -- ptr u8 n )
+   SB-RESET SOURCE-ROOT:CURRENT$ SB-APPEND s" /../src/kiba.f" SB-APPEND
+   SB$ UT-PROG UT-PROG-U PATH!
+   UT-PROG UT-PROG-U @ ;
+
+: UT-MAIN-F$ ( -- ptr u8 n ) HOME$ s" /kiba-main.f" UT-AT$ ;
+: UT-OUT$ ( -- ptr u8 n ) HOME$ s" /kiba-out" UT-AT$ ;
+: UT-ERR-OUT$ ( -- ptr u8 n ) HOME$ s" /kiba-err" UT-AT$ ;
+
+\ kiba's MAIN, its arguments to follow
+: UT-KIBA-NEW ( -- PROCESS:request )
+   UT-MAIN-F$ s\" MAIN\n" FS:WRITE-ALL
+   UT-HB$ PROCESS:NEW
+   s" --load" PROCESS:ARG
+   UT-KIBA-F$ PROCESS:ARG
+   UT-MAIN-F$ PROCESS:ARG
+   s" --" PROCESS:ARG
+   s" HOME" UT-CHILD$ PROCESS:ENV
+   s" XDG_DATA_HOME" UT-CHILD$ s" /data" UT-AT$ PROCESS:ENV
+   s" PATH" UT-CHILD$ s" /bin" UT-AT$ PROCESS:ENV ;
+
+: UT-CREATE ( ptr u8 n -- n )
+   FS:>PATHZ FS:O-WRONLY FS:O-CREAT or FS:O-TRUNC or UT-MODE-OUT open {: fd :}
+   fd 0 < if E-FS-OPEN throw then
+   fd ;
+
+\ the exit code of the run, its stdout in UT-OUT$ and its stderr in
+\ UT-ERR-OUT$
+: UT-KIBA-RUN ( PROCESS:request -- n )
+   UT-OUT$ UT-CREATE {: out :}
+   UT-ERR-OUT$ UT-CREATE {: err :}
+   1 >FD out >FD PROCESS:FD
+   2 >FD err >FD PROCESS:FD
+   PROCESS:SPAWN {: pid :}
+   out close-rc 0 T=
+   err close-rc 0 T=
+   pid PROCESS:WAIT PROCESS:STATUS>RC RC>N ;
+
+\ the run printed o on stdout and e on stderr, then exited with c
+: UT-KIBA= ( PROCESS:request ptr u8 n ptr u8 n n -- )
+   {: o ou e eu c :}
+   UT-KIBA-RUN {: rc :}
+   UT-OUT$ READ-FILE$ o ou T$=
+   UT-ERR-OUT$ READ-FILE$ e eu T$=
+   rc c T= ;
+
+: USAGE-TEXT$ ( -- ptr u8 n )
+   s\" usage: kiba status [--json]\n       kiba save [claude|codex]\n       kiba use <claude|codex> <email>\n       kiba add <claude|codex> [name]\n       kiba forget <claude|codex> <email>\n       kiba redeem <claude|codex> <email>\n       kiba usage [claude|codex]\n" ;
+
+\ MAIN exits 0 after a run, 1 with the reason when a command fails, and 64
+\ with the usage when it refuses the command line
+: UT-EXIT-CODES ( -- )
+   s" /exit-home" UT-CHILD!
+   UT-KIBA-NEW s" status" PROCESS:ARG
+   s\" claude: no live login\ncodex: no live login\n" s" " 0 UT-KIBA=
+   UT-KIBA-NEW s" forget" PROCESS:ARG s" claude" PROCESS:ARG
+   s" nobody@x.test" PROCESS:ARG
+   s" " s\" kiba: no such saved account\n" 1 UT-KIBA=
+   UT-KIBA-NEW s" use" PROCESS:ARG s" bogus" PROCESS:ARG s" x" PROCESS:ARG
+   s" " USAGE-TEXT$ 64 UT-KIBA=
+   UT-KIBA-NEW s" " USAGE-TEXT$ 64 UT-KIBA= ;
+
+\ UT-KIBA-NEW with the live files placed in UT-CC$ and UT-CX$
+: UT-PLACED-NEW ( -- PROCESS:request )
+   UT-KIBA-NEW
+   s" CLAUDE_CONFIG_DIR" UT-CC$ PROCESS:ENV
+   s" CODEX_HOME" UT-CX$ PROCESS:ENV ;
+
+\ the placed live files hold Claude's config c and credentials k and
+\ Codex's auth x
+: UT-PLACED! ( ptr u8 n ptr u8 n ptr u8 n -- )
+   {: c cu k ku x xu :}
+   UT-CC$ s" /.claude.json" UT-AT$ c cu WRITE-PRIVATE
+   UT-CC$ s" /.credentials.json" UT-AT$ k ku WRITE-PRIVATE
+   UT-CX$ s" /auth.json" UT-AT$ x xu WRITE-PRIVATE ;
+
+: UT-PLACED= ( ptr u8 n ptr u8 n ptr u8 n -- )
+   {: c cu k ku x xu :}
+   UT-CC$ s" /.claude.json" UT-AT$ READ-FILE$ c cu T$=
+   UT-CC$ s" /.credentials.json" UT-AT$ READ-FILE$ k ku T$=
+   UT-CX$ s" /auth.json" UT-AT$ READ-FILE$ x xu T$= ;
+
+\ nothing at the places under HOME the live files take by default
+: UT-HOME-BARE ( -- )
+   UT-CHILD$ s" /.claude.json" UT-AT$ FS:EXISTS? TFALSE
+   UT-CHILD$ s" /.claude" UT-AT$ FS:EXISTS? TFALSE
+   UT-CHILD$ s" /.codex" UT-AT$ FS:EXISTS? TFALSE ;
+
+: UT-PLACED-USE ( ptr u8 n ptr u8 n -- PROCESS:request )
+   {: p pu a au :}
+   UT-PLACED-NEW s" use" PROCESS:ARG p pu PROCESS:ARG a au PROCESS:ARG ;
+
+\ with CLAUDE_CONFIG_DIR and CODEX_HOME set, save reads the live files
+\ there and use writes them there; HOME's places stay empty
+: UT-CONFIG-PLACES ( -- )
+   s" /place-home" UT-CHILD!
+   HOME$ s" /place-claude" UT-AT$ UT-CC UT-CC-U PATH!
+   HOME$ s" /place-codex" UT-AT$ UT-CX UT-CX-U PATH!
+   UT-CC$ ENSURE-PRIVATE
+   UT-CX$ ENSURE-PRIVATE
+   CFG-B$ CREDS-B$ AUTH-D$ UT-PLACED!
+   UT-PLACED-NEW s" save" PROCESS:ARG
+   s\" claude: saved b@x.test\ncodex: saved d@x.test\n" s" " 0 UT-KIBA=
+   CFG-A$ CREDS-A$ AUTH-C$ UT-PLACED!
+   s" claude" s" b@x.test" UT-PLACED-USE s\" claude: now b@x.test\n" s" " 0 UT-KIBA=
+   s" codex" s" d@x.test" UT-PLACED-USE s\" codex: now d@x.test\n" s" " 0 UT-KIBA=
+   CFG-AB$ CREDS-B$ AUTH-D$ UT-PLACED=
+   UT-HOME-BARE ;
+
 : UT-MAIN ( -- )
    T-RESET
    ALLOC-BUFFERS
@@ -2683,6 +2911,7 @@ create UT-WRAP-BUF 1024 allot
    UT-REPEATED-CREDS
    UT-API-KEY
    UT-SYMLINK
+   UT-REL-SYMLINK
    UT-FAILED-WRITE
    UT-MIXED-PAIR
    UT-ORPHAN
@@ -2739,6 +2968,8 @@ create UT-WRAP-BUF 1024 allot
    UT-TURN-STALE
    UT-TURN-BUSY
    UT-TURN-ORDER
+   UT-EXIT-CODES
+   UT-CONFIG-PLACES
    T-REPORT ;
 
 UT-MAIN
