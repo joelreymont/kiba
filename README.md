@@ -196,9 +196,10 @@ model window, as percentages in that order (the hover text names them),
 amber below half. The dot is green while the account can take work, a used
 up model window included; red when its session or week is used up (the
 figures then read `limit` and the label carries the reset time, as in
-`(pro, 5d)`), its login is dead, or it has no plan; grey with no data. The label
-and the figures always fit: a long email is shortened in the middle to make
-room. A red row whose login no longer works says
+`(pro, 5d)`), its login is dead, or it has no plan; grey with no data. The
+figures always fit; the email and the label share the rest, each shortened
+in the middle, so a long plan such as Codex's `self_serve_business_prolite`
+never hides the email. A red row whose login no longer works says
 "log in again" and starts a login for that account when clicked, and so
 does the red "!" badge it carries: the terminal first asks you to sign
 into it in the browser; the live account's expired token is not a dead

@@ -928,6 +928,32 @@ Panel {
       anchors.top: parent.top
       anchors.topMargin: Style.space(6)
       height: Math.max(nameText.implicitHeight, row.badgesWidth > 0 ? resetBadge.height : 0)
+      // The figures and the badges always fit; the name and the plan share
+      // what they leave, each shortened in the middle so both ends still
+      // read. A plan is the provider's word for it, an open set (Codex's
+      // `self_serve_business_prolite`), so it keeps its full width only
+      // while the name keeps half the room; the name, likewise. The name
+      // is laid out at its shortened width, so the plan follows it closely.
+      readonly property real gap: Style.space(8)
+      readonly property real room: Math.max(0, figureText.x - nameText.x - gap - (planText.text !== "" ? gap : 0))
+      readonly property real planWidth: Math.min(planText.implicitWidth,
+        Math.max(room - nameFull.advanceWidth, room / 2))
+
+      // the whole name's width apart from the shortened one: one metrics
+      // object signals every width when its elide width moves
+      TextMetrics {
+        id: nameFull
+        font: nameText.font
+        text: row.account.name
+      }
+
+      TextMetrics {
+        id: nameFit
+        font: nameText.font
+        text: row.account.name
+        elide: Qt.ElideMiddle
+        elideWidth: Math.max(0, nameLine.room - nameLine.planWidth)
+      }
 
       Rectangle {
         id: dot
@@ -941,40 +967,37 @@ Panel {
         opacity: verdict === null ? 0.6 : 1
       }
 
-      // the plan, the figures and the badge always fit; a long name gives
-      // way, shortened in the middle so both ends still name the account
       Text {
         id: nameText
         anchors.left: dot.right
-        anchors.leftMargin: Style.space(8)
+        anchors.leftMargin: nameLine.gap
         anchors.verticalCenter: parent.verticalCenter
-        width: Math.max(0, Math.min(implicitWidth,
-          figureText.x - x - Style.space(8) - (planText.text !== "" ? planText.implicitWidth + planText.anchors.leftMargin : 0)))
-        text: row.account.name
+        text: nameFit.elidedText
         textFormat: Text.PlainText
         color: row.account.active ? Color.accent : (row.red ? root.dim : root.foreground)
         font.family: root.fontFamily
         font.pixelSize: Style.font.body
         font.bold: row.account.active
-        elide: Text.ElideMiddle
       }
 
       Text {
         id: planText
         anchors.left: nameText.right
-        anchors.leftMargin: Style.space(8)
+        anchors.leftMargin: nameLine.gap
         anchors.verticalCenter: parent.verticalCenter
+        width: nameLine.planWidth
         text: root.planText(row.account)
         textFormat: Text.PlainText
         color: row.red ? root.urgent : root.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
+        elide: Text.ElideMiddle
       }
 
       Text {
         id: figureText
         anchors.right: parent.right
-        anchors.rightMargin: row.badgesWidth > 0 ? row.badgesWidth + Style.space(8) : 0
+        anchors.rightMargin: row.badgesWidth > 0 ? row.badgesWidth + nameLine.gap : 0
         anchors.verticalCenter: parent.verticalCenter
         text: root.figuresText(row.account.usage)
         textFormat: Text.PlainText
