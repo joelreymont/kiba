@@ -322,32 +322,17 @@ variable OFFER-COUNT
    JSON:READ-FINISH
    15 REQUIRE-SEEN ;
 
-ENUM decode-step decoding decoded ;ENUM
-ENUM decode-input parsed garbled ;ENUM
-
-: DEC-SENSE ( n -- decode-input )
-   drop [: DEC-RUN ;] catch {: rc :}
-   rc 0= if construct decode-input parsed exit then
-   construct decode-input garbled ;
-
 \ the throw abandoned the reader, so its record is released here
-: DEC-UNREADABLE ( n -- )
-   drop DEC-RD JSON:READ-DISPOSE
+: DEC-UNREADABLE ( -- )
+   DEC-RD JSON:READ-DISPOSE
    0 construct usage-state unknown
    s" usage record is unreadable; refresh usage" DB-USAGE! ;
-
-FSM:DEFINE DECODING ( n ) decode-step decode-input
-   IN decoding DEC-SENSE
-      parsed - >decoded
-      garbled DEC-UNREADABLE >decoded
-   FINAL decoded -
-;DEFINE
 
 public
 
 : DB-USAGE-DECODE ( ptr u8 n -- )
    DEC-U ! DEC-A !
-   0 construct decode-step decoding DECODING ;
+   [: DEC-RUN ;] catch 0<> if DEC-UNREADABLE then ;
 
 \ ---- the row table ------------------------------------------------------------
 \ Each kept row holds ROW-COLS columns, each an offset into ROW-BYTES and a

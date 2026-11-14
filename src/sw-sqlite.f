@@ -5,7 +5,6 @@
 require ../src/sw-io.f
 require ../src/sw-base.f
 require src/lib/ffi-abi.f
-require src/lib/fsm.f
 require src/lib/fs.f
 require src/lib/fs-mutate.f
 require src/lib/prelude.f
@@ -188,27 +187,12 @@ public
 \ ---- stepping ---------------------------------------------------------------
 private
 
-\ A statement steps until SQLite reports it done; each row runs the row
-\ quotation, the machine's context.
-ENUM step-state stepping stepped ;ENUM
-ENUM step-input row done failed ;ENUM
-
-: SQL-STEP-SENSE ( [ -- ] -- step-input )
-   drop SQL-STMT @ SQL-STEP-CALL {: rc :}
-   rc SQL-ROW = if construct step-input row exit then
-   rc SQL-DONE = if construct step-input done exit then
-   construct step-input failed ;
-
-: SQL-ON-ROW ( [ -- ] -- ) execute ;
-: SQL-ON-FAIL ( [ -- ] -- ) drop SQL-OP$ SQL-FAIL ;
-
-FSM:DEFINE SQL-STEPS ( [ -- ] ) step-state step-input
-   IN stepping SQL-STEP-SENSE
-      row SQL-ON-ROW >stepping
-      done - >stepped
-      failed SQL-ON-FAIL >stepped
-   FINAL stepped -
-;DEFINE
+: SQL-STEPS ( [ -- ] -- )
+   {: each :}
+   begin SQL-STMT @ SQL-STEP-CALL dup SQL-ROW = while
+      drop each execute
+   repeat
+   SQL-DONE <> if SQL-OP$ SQL-FAIL then ;
 
 : SQL-FINALIZE ( -- )
    SQL-STMT @ SQL-FINALIZE-CALL drop
@@ -228,7 +212,7 @@ public
    SQL-STMT @ 0<> if op ou s" a statement is open" DB-THROW then
    op SQL-OP-A ! ou SQL-OP-U !
    sql su SQL-PREPARE
-   [: bind execute each construct step-state stepping SQL-STEPS ;]
+   [: bind execute each SQL-STEPS ;]
    [: SQL-FINALIZE ;] finally ;
 
 \ a statement that returns no rows

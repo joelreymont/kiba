@@ -6,7 +6,6 @@ require ../src/sw-codex.f
 require ../src/sw-base.f
 require ../src/sw-identity.f
 require ../src/sw-store.f
-require src/lib/fsm.f
 require src/lib/fmt.f
 require src/lib/byte-buffer.f
 require src/lib/prelude.f
@@ -25,58 +24,12 @@ variable STAT-AT?                    \ whether an install noted its time
 create STAT-NAME NAME-CAP allot      \ the slot the live login is saved as
 variable STAT-NAME-U                 \ -1 while no live login is known
 
-ENUM status-step listing timing identifying naming ended ;ENUM
-ENUM read-input done threw ;ENUM
-ENUM live-input present absent threw ;ENUM
+: LIST-RUN ( n -- ) DB-LIST DB-ROW# STAT-ROWS ! ;
 
-: READ-INPUT ( n -- read-input ) {: rc :}
-   rc STAT-RC !
-   rc 0= if construct read-input done exit then
-   construct read-input threw ;
+: TIME-RUN ( n -- ) DB-INSTALLED-AT STAT-AT? ! STAT-AT ! ;
 
-: LIST-RUN ( n -- n ) dup DB-LIST DB-ROW# STAT-ROWS ! ;
-
-: LIST-SENSE ( n -- read-input )
-   [: LIST-RUN ;] catch {: rc :} drop rc READ-INPUT ;
-
-: TIME-RUN ( n -- n ) dup DB-INSTALLED-AT STAT-AT? ! STAT-AT ! ;
-
-: TIME-SENSE ( n -- read-input )
-   [: TIME-RUN ;] catch {: rc :} drop rc READ-INPUT ;
-
-\ 1 when the provider has a live login, now in ID-LIVE
-: LIVE-HAS ( n -- n ) LIVE-IDENTITY bool>n ;
-
-: LIVE-SENSE ( n -- live-input )
-   [: LIVE-HAS ;] catch {: rc :}
-   rc STAT-RC !
-   rc 0<> if drop construct live-input threw exit then
-   0<> if construct live-input present exit then
-   construct live-input absent ;
-
-: NAME-RUN ( n -- n )
-   dup ID-LIVE DB-LIVE-NAME STAT-NAME STAT-NAME-U NAME-CAP SPAN! ;
-
-: NAME-SENSE ( n -- read-input )
-   [: NAME-RUN ;] catch {: rc :} drop
-   rc READ-INPUT ;
-
-FSM:DEFINE READING ( n ) status-step read-input
-   IN listing LIST-SENSE
-      done - >timing
-      threw - >ended
-   IN timing TIME-SENSE
-      done - >identifying
-      threw - >ended
-   IN identifying LIVE-SENSE ( live-input )
-      present - >naming
-      absent - >ended
-      threw - >ended
-   IN naming NAME-SENSE
-      done - >ended
-      threw - >ended
-   FINAL ended -
-;DEFINE
+: NAME-RUN ( n -- )
+   ID-LIVE DB-LIVE-NAME STAT-NAME STAT-NAME-U NAME-CAP SPAN! ;
 
 public
 
@@ -84,7 +37,7 @@ public
 \ time, and its live login into ID-LIVE; valid until the next store read
 : STATUS-READ ( n -- ) {: p :}
    0 STAT-RC ! 0 STAT-ROWS ! 0 STAT-AT ! false STAT-AT? ! -1 STAT-NAME-U !
-   p construct status-step listing READING ;
+   [: p LIST-RUN p TIME-RUN p LIVE-IDENTITY if p NAME-RUN then ;] catch STAT-RC ! ;
 
 \ the code the read stopped on; 0 when it read everything
 : STATUS-ERROR ( -- n ) STAT-RC @ ;
