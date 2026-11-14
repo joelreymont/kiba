@@ -199,9 +199,10 @@ figures then read `limit` and the label carries the reset time, as in
 `(pro, 5d)`), its login is dead, or it has no plan; grey with no data. The label
 and the figures always fit: a long email is shortened in the middle to make
 room. A red row whose login no longer works says
-"log in again" and starts a login for that account when clicked: the
-terminal first asks you to sign into it in the browser; the live account's
-expired token is not a dead login, its CLI refreshes it. Hovering a row
+"log in again" and starts a login for that account when clicked, and so
+does the red "!" badge it carries: the terminal first asks you to sign
+into it in the browser; the live account's expired token is not a dead
+login, its CLI refreshes it. A row's right-click menu offers Forget. Hovering a row
 shows every window with what is left and when it resets. The widget
 refreshes status while the panel is open and after each action, not while
 it sits closed.

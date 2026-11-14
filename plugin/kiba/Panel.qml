@@ -14,7 +14,7 @@ Panel {
   property int cursorIndex: 0          // its place, kept when the control goes
   property double nowMs: Date.now()
   property var confirming: null        // {kind: forget | reset, provider, name}
-  property var menuAccount: null       // the row whose context menu is open: {provider, name, active}
+  property var menuAccount: null       // the row whose context menu is open: {provider, name}
 
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
@@ -318,9 +318,9 @@ Panel {
   }
 
   // Every control a click can reach, in panel order: Dismiss, Retry, then
-  // per provider its add, each account row followed by its limit-reset
-  // badge, and its save; Refresh usage last. A confirming row offers its go
-  // and Keep buttons instead of the row and its badge.
+  // per provider its add, each account row followed by its log-in-again
+  // and limit-reset badges, and its save; Refresh usage last. A confirming
+  // row offers its go and Keep buttons instead of the row and its badges.
   readonly property var actions: {
     var out = []
     if (status.canDismiss) out.push(mk("dismiss", "", ""))
@@ -335,6 +335,7 @@ Panel {
           out.push(mk("keep", p.id, a.name))
         } else {
           out.push(mk("use", p.id, a.name))
+          if (status.relogin(a.usage, a.active)) out.push(mk("relogin", p.id, a.name))
           if (a.usage && a.usage.resets > 0) out.push(mk("redeem", p.id, a.name))
         }
       }
@@ -415,6 +416,7 @@ Panel {
   // queues; Keep, Dismiss and Retry always run.
   function trigger(a) {
     if (a.kind === "use") status.use(a.provider, a.name)
+    else if (a.kind === "relogin") status.logInAgain(a.provider, a.name)
     else if (a.kind === "redeem") ask("reset", a.provider, a.name)
     else if (a.kind === "save") status.save(a.provider)
     else if (a.kind === "add") status.add(a.provider, "")
@@ -480,7 +482,7 @@ Panel {
   }
 
   function openMenu(item, x, y, provider, a) {
-    menuAccount = { provider: provider, name: a.name, active: a.active }
+    menuAccount = { provider: provider, name: a.name }
     rowMenu.popup(item, x, y)
   }
 
@@ -804,8 +806,7 @@ Panel {
         }
       }
 
-      // the account row's context menu: Log In Again… (not on the live row)
-      // above a divider, then Forget…
+      // the account row's context menu: Forget…
       Controls.Menu {
         id: rowMenu
         onClosed: keyCatcher.forceActiveFocus()
@@ -816,19 +817,6 @@ Panel {
           border.color: Color.menu.border
           border.width: 1
           radius: Style.cornerRadius
-        }
-
-        MenuEntry {
-          visible: !!root.menuAccount && !root.menuAccount.active
-          enabled: !(status.busy && !status.probing)
-          text: "Log In Again…"
-          onTriggered: status.logInAgain(root.menuAccount.provider, root.menuAccount.name)
-        }
-
-        Controls.MenuSeparator {
-          visible: !!root.menuAccount && !root.menuAccount.active
-          height: visible ? implicitHeight : 0
-          contentItem: Rectangle { implicitHeight: 1; color: Color.menu.border; opacity: 0.4 }
         }
 
         MenuEntry {
@@ -897,23 +885,29 @@ Panel {
     }
   }
 
-  // A saved account: dot, name, plan, figures and its limit-reset badge,
-  // the reservoir below. No box: the row lights under the pointer or the
-  // keyboard cursor, and faintly while it is the live login. A confirming
-  // row shows its question with its go and Keep buttons instead.
+  // A saved account: dot, name, plan, figures, its log-in-again badge and
+  // its limit-reset badge, the reservoir below. No box: the row lights
+  // under the pointer or the keyboard cursor, and faintly while it is the
+  // live login. A confirming row shows its question with its go and Keep
+  // buttons instead.
   component AccountRow: Item {
     id: row
     required property var provider
     required property var account
     readonly property string key: root.keyOf("use", provider.id, account.name)
-    readonly property string badgeKey: root.keyOf("redeem", provider.id, account.name)
     readonly property bool asking: root.confirmingRow(provider.id, account.name)
     readonly property string standing: root.rowState(account.usage, account.active)
     readonly property bool red: root.usable(standing) === false
     readonly property int offer: account.usage ? account.usage.resets : 0
+    readonly property bool relogin: status.relogin(account.usage, account.active)
     // account rows stay live during a probe and queue their action
     readonly property bool live: !(status.busy && !status.probing)
     readonly property real inset: Style.space(10)
+    readonly property real badgeGap: Style.space(6)
+    // the badges' span at the line's end, the gap between them included
+    readonly property real badgesWidth: (relogin ? reloginBadge.width : 0) + (offer > 0 ? resetBadge.width : 0)
+      + (relogin && offer > 0 ? badgeGap : 0)
+    readonly property bool overBadge: reloginBadge.hovered || resetBadge.hovered
 
     width: parent.width
     implicitHeight: (asking ? askLine.height : nameLine.height + Style.space(5) + reservoirBar.height) + Style.space(12)
@@ -933,7 +927,7 @@ Panel {
       anchors.rightMargin: row.inset
       anchors.top: parent.top
       anchors.topMargin: Style.space(6)
-      height: Math.max(nameText.implicitHeight, row.offer > 0 ? badge.height : 0)
+      height: Math.max(nameText.implicitHeight, row.badgesWidth > 0 ? resetBadge.height : 0)
 
       Rectangle {
         id: dot
@@ -980,7 +974,7 @@ Panel {
       Text {
         id: figureText
         anchors.right: parent.right
-        anchors.rightMargin: row.offer > 0 ? badge.width + Style.space(8) : 0
+        anchors.rightMargin: row.badgesWidth > 0 ? row.badgesWidth + Style.space(8) : 0
         anchors.verticalCenter: parent.verticalCenter
         text: root.figuresText(row.account.usage)
         textFormat: Text.PlainText
@@ -1011,68 +1005,47 @@ Panel {
       hoverEnabled: true
       acceptedButtons: Qt.LeftButton | Qt.RightButton
       cursorShape: row.live && !row.account.active ? Qt.PointingHandCursor : Qt.ArrowCursor
-      onContainsMouseChanged: if (containsMouse && !badgeMouse.containsMouse) root.pointKey(row.key)
+      onContainsMouseChanged: if (containsMouse && !row.overBadge) root.pointKey(row.key)
       onClicked: function(mouse) {
         if (mouse.button === Qt.RightButton) root.openMenu(rowMouse, mouse.x, mouse.y, row.provider.id, row.account)
         else if (row.live) status.use(row.provider.id, row.account.name)
       }
 
-      // The count of limit resets on offer, a control of its own over the
-      // row; a click asks before spending one.
-      Rectangle {
-        id: badge
+      // A login that no longer works, or whose usage checks are rate
+      // limited: a click logs in to the account again, as a click on the row does.
+      Badge {
+        id: reloginBadge
+        visible: row.relogin && !row.asking
+        x: (row.offer > 0 ? resetBadge.x - row.badgeGap : row.width - row.inset) - width
+        y: nameLine.y + (nameLine.height - height) / 2
+        color: root.urgent
+        key: root.keyOf("relogin", row.provider.id, row.account.name)
+        label: "!"
+        live: row.live
+        tip: (status.dead(row.account.usage, row.account.active) ? "This login no longer works."
+          : "Usage checks are rate limited.") + " Click to log in again."
+        onActivated: status.logInAgain(row.provider.id, row.account.name)
+        onHoverEnded: if (rowMouse.containsMouse && !row.overBadge) root.pointKey(row.key)
+      }
+
+      // The count of limit resets on offer; a click asks before spending one.
+      Badge {
+        id: resetBadge
         visible: row.offer > 0 && !row.asking
         x: row.width - row.inset - width
         y: nameLine.y + (nameLine.height - height) / 2
-        height: Style.space(18)
-        width: Math.max(height, badgeText.implicitWidth + Style.space(10))
-        radius: height / 2
         color: Color.accent
-
-        // the cursor's ring sits clear of the badge, so it never crowds the count
-        Rectangle {
-          visible: root.cursorKey === row.badgeKey
-          anchors.fill: parent
-          anchors.margins: -(Style.spaceReal(2) + Style.spaceReal(1.5))
-          radius: height / 2
-          color: "transparent"
-          border.width: Style.spaceReal(2)
-          border.color: root.foreground
-          antialiasing: true
-        }
-
-        Text {
-          id: badgeText
-          anchors.centerIn: parent
-          text: String(row.offer)
-          color: Color.background
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-          font.bold: true
-        }
-
-        MouseArea {
-          id: badgeMouse
-          anchors.fill: parent
-          hoverEnabled: true
-          cursorShape: status.busy ? Qt.ArrowCursor : Qt.PointingHandCursor
-          onContainsMouseChanged: {
-            if (containsMouse) root.pointKey(row.badgeKey)
-            else if (rowMouse.containsMouse) root.pointKey(row.key)
-          }
-          onClicked: root.ask("reset", row.provider.id, row.account.name)
-        }
-
-        PanelToolTip {
-          visible: badgeMouse.containsMouse
-          text: root.resetsText(row.offer) + " available. Click to use one."
-          fontFamily: root.fontFamily
-        }
+        key: root.keyOf("redeem", row.provider.id, row.account.name)
+        label: String(row.offer)
+        live: !status.busy
+        tip: root.resetsText(row.offer) + " available. Click to use one."
+        onActivated: root.ask("reset", row.provider.id, row.account.name)
+        onHoverEnded: if (rowMouse.containsMouse && !row.overBadge) root.pointKey(row.key)
       }
     }
 
     PanelToolTip {
-      visible: rowMouse.containsMouse && !badgeMouse.containsMouse && !row.asking
+      visible: rowMouse.containsMouse && !row.overBadge && !row.asking
       text: root.tooltipText(row.provider, row.account)
       fontFamily: root.fontFamily
     }
@@ -1143,6 +1116,63 @@ Panel {
         tint: Color.accent
         onActivated: root.keep()
       }
+    }
+  }
+
+  // A control of its own laid over an account row's name line, not inside
+  // the row's button: its glyph on a capsule, a circle for one character.
+  // Under the cursor it wears a ring clear of it, so the ring never crowds
+  // the glyph, and the row does not light.
+  component Badge: Rectangle {
+    id: badge
+    property string key: ""
+    property string label: ""
+    property string tip: ""
+    property bool live: true
+    readonly property alias hovered: badgeMouse.containsMouse
+    signal activated()
+    signal hoverEnded()
+    height: Style.space(18)
+    width: Math.max(height, badgeText.implicitWidth + Style.space(10))
+    radius: height / 2
+
+    Rectangle {
+      visible: root.cursorKey === badge.key
+      anchors.fill: parent
+      anchors.margins: -(Style.spaceReal(2) + Style.spaceReal(1.5))
+      radius: height / 2
+      color: "transparent"
+      border.width: Style.spaceReal(2)
+      border.color: root.foreground
+      antialiasing: true
+    }
+
+    Text {
+      id: badgeText
+      anchors.centerIn: parent
+      text: badge.label
+      color: Color.background
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      font.bold: true
+    }
+
+    MouseArea {
+      id: badgeMouse
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: badge.live ? Qt.PointingHandCursor : Qt.ArrowCursor
+      onContainsMouseChanged: {
+        if (containsMouse) root.pointKey(badge.key)
+        else badge.hoverEnded()
+      }
+      onClicked: badge.activated()
+    }
+
+    PanelToolTip {
+      visible: badgeMouse.containsMouse
+      text: badge.tip
+      fontFamily: root.fontFamily
     }
   }
 
