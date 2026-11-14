@@ -26,8 +26,8 @@ checked Habu program; a thin Omarchy bar widget runs it.
   the SQLite binding, `sw-db.f` the account store, `sw-turn.f` the
   per-provider turn, `sw-store.f` saving, installing and forgetting through
   the store, `sw-status.f` the status read, `sw-run.f` provider commands in
-  the foreground, `sw-usage.f` usage probes and limit resets through `curl`,
-  `sw-cli.f` the commands, `kiba.f` the entry and `MAIN`.
+  the foreground, `sw-usage.f` usage probes and limit resets through Habu's
+  `CURL` (libcurl), `sw-cli.f` the commands, `kiba.f` the entry and `MAIN`.
 - Library words come from the installed [Habu](https://github.com/joelreymont/habu),
   the one `hb` on `PATH` resolves to. `build.sh` and `test.sh` run its
   `bin/hb` from its root, so relative `require src/lib/...` resolves there. To
@@ -45,9 +45,11 @@ checked Habu program; a thin Omarchy bar widget runs it.
 
 ## Layout
 
-- `src/` checked Habu sources; `test/sw-unit-test.f` the checked test suite,
-  which writes fake `curl` and `codex` scripts into the scratch PATH
-  (`KIBA_TEST_LOG` collects what they were called with).
+- `src/` checked Habu sources; `test/sw-unit-test.f` the checked test suite.
+  It answers kiba's requests from an HTTP server in the test process and
+  writes fake `claude` and `codex` scripts into the scratch PATH;
+  `KIBA_TEST_LOG` collects what each request carried and what the scripts
+  were called with.
 - `plugin/kiba/` Omarchy bar widget (QML). It only runs the CLI and
   renders `kiba status --json`; no account logic lives in QML.
 - `build.sh` builds the native binary with `tools/hb-build.f --repl`,
@@ -91,7 +93,7 @@ checked Habu program; a thin Omarchy bar widget runs it.
   replaced atomically.
 - kiba keeps no history: the store holds saved logins and the live and
   in-flight markers, nothing that grows with each probe or switch.
-- Every `curl` request names its client: `KIBA-UA$`, except the usage and
+- Every request names its client: `KIBA-UA$`, except the usage and
   reset calls, where the ChatGPT ones keep `codex-cli` and the Claude ones
   carry Claude Code's `claude-cli/<version>` (`CLAUDE-UA$`), which alone
   opens the limit-reset surface. Anthropic's token endpoint answers 429 to

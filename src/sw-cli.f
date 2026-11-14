@@ -81,6 +81,7 @@ public
    rc E-FS-PATH-UNSAFE = if s" kiba: refusing to write through a symlink chain" exit then
    rc E-PROC-SPAWN = if s" kiba: could not start the provider command" exit then
    rc E-FFI-DLOPEN = if s" kiba: a library kiba needs could not be loaded" exit then
+   rc E-CURL-OPERAND = if s" kiba: a saved login's token or account id holds a line break" exit then
    rc E-JSON-READ-LAST >= rc E-JSON-READ-FIRST <= and if s" kiba: a login file is not valid JSON" exit then
    rc E-FS-LAST >= rc E-FS-FIRST <= and if s" kiba: a file operation failed" exit then
    rc E-PROC-LAST >= rc E-PROC-FIRST <= and if s" kiba: could not run a command" exit then

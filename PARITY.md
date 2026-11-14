@@ -49,6 +49,7 @@ holds that.
     calls the `kiba` in `~/.local/bin`.
   - Habu's `bin/hb` is built. There is no Swift toolchain, and SQLite has
     its runtime library but no headers.
+  - libcurl 8.5.0 (`libcurl4t64`) is installed.
   - The store, the Mac's last snapshot, is at `~/.local/share/kiba/kiba.db`.
 
 ## Settled

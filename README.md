@@ -13,8 +13,9 @@ provider how much of every saved account's allowance is left.
 
 ## Requirements
 
-- Omarchy 4 (the bar widget is an Omarchy shell plugin), `curl`, and the
-  `claude` and `codex` CLIs you already use.
+- Omarchy 4 (the bar widget is an Omarchy shell plugin), libcurl (the
+  `curl` package on Arch, `libcurl4t64` on Ubuntu), and the `claude` and
+  `codex` CLIs you already use.
 - [Habu](https://github.com/joelreymont/habu), the checked Forth the CLI is
   written in, installed so that `hb` is on `PATH`; see [AGENTS.md](AGENTS.md).
 
@@ -137,7 +138,7 @@ absent when the provider said nothing about limit resets. `state` is one of:
 
 `kiba usage` answers "which account still has room". For every saved account
 it asks the provider's own usage endpoint with that account's saved token,
-through `curl`, and records the answer and any refreshed tokens in one
+through libcurl, and records the answer and any refreshed tokens in one
 transaction:
 
 - Claude: `GET https://api.anthropic.com/api/oauth/usage` with the OAuth
@@ -161,10 +162,10 @@ account was probed after the run began, because another kiba probed them
 while this one waited for the turn, those results are reported and nothing
 is probed again.
 
-Headers, which carry the token, reach `curl` through a 0600 file, never
-through argv. Scratch files live under `<store>/probe-<provider>/`, one
-directory per provider so a Claude and a Codex command running at once never
-remove each other's, and are removed after each request. Requests name
+Requests are made in kiba's own process through libcurl, so a token reaches
+no argv, file or other process. No configuration file applies to them; the
+proxy environment variables (`https_proxy`, `all_proxy`, `no_proxy`) do, as
+libcurl reads them. Requests name
 `kiba` as their User-Agent, except the usage and reset calls: the ChatGPT
 ones keep `codex-cli`, and the Claude ones carry Claude Code's
 `claude-cli/<version>`, which alone opens the limit-reset offer. Anthropic's
@@ -207,8 +208,9 @@ shell's plugin reload keeps the old compiled component in this Qt build.
 
 `build.sh` compiles `src/kiba.f` with Habu's `tools/hb-build.f --repl` and
 installs `~/.local/bin/kiba`. `test.sh` runs the checked test suite inside a
-scratch `HOME` with fake `curl` and `codex` scripts on its PATH; it never reads
-or writes real credentials. Both use the installed Habu that `hb` on `PATH`
+scratch `HOME` with an empty environment: an HTTP server in the test process
+answers kiba's requests, and fake `claude` and `codex` scripts are on its
+PATH. It never reads or writes real credentials. Both use the installed Habu that `hb` on `PATH`
 resolves to; to build with another Habu, put its `bin/hb` first on `PATH`.
 
 ## License

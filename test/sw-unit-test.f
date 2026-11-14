@@ -1,5 +1,7 @@
 \ sw-unit-test.f - checked kiba tests.
 \ Run through test.sh: HOME, XDG_DATA_HOME, and PATH must point at a scratch tree.
+\ kiba's requests reach a server in this process, which answers them from
+\ fixture rows and logs what each one carried.
 require ../src/kiba.f
 require ../src/sw-turn.f
 require ../src/sw-base.f
@@ -30,6 +32,18 @@ require src/lib/json.f
 require src/lib/prelude.f
 require src/lib/span.f
 require src/lib/string.f
+require src/lib/aio.f
+require src/lib/net/tcp4.f
+require src/lib/net/http.f
+
+\ White-box: reopens SW for sw-usage.f's private URL-BASE; SW-TEST: words land
+\ in SW-TEST, the rest in SW.
+package SW
+
+\ every request goes to b u followed by its URL after the https://
+: SW-TEST:UT-SERVE-AT ( ptr u8 n -- ) URL-BASE URL-BASE-U PATH! ;
+
+;package
 
 package SW-TEST
 using SW
@@ -784,15 +798,6 @@ create UT-WANT 16384 allot   variable UT-WANT-U
    f fu body bu FS:WRITE-ALL
    f fu FS:CHMOD-X ;
 
-\ a fake curl: answers each provider URL from the Authorization header it is
-\ given, writes the body to the -o file, prints the status, and logs the call
-\ and the request body; a Claude reset answers the word after "w-" in its
-\ grant id, a Codex one the word after "at-w-" in its token
-: UT-FAKE-CURL ( -- )
-   s" curl"
-   s\" #!/bin/sh\nout=; auth=; url=; grant=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) case \"$2\" in @*) auth=$(/usr/bin/grep ^Authorization: \"${2#@}\"); echo \"hdrmode $(/usr/bin/stat -c %a \"${2#@}\")\" >> \"$KIBA_TEST_LOG\"; echo \"ua $(/usr/bin/grep ^User-Agent: \"${2#@}\")\" >> \"$KIBA_TEST_LOG\";; *) echo \"argvheader $2\" >> \"$KIBA_TEST_LOG\";; esac; shift;; --data-binary) echo \"data $2\" >> \"$KIBA_TEST_LOG\"; grant=$(/usr/bin/cat \"${2#@}\"); echo \"body $grant\" >> \"$KIBA_TEST_LOG\"; shift;; -X|-m|-w) shift;; *) url=$1;; esac; shift; done\necho \"$url $auth\" >> \"$KIBA_TEST_LOG\"\ncode=200; body='{}'\ncase \"$url\" in\n*api.anthropic.com/api/oauth/usage\\?cedar_ember=1\\&at_wall=1) case \"$auth\" in *sk-a) body='{\"five_hour\":{\"utilization\":56.25,\"resets_at\":\"2026-09-15T14:00:00+00:00\"},\"seven_day\":{\"utilization\":100,\"resets_at\":\"2026-09-21T11:00:00+00:00\"},\"limits\":[{\"kind\":\"session\",\"group\":\"session\",\"scope\":null,\"percent\":56},{\"kind\":\"weekly_scoped\",\"group\":\"weekly\",\"scope\":{\"model\":{\"id\":null,\"display_name\":\"Fable\"},\"surface\":null},\"percent\":48,\"resets_at\":\"2026-09-22T13:00:00+00:00\"}]}';; *sk-b-new) body='{\"five_hour\":{\"utilization\":12.4,\"resets_at\":\"2026-09-15T15:00:00+00:00\"},\"seven_day_oauth_apps\":{\"utilization\":0.5,\"resets_at\":\"\"}}';; *) code=401; body='{\"error\":\"expired\"}';; esac;;\n*platform.claude.com/v1/oauth/token) case \"$grant\" in *r-e*) code=429; body='{\"error\":{\"type\":\"rate_limit_error\"}}';; *) body='{\"access_token\":\"sk-b-new\",\"refresh_token\":\"r-b-new\",\"expires_in\":3600,\"refresh_token_expires_in\":2592000}';; esac;;\n*chatgpt.com/backend-api/wham/usage) case \"$auth\" in *at-c) body='{\"plan_type\":\"pro\",\"rate_limit\":{\"allowed\":false,\"limit_reached\":true,\"primary_window\":{\"used_percent\":100,\"limit_window_seconds\":604800,\"reset_after_seconds\":433078,\"reset_at\":1789904220},\"secondary_window\":null}}';; *at-d2) body='{\"rate_limit\":{\"primary_window\":{\"used_percent\":12,\"limit_window_seconds\":18000,\"reset_at\":1789489142},\"secondary_window\":{\"used_percent\":40,\"limit_window_seconds\":604800,\"reset_at\":1790075942}}}';; *at-dup) body='{\"rate_limit\":{\"primary_window\":{\"used_percent\":10,\"limit_window_seconds\":18000,\"used_percent\":20}}}';; *at-whole) body='{\"rate_limit\":{\"primary_window\":{\"used_percent\":30,\"limit_window_seconds\":6048e2,\"reset_at\":1789904220.0}},\"rate_limit_reset_credits\":{\"available_count\":2.0}}';; *at-long) body='{\"plan_type\":\"ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\",\"rate_limit\":{\"primary_window\":{\"used_percent\":30,\"limit_window_seconds\":18000}}}';; *at-w-*) body='{}';; *at-z|*at-y) code=401; body='{\"error\":{\"code\":\"token_revoked\"}}';; *) code=401; body='{\"error\":{\"code\":\"token_expired\"}}';; esac;;\n*auth.openai.com/oauth/token) case \"$grant\" in *rt-z*) code=401; body='{\"error\":\"invalid_grant\"}';; *rt-y*) code=503; body='';; *) body='{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d2\",\"refresh_token\":\"rt-d2\"}';; esac;;\n*api.anthropic.com/api/organizations/*/reset_rate_limits) case \"$auth\" in *sk-a|*sk-s) code=401; body='{\"error\":\"expired\"}';; *) word=$(printf '%s' \"$grant\" | /usr/bin/sed -n 's/.*\"grant_id\":\"w-\\([a-z_]*\\)\".*/\\1/p'); [ -n \"$word\" ] || word=reset; body='{\"result\":\"'\"$word\"'\"}';; esac;;\n*chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume) case \"$auth\" in *at-w-*) body='{\"code\":\"'\"${auth##*at-w-}\"'\"}';; *at-d2) body='{\"code\":\"reset\"}';; *at-z) code=401; body='{\"error\":{\"code\":\"token_revoked\"}}';; *) code=401; body='{\"error\":{\"code\":\"token_expired\"}}';; esac;;\n*) code=404;;\nesac\nprintf '%s' \"$body\" > \"$out\"\nprintf '%s' \"$code\"\n"
-   UT-WRITE-SCRIPT ;
-
 : AUTH-D2$ ( -- ptr u8 n )
    s\" {\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d2\",\"refresh_token\":\"rt-d2\",\"account_id\":\"acct\"}}" ;
 
@@ -842,10 +847,298 @@ variable UT-LOG0
 
 : UT-LOG-MARK ( -- ) LOG$ READ-FILE$ nip UT-LOG0 ! ;
 
-\ what the fakes logged since the mark
+\ what the fakes and the server logged since the mark
 : UT-LOG-NEW$ ( -- ptr u8 n )
    LOG$ READ-FILE$ {: l lu :}
    l UT-LOG0 @ + lu UT-LOG0 @ - ;
+
+\ ---- the provider server -----------------------------------------------------
+\ One route per endpoint, its host the first path segment. A worker task runs
+\ the handler while the main task waits in CURL:PERFORM, so the main task
+\ changes the rows only between requests.
+$7F000001 constant UT-LOOPBACK
+2 constant UT-WORKERS        \ a worker lingers on a connection it answered
+500 constant UT-IDLE-MS
+64 constant UT-ROW-MAX
+$500000 constant UT-ARENA-CAP   \ the rows' bytes: one body past BUF-CAP and the rest
+
+\ a row's cells: its route, key and body as arena offset and length, and its status
+0 constant UT-F-ROUTE
+2 constant UT-F-KEY
+4 constant UT-F-STATUS
+5 constant UT-F-BODY
+7 constant UT-ROW-CELLS
+UT-ROW-MAX UT-ROW-CELLS * constant UT-CELL-MAX
+
+UT-CELL-MAX TYPED-BUFFER UT-ROWS n
+TYPED-VARIABLE UT-ARENA-A ptr u8   variable UT-ARENA-U
+variable UT-ROW-N                  \ the rows a worker may read, published with atomic!
+create UT-LOG-PATH PATH-CAP allot     variable UT-LOG-PATH-U
+create UT-CLAUDE-TURN PATH-CAP allot  variable UT-CLAUDE-TURN-U
+create UT-CODEX-TURN PATH-CAP allot   variable UT-CODEX-TURN-U
+
+: UT-ARENA ( -- ptr u8 ) UT-ARENA-A @ ;
+: UT-ROW-CELL ( n n -- ptr n ) swap UT-ROW-CELLS * + UT-ROWS ;
+
+\ field f of row i, a span in the arena
+: UT-ROW$ ( n n -- ptr u8 n ) {: i f :}
+   UT-ARENA i f UT-ROW-CELL @ + i f 1+ UT-ROW-CELL @ ;
+
+: UT-ARENA-ROOM ( n -- )
+   UT-ARENA-U @ + UT-ARENA-CAP > if E-SW-CAPACITY throw then ;
+
+: UT-ARENA+ ( ptr u8 n -- ) {: a u :}
+   u UT-ARENA-ROOM
+   a UT-ARENA UT-ARENA-U @ + u BYTE-COPY
+   u UT-ARENA-U +! ;
+
+\ field f of row i becomes a copy of a u
+: UT-FIELD! ( ptr u8 n n n -- ) {: a u i f :}
+   UT-ARENA-U @ i f UT-ROW-CELL !
+   u i f 1+ UT-ROW-CELL !
+   a u UT-ARENA+ ;
+
+\ the row being written, which no worker reads until UT-ANSWER-CLOSE
+: UT-NEXT-ROW ( -- n ) UT-ROW-N atomic@ ;
+
+\ a row for route r ru: a request whose key is k ku, or any request when
+\ k ku is empty, gets status st and the body UT-BODY+ and UT-BODY-FILL
+\ append; status 0 closes the connection without an answer
+: UT-ANSWER-OPEN ( ptr u8 n ptr u8 n n -- ) {: r ru k ku st :}
+   UT-NEXT-ROW {: i :}
+   i UT-ROW-MAX >= if E-SW-CAPACITY throw then
+   r ru i UT-F-ROUTE UT-FIELD!
+   k ku i UT-F-KEY UT-FIELD!
+   st i UT-F-STATUS UT-ROW-CELL !
+   UT-ARENA 0 i UT-F-BODY UT-FIELD! ;
+
+: UT-BODY+ ( ptr u8 n -- ) {: a u :}
+   a u UT-ARENA+
+   u UT-NEXT-ROW UT-F-BODY 1+ UT-ROW-CELL +! ;
+
+\ byte c, n times
+: UT-BODY-FILL ( n n -- ) {: c n :}
+   n UT-ARENA-ROOM
+   n 0 ?do c UT-ARENA UT-ARENA-U @ + i + c! loop
+   n UT-ARENA-U +!
+   n UT-NEXT-ROW UT-F-BODY 1+ UT-ROW-CELL +! ;
+
+: UT-ANSWER-CLOSE ( -- ) UT-NEXT-ROW 1+ UT-ROW-N atomic! ;
+
+\ route r ru answers a request keyed k ku with status st and body b bu
+: UT-ANSWER ( ptr u8 n ptr u8 n n ptr u8 n -- ) {: r ru k ku st b bu :}
+   r ru k ku st UT-ANSWER-OPEN
+   b bu UT-BODY+
+   UT-ANSWER-CLOSE ;
+
+\ no rows: every request is answered 404
+: UT-ANSWERS-RESET ( -- ) 0 UT-ROW-N atomic! 0 UT-ARENA-U ! ;
+
+: UT-LOG+ ( ptr u8 n -- ) {: a u :}
+   UT-LOG-PATH UT-LOG-PATH-U @ a u FS:APPEND-FILE ;
+
+: UT-LOG-END ( -- ) s\" \n" UT-LOG+ ;
+
+: UT-UA-LOG ( HTTP:request -- )
+   s" User-Agent" HTTP:HEADER-OF$ drop {: v vu :}
+   s" ua User-Agent: " UT-LOG+ v vu UT-LOG+ UT-LOG-END ;
+
+: UT-ACCOUNT-LOG ( HTTP:request -- )
+   s" ChatGPT-Account-Id" HTTP:HEADER-OF$ 0= if 2drop exit then
+   {: v vu :}
+   s" ChatGPT-Account-Id: " UT-LOG+ v vu UT-LOG+ UT-LOG-END ;
+
+: UT-BODY-LOG ( HTTP:request -- )
+   HTTP:BODY$ {: b bu :}
+   bu 0= if exit then
+   s" body " UT-LOG+ b bu UT-LOG+ UT-LOG-END ;
+
+: UT-AUTH-LOG ( HTTP:request -- )
+   s" Authorization" HTTP:HEADER-OF$ 0= if 2drop exit then
+   {: v vu :}
+   s" Authorization: " UT-LOG+ v vu UT-LOG+ ;
+
+\ the URL kiba wrote, then the Authorization line it sent, if any
+: UT-URL-LOG ( HTTP:request -- ) {: q:HTTP:request :}
+   q HTTP:PATH$ {: p pu :}
+   s" https://" UT-LOG+ p 1+ pu 1- UT-LOG+
+   q HTTP:QUERY$ {: a u :}
+   u 0 > if s" ?" UT-LOG+ a u UT-LOG+ then
+   s"  " UT-LOG+
+   q UT-AUTH-LOG
+   UT-LOG-END ;
+
+: UT-TURN-FILE$ ( n -- ptr u8 n )
+   P-CLAUDE = if UT-CLAUDE-TURN UT-CLAUDE-TURN-U @ exit then
+   UT-CODEX-TURN UT-CODEX-TURN-U @ ;
+
+\ flock locks belong to the open file description, so a fresh open of the
+\ turn file cannot lock it while a command holds the turn
+: UT-TURN-STATE$ ( n -- ptr u8 n )
+   UT-TURN-FILE$ FS:>PATHZ open-rd {: fd :}
+   fd 0 < if s" unknown" exit then
+   fd >FD FS-LOCK:TRY {: got :}
+   fd close
+   got if s" free" exit then
+   s" held" ;
+
+: UT-TURN-LOG ( n -- )
+   s" turn " UT-LOG+ UT-TURN-STATE$ UT-LOG+ s"  request" UT-LOG+ UT-LOG-END ;
+
+\ what a request to provider p carried, one line each
+: UT-SEEN ( HTTP:request n -- ) {: q:HTTP:request p :}
+   q UT-UA-LOG
+   q UT-ACCOUNT-LOG
+   q UT-BODY-LOG
+   q UT-URL-LOG
+   p UT-TURN-LOG ;
+
+: UT-BEARER$ ( HTTP:request -- ptr u8 n )
+   s" Authorization" HTTP:HEADER-OF$ 0= if drop 0 exit then
+   {: v vu :}
+   s" Bearer " nip {: n :}
+   vu n < if v 0 exit then
+   v n + vu n - ;
+
+: UT-GRANT-KEY$ ( -- ptr u8 n ) s\" \"refresh_token\":\"" ;
+
+\ b bu up to its first quote
+: UT-TO-QUOTE ( ptr u8 n -- ptr u8 n ) {: b bu :}
+   b bu s\" \"" FIND-SUB MATCH option
+      none OF b bu ENDOF
+      some OF IDX>N b swap ENDOF
+   ;MATCH ;
+
+\ the refresh token a grant body names; empty when it names none
+: UT-REFRESH$ ( ptr u8 n -- ptr u8 n ) {: b bu :}
+   b bu UT-GRANT-KEY$ FIND-SUB MATCH option
+      none OF b 0 ENDOF
+      some OF IDX>N UT-GRANT-KEY$ nip + {: at :} b at + bu at - UT-TO-QUOTE ENDOF
+   ;MATCH ;
+
+\ key k ku takes a request when it is empty, the request's bearer token t tu
+\ or the refresh token g gu it posts
+: UT-KEY? ( ptr u8 n ptr u8 n ptr u8 n -- bool ) {: k ku t tu g gu :}
+   ku 0= if true exit then
+   k ku t tu STR= if true exit then
+   k ku g gu STR= ;
+
+\ the newest row for route r ru whose key takes the request; -1 when none does
+: UT-FIND ( ptr u8 n ptr u8 n ptr u8 n -- n ) {: r ru t tu g gu :}
+   UT-ROW-N atomic@ {: n :}
+   n 0 ?do
+      n 1- i - dup UT-F-ROUTE UT-ROW$ r ru STR=
+      over UT-F-KEY UT-ROW$ t tu g gu UT-KEY? and
+      if unloop exit then
+      drop
+   loop
+   -1 ;
+
+: UT-REPLY ( HTTP:request HTTP:response n -- )
+   {: q:HTTP:request a:HTTP:response i :}
+   i 0 < if a 404 HTTP:STATUS! exit then
+   i UT-F-STATUS UT-ROW-CELL @ {: st :}
+   st 0= if q HTTP:TAKE-OVER 2drop TCP4:CLOSE drop exit then
+   a st HTTP:STATUS!
+   a s" Content-Type" s" application/json" HTTP:HEADER!
+   a i UT-F-BODY UT-ROW$ HTTP:BODY! ;
+
+\ a request to route r ru of provider p: logged, then answered from the rows
+: UT-SERVE ( HTTP:request HTTP:response ptr u8 n n -- )
+   {: q:HTTP:request a:HTTP:response r ru p :}
+   q p UT-SEEN
+   r ru q UT-BEARER$ q HTTP:BODY$ UT-REFRESH$ UT-FIND {: i :}
+   q a i UT-REPLY ;
+
+: UT-CLAUDE-USAGE$ ( -- ptr u8 n ) s" /api.anthropic.com/api/oauth/usage" ;
+: UT-CLAUDE-PROFILE$ ( -- ptr u8 n ) s" /api.anthropic.com/api/oauth/profile" ;
+: UT-CLAUDE-TOKEN$ ( -- ptr u8 n ) s" /platform.claude.com/v1/oauth/token" ;
+: UT-CLAUDE-RESET$ ( -- ptr u8 n )
+   s" /api.anthropic.com/api/organizations/{org}/reset_rate_limits" ;
+: UT-CODEX-USAGE$ ( -- ptr u8 n ) s" /chatgpt.com/backend-api/wham/usage" ;
+: UT-CODEX-CONSUME$ ( -- ptr u8 n )
+   s" /chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume" ;
+: UT-CODEX-TOKEN$ ( -- ptr u8 n ) s" /auth.openai.com/oauth/token" ;
+
+: UT-ROUTES ( -- )
+   HTTP:ROUTES-RESET
+   s" GET" UT-CLAUDE-USAGE$
+   [: UT-CLAUDE-USAGE$ P-CLAUDE UT-SERVE ;] HTTP:ROUTE
+   s" GET" UT-CLAUDE-PROFILE$
+   [: UT-CLAUDE-PROFILE$ P-CLAUDE UT-SERVE ;] HTTP:ROUTE
+   s" POST" UT-CLAUDE-TOKEN$
+   [: UT-CLAUDE-TOKEN$ P-CLAUDE UT-SERVE ;] HTTP:ROUTE
+   s" POST" UT-CLAUDE-RESET$
+   [: UT-CLAUDE-RESET$ P-CLAUDE UT-SERVE ;] HTTP:ROUTE
+   s" GET" UT-CODEX-USAGE$
+   [: UT-CODEX-USAGE$ P-CODEX UT-SERVE ;] HTTP:ROUTE
+   s" POST" UT-CODEX-CONSUME$
+   [: UT-CODEX-CONSUME$ P-CODEX UT-SERVE ;] HTTP:ROUTE
+   s" POST" UT-CODEX-TOKEN$
+   [: UT-CODEX-TOKEN$ P-CODEX UT-SERVE ;] HTTP:ROUTE ;
+
+: UT-TURN-PATH! ( n ptr u8 ptr n -- ) {: p buf up :}
+   STORE$ {: s su :}
+   SB-RESET s su SB-APPEND s" /turn-" SB-APPEND p PROVIDER$ SB-APPEND
+   SB$ buf up PATH! ;
+
+\ the paths a worker writes and locks are fixed before it runs
+: UT-SERVE-START ( -- )
+   UT-ARENA-CAP MEM-ALLOC-BYTES drop UT-ARENA-A !
+   LOG$ UT-LOG-PATH UT-LOG-PATH-U PATH!
+   P-CLAUDE UT-CLAUDE-TURN UT-CLAUDE-TURN-U UT-TURN-PATH!
+   P-CODEX UT-CODEX-TURN UT-CODEX-TURN-U UT-TURN-PATH!
+   UT-ANSWERS-RESET
+   AIO:START
+   UT-ROUTES
+   UT-LOOPBACK 0 UT-WORKERS UT-IDLE-MS HTTP:START
+   SB-RESET s" http://127.0.0.1:" SB-APPEND HTTP:PORT FMT:SB-U
+   [char] / SB-APPEND-C SB$ UT-SERVE-AT ;
+
+: UT-SERVE-STOP ( -- ) HTTP:STOP AIO:STOP ;
+
+\ a Claude reset keyed k ku answers word w wu
+: UT-RESULT ( ptr u8 n ptr u8 n -- ) {: k ku w wu :}
+   UT-CLAUDE-RESET$ k ku 200 UT-ANSWER-OPEN
+   s\" {\"result\":\"" UT-BODY+ w wu UT-BODY+ s\" \"}" UT-BODY+
+   UT-ANSWER-CLOSE ;
+
+: UT-CLAUDE-ANSWERS ( -- )
+   UT-CLAUDE-USAGE$ s" " 401 s\" {\"error\":\"expired\"}" UT-ANSWER
+   UT-CLAUDE-USAGE$ s" sk-a" 200 s\" {\"five_hour\":{\"utilization\":56.25,\"resets_at\":\"2026-09-15T14:00:00+00:00\"},\"seven_day\":{\"utilization\":100,\"resets_at\":\"2026-09-21T11:00:00+00:00\"},\"limits\":[{\"kind\":\"session\",\"group\":\"session\",\"scope\":null,\"percent\":56},{\"kind\":\"weekly_scoped\",\"group\":\"weekly\",\"scope\":{\"model\":{\"id\":null,\"display_name\":\"Fable\"},\"surface\":null},\"percent\":48,\"resets_at\":\"2026-09-22T13:00:00+00:00\"}]}" UT-ANSWER
+   UT-CLAUDE-USAGE$ s" sk-b-new" 200 s\" {\"five_hour\":{\"utilization\":12.4,\"resets_at\":\"2026-09-15T15:00:00+00:00\"},\"seven_day_oauth_apps\":{\"utilization\":0.5,\"resets_at\":\"\"}}" UT-ANSWER
+   UT-CLAUDE-TOKEN$ s" " 200 s\" {\"access_token\":\"sk-b-new\",\"refresh_token\":\"r-b-new\",\"expires_in\":3600,\"refresh_token_expires_in\":2592000}" UT-ANSWER
+   UT-CLAUDE-TOKEN$ s" r-e" 429 s\" {\"error\":{\"type\":\"rate_limit_error\"}}" UT-ANSWER
+   s" " s" reset" UT-RESULT
+   UT-CLAUDE-RESET$ s" sk-a" 401 s\" {\"error\":\"expired\"}" UT-ANSWER
+   UT-CLAUDE-RESET$ s" sk-s" 401 s\" {\"error\":\"expired\"}" UT-ANSWER ;
+
+: UT-CODEX-USAGE-ANSWERS ( -- )
+   UT-CODEX-USAGE$ s" " 401 s\" {\"error\":{\"code\":\"token_expired\"}}" UT-ANSWER
+   UT-CODEX-USAGE$ s" at-c" 200 s\" {\"plan_type\":\"pro\",\"rate_limit\":{\"allowed\":false,\"limit_reached\":true,\"primary_window\":{\"used_percent\":100,\"limit_window_seconds\":604800,\"reset_after_seconds\":433078,\"reset_at\":1789904220},\"secondary_window\":null}}" UT-ANSWER
+   UT-CODEX-USAGE$ s" at-d2" 200 s\" {\"rate_limit\":{\"primary_window\":{\"used_percent\":12,\"limit_window_seconds\":18000,\"reset_at\":1789489142},\"secondary_window\":{\"used_percent\":40,\"limit_window_seconds\":604800,\"reset_at\":1790075942}}}" UT-ANSWER
+   UT-CODEX-USAGE$ s" at-dup" 200 s\" {\"rate_limit\":{\"primary_window\":{\"used_percent\":10,\"limit_window_seconds\":18000,\"used_percent\":20}}}" UT-ANSWER
+   UT-CODEX-USAGE$ s" at-whole" 200 s\" {\"rate_limit\":{\"primary_window\":{\"used_percent\":30,\"limit_window_seconds\":6048e2,\"reset_at\":1789904220.0}},\"rate_limit_reset_credits\":{\"available_count\":2.0}}" UT-ANSWER
+   UT-CODEX-USAGE$ s" at-long" 200 s\" {\"plan_type\":\"ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\",\"rate_limit\":{\"primary_window\":{\"used_percent\":30,\"limit_window_seconds\":18000}}}" UT-ANSWER
+   UT-CODEX-USAGE$ s" at-z" 401 s\" {\"error\":{\"code\":\"token_revoked\"}}" UT-ANSWER
+   UT-CODEX-USAGE$ s" at-y" 401 s\" {\"error\":{\"code\":\"token_revoked\"}}" UT-ANSWER ;
+
+: UT-CODEX-ANSWERS ( -- )
+   UT-CODEX-USAGE-ANSWERS
+   UT-CODEX-TOKEN$ s" " 200 s\" {\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d2\",\"refresh_token\":\"rt-d2\"}" UT-ANSWER
+   UT-CODEX-TOKEN$ s" rt-z" 401 s\" {\"error\":\"invalid_grant\"}" UT-ANSWER
+   UT-CODEX-TOKEN$ s" rt-y" 503 s" " UT-ANSWER
+   UT-CODEX-CONSUME$ s" " 401 s\" {\"error\":{\"code\":\"token_expired\"}}" UT-ANSWER
+   UT-CODEX-CONSUME$ s" at-d2" 200 s\" {\"code\":\"reset\"}" UT-ANSWER
+   UT-CODEX-CONSUME$ s" at-z" 401 s\" {\"error\":{\"code\":\"token_revoked\"}}" UT-ANSWER ;
+
+\ the shared answers: each endpoint by the bearer token or the refresh token
+\ it is sent; an unknown token's usage call is rejected, an unknown grant
+\ renewed to sk-b-new or at-d2, and a Claude reset answers "reset"
+: UT-ANSWERS-DEFAULT ( -- )
+   UT-ANSWERS-RESET
+   UT-CLAUDE-ANSWERS
+   UT-CODEX-ANSWERS ;
 
 \ ---- usage on the store ------------------------------------------------------
 create UT-ERR-PATH 256 allot   variable UT-ERR-U
@@ -891,12 +1184,13 @@ create UT-ERR-PATH 256 allot   variable UT-ERR-U
 : UT-STATE= ( ptr u8 n -- ) {: a u :}
    DB-USAGE-STATE DB-STATE$ a u T$= ;
 
-\ a fake curl that answers each usage call with readings to round, chosen by
-\ the bearer token
-: UT-ROUNDING-CURL ( -- )
-   s" curl"
-   s\" #!/bin/sh\nout=; auth=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) case \"$2\" in @*) auth=$(/usr/bin/grep ^Authorization: \"${2#@}\");; esac; shift;; esac; shift; done\ncase \"$auth\" in\n*sk-r1) body='{\"five_hour\":{\"utilization\":12.495},\"seven_day_oauth_apps\":{\"utilization\":12.5},\"limits\":[{\"kind\":\"weekly_scoped\",\"scope\":{\"model\":{\"display_name\":\"A\"}},\"percent\":12.495},{\"kind\":\"weekly_scoped\",\"scope\":{\"model\":{\"display_name\":\"B\"}},\"percent\":12.5},{\"kind\":\"weekly_scoped\",\"scope\":{\"model\":{\"display_name\":\"C\"}},\"percent\":0},{\"kind\":\"weekly_scoped\",\"scope\":{\"model\":{\"display_name\":\"D\"}},\"percent\":-0.5}]}';;\n*sk-r2) body='{\"five_hour\":{\"utilization\":0},\"seven_day_oauth_apps\":{\"utilization\":-1},\"seven_day\":{\"utilization\":-0.4}}';;\n*at-r1) body='{\"rate_limit\":{\"primary_window\":{\"used_percent\":12.495,\"limit_window_seconds\":18000},\"secondary_window\":{\"used_percent\":12.5,\"limit_window_seconds\":604800}}}';;\n*at-r2) body='{\"rate_limit\":{\"primary_window\":{\"used_percent\":0,\"limit_window_seconds\":18000},\"secondary_window\":{\"used_percent\":-2,\"limit_window_seconds\":604800}}}';;\nesac\nprintf '%s' \"$body\" > \"$out\"\nprintf 200\n"
-   UT-WRITE-SCRIPT ;
+\ usage answers with readings to round, chosen by the bearer token
+: UT-ROUNDING-ROWS ( -- )
+   UT-ANSWERS-RESET
+   UT-CLAUDE-USAGE$ s" sk-r1" 200 s\" {\"five_hour\":{\"utilization\":12.495},\"seven_day_oauth_apps\":{\"utilization\":12.5},\"limits\":[{\"kind\":\"weekly_scoped\",\"scope\":{\"model\":{\"display_name\":\"A\"}},\"percent\":12.495},{\"kind\":\"weekly_scoped\",\"scope\":{\"model\":{\"display_name\":\"B\"}},\"percent\":12.5},{\"kind\":\"weekly_scoped\",\"scope\":{\"model\":{\"display_name\":\"C\"}},\"percent\":0},{\"kind\":\"weekly_scoped\",\"scope\":{\"model\":{\"display_name\":\"D\"}},\"percent\":-0.5}]}" UT-ANSWER
+   UT-CLAUDE-USAGE$ s" sk-r2" 200 s\" {\"five_hour\":{\"utilization\":0},\"seven_day_oauth_apps\":{\"utilization\":-1},\"seven_day\":{\"utilization\":-0.4}}" UT-ANSWER
+   UT-CODEX-USAGE$ s" at-r1" 200 s\" {\"rate_limit\":{\"primary_window\":{\"used_percent\":12.495,\"limit_window_seconds\":18000},\"secondary_window\":{\"used_percent\":12.5,\"limit_window_seconds\":604800}}}" UT-ANSWER
+   UT-CODEX-USAGE$ s" at-r2" 200 s\" {\"rate_limit\":{\"primary_window\":{\"used_percent\":0,\"limit_window_seconds\":18000},\"secondary_window\":{\"used_percent\":-2,\"limit_window_seconds\":604800}}}" UT-ANSWER ;
 
 : UT-LIMIT= ( n ptr u8 n n -- ) {: i a u pct :}
    i DB-LIMIT-LABEL$ a u T$=
@@ -904,7 +1198,7 @@ create UT-ERR-PATH 256 allot   variable UT-ERR-U
 
 \ every caller rounds its reading once; a negative one leaves its window out
 : UT-PCT-CALLERS ( -- )
-   UT-ROUNDING-CURL
+   UT-ROUNDING-ROWS
    P-CLAUDE s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-r1\"}}" false PROBE
    s" ok" UT-STATE= DB-LIMIT# 5 T=
    0 s" Session (5-hour)" 12 UT-LIMIT= 1 s" Weekly (7-day)" 13 UT-LIMIT=
@@ -918,27 +1212,24 @@ create UT-ERR-PATH 256 allot   variable UT-ERR-U
    P-CODEX s\" {\"tokens\":{\"access_token\":\"at-r2\"}}" false PROBE
    s" ok" UT-STATE= DB-LIMIT# 1 T= 0 s" Session (5-hour)" 0 UT-LIMIT= ;
 
-\ a fake curl whose usage answer lists entries that are not objects, then one
-\ with a 65-byte model name and a 40-byte kind
-: UT-SCOPED-CURL ( -- )
-   s" curl"
-   s\" #!/bin/sh\nout=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) shift;; esac; shift; done\nprintf '%s' '{\"limits\":[1,\"x\",null,[{\"kind\":\"weekly\"}],{\"kind\":\"weekly_scoped_kkkkkkkkkkkkkkkkkkkkkkkkkk\",\"scope\":{\"model\":{\"display_name\":\"ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\"}},\"percent\":7,\"resets_at\":\"2026-09-22T13:00:00+00:00\"}]}' > \"$out\"\nprintf 200\n"
-   UT-WRITE-SCRIPT ;
+\ a usage answer that lists entries that are not objects, then one with a
+\ 65-byte model name and a 40-byte kind
+: UT-SCOPED-ROWS ( -- )
+   UT-ANSWERS-RESET
+   UT-CLAUDE-USAGE$ s" " 200 s\" {\"limits\":[1,\"x\",null,[{\"kind\":\"weekly\"}],{\"kind\":\"weekly_scoped_kkkkkkkkkkkkkkkkkkkkkkkkkk\",\"scope\":{\"model\":{\"display_name\":\"ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\"}},\"percent\":7,\"resets_at\":\"2026-09-22T13:00:00+00:00\"}]}" UT-ANSWER ;
 
 \ a non-object entry is skipped, and a long name and kind read whole
 : UT-SCOPED-LONG ( -- )
-   UT-SCOPED-CURL
+   UT-SCOPED-ROWS
    P-CLAUDE s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-s1\"}}" false PROBE
    s" ok" UT-STATE= DB-LIMIT# 1 T=
    0 s" ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd Weekly" 7 UT-LIMIT=
    0 DB-LIMIT-RESETS$ s" 2026-09-22T13:00:00+00:00" T$= ;
 
-\ a fake curl that logs the Authorization and ChatGPT-Account-Id lines of
-\ each call and answers it with one window
-: UT-LONG-CURL ( -- )
-   s" curl"
-   s\" #!/bin/sh\nout=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) case \"$2\" in @*) /usr/bin/grep -e ^Authorization: -e ^ChatGPT-Account-Id: \"${2#@}\" >> \"$KIBA_TEST_LOG\";; esac; shift;; esac; shift; done\nprintf '%s' '{\"rate_limit\":{\"primary_window\":{\"used_percent\":12,\"limit_window_seconds\":18000}}}' > \"$out\"\nprintf 200\n"
-   UT-WRITE-SCRIPT ;
+\ a Codex usage answer with one window, whatever the token
+: UT-LONG-ROWS ( -- )
+   UT-ANSWERS-RESET
+   UT-CODEX-USAGE$ s" " 200 s\" {\"rate_limit\":{\"primary_window\":{\"used_percent\":12,\"limit_window_seconds\":18000}}}" UT-ANSWER ;
 
 16384 constant UT-LONG-CAP   \ the login and both header lines it sends
 create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
@@ -970,7 +1261,7 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
 
 \ a token and an account id are read whole and sent whole
 : UT-LONG-TOKEN ( -- )
-   UT-LONG-CURL
+   UT-LONG-ROWS
    0 UT-LONG-U !
    s\" {\"tokens\":{\"access_token\":\"" UT-LONG+ UT-TOK+
    s\" \",\"account_id\":\"" UT-LONG+ UT-ACCT+ s\" \"}}" UT-LONG+
@@ -1052,27 +1343,9 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    DB-USAGE-NOTE$ s" OpenAI's token endpoint answered 503" T$=
    P-CODEX s" y@x.test" AUTH-Y$ UT-LOGIN= ;
 
-\ provider p's scratch files are gone
-: UT-SCRATCH-GONE ( n -- ) {: p :}
-   p s" /headers.txt" PSUB-PUBLIC$ FS:FILE? TFALSE
-   p s" /body.json" PSUB-PUBLIC$ FS:FILE? TFALSE ;
-
-\ curl read provider p's token request from p's own scratch directory
-: UT-REQ-LOGGED ( n -- ) {: p :}
-   p s" /request.json" PSUB-PUBLIC$ {: q qu :}
-   SB-RESET s" data @" SB-APPEND q qu SB-APPEND
-   SB$ UT-BUF 256 SPAN-COPY {: r ru :}
-   LOG$ READ-FILE$ r ru CONTAINS? TTRUE ;
-
-\ tokens travel in a 0600 header file, never argv; the scratch files go
+\ each request names its endpoint, its token and its client
 : UT-USAGE-LOG ( -- )
-   P-CLAUDE UT-SCRATCH-GONE
-   P-CODEX UT-SCRATCH-GONE
-   P-CLAUDE UT-REQ-LOGGED
-   P-CODEX UT-REQ-LOGGED
    LOG$ READ-FILE$ {: l lu :}
-   l lu s" argvheader Authorization" CONTAINS? TFALSE
-   l lu s" hdrmode 600" CONTAINS? TTRUE
    l lu s" https://platform.claude.com/v1/oauth/token" CONTAINS? TTRUE
    l lu s" https://api.anthropic.com/api/oauth/usage?cedar_ember=1&at_wall=1" CONTAINS? TTRUE
    l lu s" https://auth.openai.com/oauth/token" CONTAINS? TTRUE
@@ -1082,29 +1355,19 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    l lu s" ua User-Agent: codex-cli" CONTAINS? TTRUE
    l lu s" ua User-Agent: claude-cli/2.1.282 (external, cli)" CONTAINS? TTRUE ;
 
-\ each provider's scratch directory is its own: cleaning one, as a probe
-\ does before and after its requests, leaves the other's files
-: UT-SCRATCH-APART ( -- )
-   P-CLAUDE PROBE-PREPARE
-   P-CODEX PROBE-PREPARE
-   P-CLAUDE s" /body.json" PSUB-PUBLIC$ s" a" FS:WRITE-ALL
-   P-CODEX s" /body.json" PSUB-PUBLIC$ s" b" FS:WRITE-ALL
-   P-CLAUDE PROBE-CLEANUP
-   P-CLAUDE s" /body.json" PSUB-PUBLIC$ FS:FILE? TFALSE
-   P-CODEX s" /body.json" PSUB-PUBLIC$ FS:FILE? TTRUE
-   P-CODEX PROBE-CLEANUP
-   P-CODEX s" /body.json" PSUB-PUBLIC$ FS:FILE? TFALSE ;
-
 \ a saved Claude login whose access token has expired
 : CREDS-T$ ( -- ptr u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-t\",\"refreshToken\":\"r-t\",\"expiresAt\":2,\"scopes\":[\"user:inference\"],\"subscriptionType\":\"max\"}}" ;
 
-\ a fake curl that renews any Claude grant to sk-t-new, then answers its
-\ usage call with a body past BUF-CAP; every other call gets {}
-: UT-RENEW-THROW-CURL ( -- )
-   s" curl"
-   s\" #!/bin/sh\nout=; auth=; url=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) case \"$2\" in @*) auth=$(/usr/bin/grep ^Authorization: \"${2#@}\");; esac; shift;; --data-binary|-X|-m|-w) shift;; -*) ;; *) url=$1;; esac; shift; done\nbody='{}'\ncase \"$url\" in\n*platform.claude.com/v1/oauth/token) body='{\"access_token\":\"sk-t-new\",\"refresh_token\":\"r-t-new\",\"expires_in\":3600}';;\n*api.anthropic.com/api/oauth/usage*) case \"$auth\" in *sk-t-new) /usr/bin/head -c 4194305 /dev/zero | /usr/bin/tr '\\0' ' ' > \"$out\"; printf 200; exit 0;; esac;;\nesac\nprintf '%s' \"$body\" > \"$out\"\nprintf 200\n"
-   UT-WRITE-SCRIPT ;
+\ any Claude grant renewed to sk-t-new, whose usage call is answered with a
+\ body one byte past BUF-CAP; every other usage call gets {}
+: UT-RENEW-THROW-ROWS ( -- )
+   UT-ANSWERS-RESET
+   UT-CLAUDE-TOKEN$ s" " 200 s\" {\"access_token\":\"sk-t-new\",\"refresh_token\":\"r-t-new\",\"expires_in\":3600}" UT-ANSWER
+   UT-CLAUDE-USAGE$ s" " 200 s" {}" UT-ANSWER
+   UT-CLAUDE-USAGE$ s" sk-t-new" 200 UT-ANSWER-OPEN
+   STR-SPACE 4194305 UT-BODY-FILL
+   UT-ANSWER-CLOSE ;
 
 : UT-RENEWED-T ( ptr u8 n -- ) {: c cu :}
    c cu CHECK-OBJECT
@@ -1115,11 +1378,11 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
 \ a probe that throws after renewing the token records its error and keeps
 \ the renewed login in the row
 : UT-RENEWED-THROWS ( -- )
-   UT-RENEW-THROW-CURL
+   UT-RENEW-THROW-ROWS
    P-CLAUDE s" t@x.test" CREDS-T$ UT-PUT
    P-CLAUDE CMD-USAGE
    P-CLAUDE s" t@x.test" UT-RECORD s" error" UT-STATE=
-   DB-USAGE-NOTE$ s" a login file or path is too large" T$=
+   DB-USAGE-NOTE$ s" too many: bytes in a JSON document (limit 4 MiB)" T$=
    P-CLAUDE s" t@x.test" [: UT-RENEWED-T ;] UT-ROW-LOGIN
    P-CLAUDE s" t@x.test" CMD-FORGET ;
 
@@ -1190,7 +1453,7 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
 \ d@x.test refreshes after a 401, y@x.test's refresh meets a 503. Each
 \ account's error stays its own: the command succeeds.
 : UT-USAGE ( -- )
-   UT-FAKE-CURL
+   UT-ANSWERS-DEFAULT
    P-CLAUDE s" b@x.test" CREDS-B$ UT-PUT
    P-CLAUDE s" e@x.test" CREDS-E$ UT-PUT
    P-CLAUDE s" f@x.test" CREDS-F$ UT-PUT
@@ -1295,13 +1558,24 @@ create UT-AT-BUF 1024 allot
    P-CODEX s" long@x.test" CMD-FORGET ;
 
 \ ---- Claude probe outcomes ----------------------------------------------------
-\ a fake curl for the Claude outcomes: the usage and profile calls answer by
-\ the bearer token, the token call by the refresh grant; sk-down's usage
-\ call fails to connect as curl does, printing 000 and exiting 7
-: UT-CLAUDE-CURL ( -- )
-   s" curl"
-   s\" #!/bin/sh\nout=; auth=; url=; grant=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) case \"$2\" in @*) auth=$(/usr/bin/grep ^Authorization: \"${2#@}\");; esac; shift;; --data-binary) grant=$(/usr/bin/cat \"${2#@}\"); shift;; -X|-m|-w) shift;; *) url=$1;; esac; shift; done\ncode=200; body='{}'\ncase \"$url\" in\n*/api/oauth/usage*) case \"$auth\" in *sk-nop) code=403; body='{\"type\":\"error\",\"error\":{\"type\":\"permission_error\",\"message\":\"OAuth authentication is currently not allowed for this organization.\",\"details\":{\"error_code\":\"oauth_not_allowed_for_organization\"}}}';; *sk-paid|*sk-free) code=429; body='{\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\",\"message\":\"Number of requests has exceeded your rate limit\"}}';; *sk-rej) code=401; body='{\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"Invalid bearer token\"}}';; *sk-down) printf 000; exit 7;; *sk-bad) body='[1]';; esac;;\n*/api/oauth/profile) case \"$auth\" in *sk-free) body='{\"organization\":{\"uuid\":\"org-f\",\"organization_type\":\"claude_free\"}}';; *) body='{\"organization\":{\"uuid\":\"org-p\",\"organization_type\":\"claude_max\"}}';; esac;;\n*/v1/oauth/token) case \"$grant\" in *r-old400*) code=400; body='{\"error\":\"invalid_grant\",\"error_description\":\"Refresh token not found or invalid\"}';; *r-old401*) code=401; body='{\"error\":\"invalid_grant\"}';; *r-hold*) code=403; body='{\"error\":\"access_denied\",\"error_description\":\"account_on_hold\",\"error_uri\":\"https://support.anthropic.com/appeal\"}';; esac;;\n*) code=404;;\nesac\nprintf '%s' \"$body\" > \"$out\"\nprintf '%s' \"$code\"\n"
-   UT-WRITE-SCRIPT ;
+\ the Claude outcomes: the usage and profile calls answer by the bearer
+\ token, the token call by the refresh grant; sk-down's usage call meets a
+\ connection closed without an answer
+: UT-CLAUDE-OUTCOME-ROWS ( -- )
+   UT-ANSWERS-RESET
+   UT-CLAUDE-USAGE$ s" " 200 s" {}" UT-ANSWER
+   UT-CLAUDE-USAGE$ s" sk-nop" 403 s\" {\"type\":\"error\",\"error\":{\"type\":\"permission_error\",\"message\":\"OAuth authentication is currently not allowed for this organization.\",\"details\":{\"error_code\":\"oauth_not_allowed_for_organization\"}}}" UT-ANSWER
+   UT-CLAUDE-USAGE$ s" sk-paid" 429 s\" {\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\",\"message\":\"Number of requests has exceeded your rate limit\"}}" UT-ANSWER
+   UT-CLAUDE-USAGE$ s" sk-free" 429 s\" {\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\",\"message\":\"Number of requests has exceeded your rate limit\"}}" UT-ANSWER
+   UT-CLAUDE-USAGE$ s" sk-rej" 401 s\" {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"Invalid bearer token\"}}" UT-ANSWER
+   UT-CLAUDE-USAGE$ s" sk-down" 0 s" " UT-ANSWER
+   UT-CLAUDE-USAGE$ s" sk-bad" 200 s" [1]" UT-ANSWER
+   UT-CLAUDE-PROFILE$ s" " 200 s\" {\"organization\":{\"uuid\":\"org-p\",\"organization_type\":\"claude_max\"}}" UT-ANSWER
+   UT-CLAUDE-PROFILE$ s" sk-free" 200 s\" {\"organization\":{\"uuid\":\"org-f\",\"organization_type\":\"claude_free\"}}" UT-ANSWER
+   UT-CLAUDE-TOKEN$ s" " 200 s" {}" UT-ANSWER
+   UT-CLAUDE-TOKEN$ s" r-old400" 400 s\" {\"error\":\"invalid_grant\",\"error_description\":\"Refresh token not found or invalid\"}" UT-ANSWER
+   UT-CLAUDE-TOKEN$ s" r-old401" 401 s\" {\"error\":\"invalid_grant\"}" UT-ANSWER
+   UT-CLAUDE-TOKEN$ s" r-hold" 403 s\" {\"error\":\"access_denied\",\"error_description\":\"account_on_hold\",\"error_uri\":\"https://support.anthropic.com/appeal\"}" UT-ANSWER ;
 
 \ expiresAt of a token still good, and of one long expired
 : UT-FAR ( -- n ) 4102444800000 ;
@@ -1384,9 +1658,9 @@ create UT-AT-BUF 1024 allot
    UT-OUTCOME-GONE ;
 
 \ every outcome of a saved Claude login's probe, as kiba-mac's ClaudeProbe
-\ records it; the shared fake curl is back afterwards
+\ records it; the shared answers are back afterwards
 : UT-CLAUDE-OUTCOMES ( -- )
-   UT-CLAUDE-CURL
+   UT-CLAUDE-OUTCOME-ROWS
    UT-CLAUDE-NO-PLAN
    UT-CLAUDE-THROTTLED
    UT-CLAUDE-FREE
@@ -1395,7 +1669,7 @@ create UT-AT-BUF 1024 allot
    UT-CLAUDE-ON-HOLD
    UT-CLAUDE-UNREACHED
    UT-CLAUDE-UNREADABLE
-   UT-FAKE-CURL ;
+   UT-ANSWERS-DEFAULT ;
 
 \ the fake `claude` logs its argv and every CLAUDE_CONFIG_DIR row execve gave
 \ it, which sh collapses to one, then writes account B into CLAUDE_CONFIG_DIR,
@@ -1428,7 +1702,7 @@ create UT-OFF-PATH 256 allot
 
 : UT-ADD ( -- )
    UT-FAKE-CODEX
-   UT-FAKE-CURL
+   UT-ANSWERS-DEFAULT
    P-CODEX s" d@x.test" CMD-FORGET
    s" /fail-login" UT-HOME-FILE$ {: f fu :}
    f fu s" x" FS:WRITE-ALL
@@ -1452,7 +1726,7 @@ create UT-OFF-PATH 256 allot
    P-CODEX s" c@x.test" AUTH-C9$ UT-LOGIN=
    P-CODEX LOGIN-HOME$ FS:DIR? TFALSE
    LOG$ READ-FILE$ {: l lu :}
-   l lu s\" present\nhdrmode 600" CONTAINS? TTRUE
+   l lu s\" present\nua User-Agent: codex-cli" CONTAINS? TTRUE
    l lu s" /login-codex/.codex" CONTAINS? TTRUE
    l lu s" absent" CONTAINS? TFALSE ;
 
@@ -1702,7 +1976,7 @@ create UT-REAL 256 allot
 : OAUTH-N$ ( -- ptr u8 n )
    s\" {\"accountUuid\":\"u3\",\"emailAddress\":\"n@x.test\",\"organizationUuid\":\"org-n\"}" ;
 
-\ a login whose token has expired; the fake usage never answers it ok
+\ a login whose token has expired; no shared usage answer is ok for it
 : CREDS-N-OLD$ ( -- ptr u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-n-old\",\"refreshToken\":\"r-n\",\"expiresAt\":1,\"subscriptionType\":\"pro\"}}" ;
 
@@ -1711,7 +1985,7 @@ create UT-REAL 256 allot
    OAUTH-N$ ID-SLOT CLAUDE-OAUTH-IDENTITY
    [: [: P-CLAUDE s" n@x.test" ID-SLOT CREDS-N-OLD$ OAUTH-N$ false DB-PUT ;] DB-WRITE ;] UT-STORE ;
 
-\ a refresh request for refresh token r, as the fake curl logs it
+\ a refresh request for refresh token r, as the server logs it
 : UT-GRANT$ ( ptr u8 n -- ptr u8 n ) {: r ru :}
    SB-RESET s\" body {\"grant_type\":\"refresh_token\",\"refresh_token\":\"" SB-APPEND
    r ru SB-APPEND s\" \"" SB-APPEND SB$ ;
@@ -1755,7 +2029,7 @@ create UT-AUTH-BUF 256 allot
 : CREDS-R$ ( -- ptr u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-r\",\"refreshToken\":\"r-r\",\"expiresAt\":4102444800000,\"subscriptionType\":\"max\"}}" ;
 
-\ a Codex login whose token makes the fake reset answer w
+\ a Codex login whose token UT-CODEX-WORD answers
 : UT-AUTH-W$ ( ptr u8 n -- ptr u8 n ) {: w wu :}
    SB-RESET s\" {\"auth_mode\":\"chatgpt\",\"tokens\":{\"access_token\":\"at-w-" SB-APPEND
    w wu SB-APPEND
@@ -1764,11 +2038,21 @@ create UT-AUTH-BUF 256 allot
 
 \ r@x.test's banked grant w-<word> spent: the answer's word is the outcome
 : UT-CLAUDE-WORD ( ptr u8 n ptr u8 n -- ) {: g gu t tu :}
+   s" sk-r" g 2 + gu 2 - UT-RESULT
    P-CLAUDE s" r@x.test" s" cedar_ember" g gu UT-OFFER
    P-CLAUDE s" r@x.test" CMD-REDEEM
    s" r@x.test" REDEEMED$ t tu T$= ;
 
+\ at-w-<w>'s reset is answered with code w, its usage call with {}
+: UT-CODE-ROWS ( ptr u8 n -- ) {: w wu :}
+   SB-RESET s" at-w-" SB-APPEND w wu SB-APPEND SB$ {: k ku :}
+   UT-CODEX-CONSUME$ k ku 200 UT-ANSWER-OPEN
+   s\" {\"code\":\"" UT-BODY+ w wu UT-BODY+ s\" \"}" UT-BODY+
+   UT-ANSWER-CLOSE
+   UT-CODEX-USAGE$ k ku 200 s" {}" UT-ANSWER ;
+
 : UT-CODEX-WORD ( ptr u8 n ptr u8 n -- ) {: w wu t tu :}
+   w wu UT-CODE-ROWS
    w wu UT-AUTH-W$ {: d du :}
    P-CODEX s" w@x.test" d du UT-PUT
    P-CODEX s" w@x.test" s" " s" " UT-OFFER
@@ -1817,16 +2101,19 @@ create UT-AUTH-BUF 256 allot
    s" w-cooldown" s" Limit resets are cooling down for r@x.test; try again later" UT-CLAUDE-WORD
    s" w-ineligible" s" r@x.test cannot reset its limit" UT-CLAUDE-WORD
    s" w-unavailable" s" Limit resets are unavailable for r@x.test right now" UT-CLAUDE-WORD
+   UT-ANSWERS-DEFAULT
    UT-LOG-MARK
    P-CLAUDE s" r@x.test" s" juniper_tide" s" " UT-OFFER
    P-CLAUDE s" r@x.test" CMD-REDEEM
    s" r@x.test" REDEEMED$ s" Limit reset for r@x.test" T$=
    UT-LOG-NEW$ s\" body {\"program\":\"juniper_tide\"}" CONTAINS? TTRUE
+   s" sk-r" s" bogus" UT-RESULT
    P-CLAUDE s" r@x.test" s" cedar_ember" s" w-bogus" UT-OFFER
    [: P-CLAUDE s" r@x.test" CMD-REDEEM ;] E-SW-REMOTE TTHROWSQ
    E-SW-REMOTE REASON$ s\" kiba: Anthropic's reset endpoint sent an unknown result \"bogus\"" T$=
    P-CLAUDE s" r@x.test" CREDS-R$ UT-LOGIN=
-   P-CLAUDE s" r@x.test" CMD-FORGET ;
+   P-CLAUDE s" r@x.test" CMD-FORGET
+   UT-ANSWERS-DEFAULT ;
 
 : CREDS-S$ ( -- ptr u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-s\",\"refreshToken\":\"r-s\",\"expiresAt\":4102444800000,\"subscriptionType\":\"pro\"}}" ;
@@ -1855,14 +2142,20 @@ create UT-AUTH-BUF 256 allot
    UT-LOG-NEW$ s" /api/organizations/a%2Fb%3Fc/reset_rate_limits " CONTAINS? TTRUE
    P-CLAUDE s" r@x.test" CMD-FORGET ;
 
-1100 constant UT-GRANT-U   \ bytes in UT-GRANT-CURL's grant id, all g
+1100 constant UT-GRANT-U   \ bytes in UT-GRANT-ROWS' grant id, all g
 
-\ a fake curl whose usage answer has each window's reset and banks two
-\ grants, the next one UT-GRANT-U bytes long; a reset logs its request body
-: UT-GRANT-CURL ( -- )
-   s" curl"
-   s\" #!/bin/sh\nout=; url=; grant=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) shift;; --data-binary) grant=$(/usr/bin/cat \"${2#@}\"); echo \"body $grant\" >> \"$KIBA_TEST_LOG\"; shift;; -X|-m|-w) shift;; *) url=$1;; esac; shift; done\ng=$(/usr/bin/head -c 1100 /dev/zero | /usr/bin/tr '\\0' g)\ncode=200; body='{}'\ncase \"$url\" in\n*api.anthropic.com/api/oauth/usage*) body='{\"five_hour\":{\"utilization\":10,\"resets_at\":\"2026-10-01T10:00:00+00:00\"},\"seven_day\":{\"utilization\":20,\"resets_at\":\"2026-10-07T10:00:00+00:00\"},\"limits\":[{\"kind\":\"weekly_scoped\",\"scope\":{\"model\":{\"display_name\":\"Fable\"}},\"percent\":30,\"resets_at\":\"2026-10-08T10:00:00+00:00\"}],\"cedar_ember\":{\"eligible\":true,\"next_grant_id\":\"'\"$g\"'\",\"grants\":[{\"id\":\"other\",\"resets_left\":9},{\"id\":\"'\"$g\"'\",\"resets_left\":2}]}}';;\n*api.anthropic.com/api/organizations/*/reset_rate_limits) body='{\"result\":\"reset\"}';;\n*) code=404;;\nesac\nprintf '%s' \"$body\" > \"$out\"\nprintf '%s' \"$code\"\n"
-   UT-WRITE-SCRIPT ;
+\ a usage answer with each window's reset that banks two grants, the next
+\ one UT-GRANT-U bytes of g; a Claude reset answers "reset"
+: UT-GRANT-ROWS ( -- )
+   UT-ANSWERS-RESET
+   UT-CLAUDE-USAGE$ s" " 200 UT-ANSWER-OPEN
+   s\" {\"five_hour\":{\"utilization\":10,\"resets_at\":\"2026-10-01T10:00:00+00:00\"},\"seven_day\":{\"utilization\":20,\"resets_at\":\"2026-10-07T10:00:00+00:00\"},\"limits\":[{\"kind\":\"weekly_scoped\",\"scope\":{\"model\":{\"display_name\":\"Fable\"}},\"percent\":30,\"resets_at\":\"2026-10-08T10:00:00+00:00\"}],\"cedar_ember\":{\"eligible\":true,\"next_grant_id\":\"" UT-BODY+
+   [char] g UT-GRANT-U UT-BODY-FILL
+   s\" \",\"grants\":[{\"id\":\"other\",\"resets_left\":9},{\"id\":\"" UT-BODY+
+   [char] g UT-GRANT-U UT-BODY-FILL
+   s\" \",\"resets_left\":2}]}}" UT-BODY+
+   UT-ANSWER-CLOSE
+   s" " s" reset" UT-RESULT ;
 
 : CREDS-G$ ( -- ptr u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-g\",\"refreshToken\":\"r-g\",\"expiresAt\":4102444800000,\"subscriptionType\":\"max\"}}" ;
@@ -1870,7 +2163,7 @@ create UT-AUTH-BUF 256 allot
 \ a probe records each window's reset and the banked grant named next,
 \ whole; spending it sends that grant whole
 : UT-REDEEM-LONG-GRANT ( -- )
-   UT-GRANT-CURL
+   UT-GRANT-ROWS
    0 UT-LONG-U ! [char] g UT-GRANT-U UT-LONG-FILL
    P-CLAUDE s" g@x.test" s" org-g" CREDS-G$ UT-PUT-ORG
    P-CLAUDE CREDS-G$ false PROBE
@@ -1890,7 +2183,7 @@ create UT-AUTH-BUF 256 allot
    s\" \"grant_id\":\"" UT-LONG+ [char] g UT-GRANT-U UT-LONG-FILL [char] " 1 UT-LONG-FILL
    UT-LOG-NEW$ o UT-LONG$ CONTAINS? TTRUE
    P-CLAUDE s" g@x.test" CMD-FORGET
-   UT-FAKE-CURL ;
+   UT-ANSWERS-DEFAULT ;
 
 \ the live login's rejected token is its CLI's to refresh: no refresh is
 \ asked for and the login is left as it was
@@ -1932,7 +2225,8 @@ create UT-AUTH-BUF 256 allot
    s" nothing_to_reset" s" w@x.test is not at a limit; nothing was spent" UT-CODEX-WORD
    s" no_credit" s" No limit resets left for w@x.test" UT-CODEX-WORD
    s" already_redeemed" s" That reset was already used" UT-CODEX-WORD
-   P-CODEX s" w@x.test" CMD-FORGET ;
+   P-CODEX s" w@x.test" CMD-FORGET
+   UT-ANSWERS-DEFAULT ;
 
 \ a saved Codex login revoked by a sign-out: its reset is rejected and
 \ the renewal refused, and the login is left as it was
@@ -1957,7 +2251,7 @@ create UT-KEPT 2048 allot
 create UT-PATH 256 allot
 create UT-REASON 512 allot
 
-\ UT-LOG-MARK where no fake may have logged yet, so the log may not exist
+\ UT-LOG-MARK where nothing may have logged yet, so the log may not exist
 : UT-MARK ( -- )
    LOG$ FS:FILE? 0= if LOG$ s" " FS:WRITE-ALL then
    UT-LOG-MARK ;
@@ -2032,7 +2326,7 @@ create UT-REASON 512 allot
 
 \ Claude credentials without a config stop usage, status, redeem and add
 : UT-ORPHAN-STOPS ( -- )
-   UT-FAKE-CURL
+   UT-ANSWERS-DEFAULT
    CLAUDE-CONFIG$ FS:REMOVE-FILE
    UT-ORPHAN-USAGE
    UT-ORPHAN-STATUS
@@ -2051,7 +2345,7 @@ create UT-REASON 512 allot
    g gu READ-FILE$ UT-KEPT 2048 SPAN-COPY {: k ku :}
    p UT-SNAP$ UT-SNAP0 8192 SPAN-COPY {: s su :}
    su 0 > TTRUE
-   UT-FAKE-CURL
+   UT-ANSWERS-DEFAULT
    g gu d du WRITE-PRIVATE
    [: UT-UNNAMED-STATUS ;] UT-STORE
    UT-MARK
@@ -2071,6 +2365,7 @@ create UT-REASON 512 allot
 \ is sent; the reset then fails, and the renewed login is saved anyway
 : UT-REDEEM-EXPIRED ( -- )
    P-CLAUDE s" b@x.test" s" org-b" CREDS-B$ UT-PUT-ORG
+   s" sk-b-new" s" bogus" UT-RESULT
    P-CLAUDE s" b@x.test" s" cedar_ember" s" w-bogus" UT-OFFER
    UT-LOG-MARK
    [: P-CLAUDE s" b@x.test" CMD-REDEEM ;] E-SW-REMOTE TTHROWSQ
@@ -2080,7 +2375,8 @@ create UT-REASON 512 allot
    l lu s" https://platform.claude.com/v1/oauth/token" CONTAINS? TTRUE
    l lu s" /org-b/reset_rate_limits Authorization: Bearer sk-b-new" CONTAINS? TTRUE
    l lu s\" Bearer sk-b\n" CONTAINS? TFALSE
-   P-CLAUDE s" b@x.test" CMD-FORGET ;
+   P-CLAUDE s" b@x.test" CMD-FORGET
+   UT-ANSWERS-DEFAULT ;
 
 \ an unknown name is refused before any endpoint is called
 : UT-REDEEM-UNKNOWN ( -- )
@@ -2462,14 +2758,18 @@ create UT-LIST UT-LIST-CAP allot
    UT-QUEUE-LEN 0 T= ;
 
 \ ---- every Codex probe outcome ------------------------------------------------
-\ a fake curl for the Codex outcomes: the usage call answers 429 to at-t,
-\ 200 to at-d2 and 401 to any other token; the token endpoint refuses
-\ rt-x with invalid_grant, answers rt-u without an access token and 503 to
-\ anything else; each call is logged with its token and request body
-: UT-OUTCOME-CURL ( -- )
-   s" curl"
-   s\" #!/bin/sh\nout=; auth=; url=; grant=\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; -H) case \"$2\" in @*) auth=$(/usr/bin/grep ^Authorization: \"${2#@}\");; esac; shift;; --data-binary) grant=$(/usr/bin/cat \"${2#@}\"); shift;; -X|-m|-w) shift;; *) url=$1;; esac; shift; done\necho \"$url $auth $grant\" >> \"$KIBA_TEST_LOG\"\ncode=200; body='{}'\ncase \"$url\" in\n*chatgpt.com/backend-api/wham/usage) case \"$auth\" in *at-t) code=429; body='{\"error\":{\"code\":\"rate_limited\"}}';; *at-d2) ;; *) code=401; body='{\"error\":{\"code\":\"token_expired\"}}';; esac;;\n*auth.openai.com/oauth/token) case \"$grant\" in *rt-x*) code=400; body='{\"error\":\"invalid_grant\"}';; *rt-u*) body='{\"refresh_token\":\"rt-u2\"}';; *) code=503; body='';; esac;;\n*) code=404;;\nesac\nprintf '%s' \"$body\" > \"$out\"\nprintf '%s' \"$code\"\n"
-   UT-WRITE-SCRIPT ;
+\ the Codex outcomes: the usage call answers 429 to at-t, 200 to at-d2 and
+\ 401 to any other token; the token endpoint refuses rt-x with
+\ invalid_grant, answers rt-u without an access token and 503 to anything
+\ else
+: UT-CODEX-OUTCOME-ROWS ( -- )
+   UT-ANSWERS-RESET
+   UT-CODEX-USAGE$ s" " 401 s\" {\"error\":{\"code\":\"token_expired\"}}" UT-ANSWER
+   UT-CODEX-USAGE$ s" at-t" 429 s\" {\"error\":{\"code\":\"rate_limited\"}}" UT-ANSWER
+   UT-CODEX-USAGE$ s" at-d2" 200 s" {}" UT-ANSWER
+   UT-CODEX-TOKEN$ s" " 503 s" " UT-ANSWER
+   UT-CODEX-TOKEN$ s" rt-x" 400 s\" {\"error\":\"invalid_grant\"}" UT-ANSWER
+   UT-CODEX-TOKEN$ s" rt-u" 200 s\" {\"refresh_token\":\"rt-u2\"}" UT-ANSWER ;
 
 \ an API-key login whose tokens hold an access token but no id_token
 : AUTH-KEY-AT$ ( -- ptr u8 n )
@@ -2488,7 +2788,7 @@ create UT-LIST UT-LIST-CAP allot
 : AUTH-T$ ( -- ptr u8 n )
    s\" {\"auth_mode\":\"chatgpt\",\"tokens\":{\"access_token\":\"at-t\",\"refresh_token\":\"rt-t\",\"account_id\":\"acct\"}}" ;
 
-\ usage codex run with row a u holding login l lu, the fakes' log marked
+\ usage codex run with row a u holding login l lu, the log marked
 \ before it
 : UT-OUTCOME-RUN ( ptr u8 n ptr u8 n -- ) {: a u l lu :}
    P-CODEX a u l lu UT-PUT
@@ -2553,18 +2853,18 @@ create UT-LIST UT-LIST-CAP allot
    UT-LOG-NEW$ s" rt-t" CONTAINS? TFALSE
    P-CODEX s" t@x.test" CMD-FORGET ;
 
-\ each outcome of a Codex probe that the shared fake curl never answers,
+\ each outcome of a Codex probe that the shared answers never give,
 \ read as kiba-mac's CodexProbe records it; the live c@x.test answers 401
 \ throughout
 : UT-CODEX-OUTCOMES ( -- )
-   UT-OUTCOME-CURL
+   UT-CODEX-OUTCOME-ROWS
    UT-CODEX-API-KEY
    UT-CODEX-LIVE-401
    UT-CODEX-REFUSED
    UT-CODEX-NO-GRANT
    UT-CODEX-NO-ACCESS
    UT-CODEX-THROTTLED
-   UT-FAKE-CURL ;
+   UT-ANSWERS-DEFAULT ;
 
 \ ---- the order of the queue -------------------------------------------------
 create UT-READY 8 allot
@@ -2629,10 +2929,8 @@ create UT-OWN-TURN PATH-CAP allot    variable UT-OWN-TURN-U
 create UT-WRAP-BUF 1024 allot
 
 \ provider p's turn file
-: UT-TURN-OF$ ( n -- ptr u8 n ) {: p :}
-   STORE$ {: s su :}
-   SB-RESET s su SB-APPEND s" /turn-" SB-APPEND p PROVIDER$ SB-APPEND
-   SB$ UT-OWN-TURN UT-OWN-TURN-U PATH!
+: UT-TURN-OF$ ( n -- ptr u8 n )
+   UT-OWN-TURN UT-OWN-TURN-U UT-TURN-PATH!
    UT-OWN-TURN UT-OWN-TURN-U @ ;
 
 \ the fake script name in the scratch PATH
@@ -2672,7 +2970,8 @@ create UT-WRAP-BUF 1024 allot
    SB-RESET s" turn " SB-APPEND s su SB-APPEND
    STR-SPACE SB-APPEND-C n nu SB-APPEND SB$ ;
 
-\ since the mark, name ran with its provider's turn held, never without
+\ since the mark, name ran with its provider's turn held, never without:
+\ a fake's name, or request for the requests the server took
 : UT-RAN-HELD ( ptr u8 n -- ) {: n nu :}
    UT-LOG-NEW$ {: l lu :}
    l lu s" held" n nu UT-TURN-LINE$ CONTAINS? TTRUE
@@ -2681,37 +2980,35 @@ create UT-WRAP-BUF 1024 allot
 
 \ usage probes each provider's logins inside that provider's turn
 : UT-USAGE-HELD ( -- )
-   UT-FAKE-CURL P-CLAUDE s" curl" UT-TURN-WRAP
+   UT-ANSWERS-DEFAULT
    UT-LOG-MARK
    P-CLAUDE CMD-USAGE
-   s" curl" UT-RAN-HELD
-   UT-FAKE-CURL P-CODEX s" curl" UT-TURN-WRAP
+   s" request" UT-RAN-HELD
    UT-LOG-MARK
    P-CODEX CMD-USAGE
-   s" curl" UT-RAN-HELD ;
+   s" request" UT-RAN-HELD ;
 
 \ use probes the login it installs and the one it saved back in its turn
 : UT-USE-HELD ( -- )
    UT-LOG-MARK
    P-CODEX s" d@x.test" CMD-USE
    P-CODEX s" c@x.test" CMD-USE
-   s" curl" UT-RAN-HELD ;
+   s" request" UT-RAN-HELD ;
 
 \ redeem asks for the reset and probes again in its turn
 : UT-REDEEM-HELD ( -- )
    UT-LOG-MARK
    s" reset" s" Limit reset for w@x.test" UT-CODEX-WORD
-   s" curl" UT-RAN-HELD
+   s" request" UT-RAN-HELD
    P-CODEX s" w@x.test" CMD-FORGET ;
 
 \ add's login runs in its turn, and so does the probe of the new login
 : UT-ADD-HELD ( -- )
    UT-FAKE-CLAUDE P-CLAUDE s" claude" UT-TURN-WRAP
-   UT-FAKE-CURL P-CLAUDE s" curl" UT-TURN-WRAP
    UT-LOG-MARK
    P-CLAUDE s" b@x.test" CMD-ADD
    s" claude" UT-RAN-HELD
-   s" curl" UT-RAN-HELD
+   s" request" UT-RAN-HELD
    P-CLAUDE s" b@x.test" CMD-FORGET
    UT-FAKE-CLAUDE ;
 
@@ -2721,7 +3018,7 @@ create UT-WRAP-BUF 1024 allot
    UT-USE-HELD
    UT-REDEEM-HELD
    UT-ADD-HELD
-   UT-FAKE-CURL ;
+   UT-ANSWERS-DEFAULT ;
 
 \ a Claude turn held elsewhere: usage waits TURN-WAIT-MS, reports the busy
 \ turn as Claude's error and calls nothing
@@ -2743,7 +3040,8 @@ create UT-WRAP-BUF 1024 allot
 \ ---- kiba as a program -------------------------------------------------------
 \ MAIN ends the process through die, so a child runs it: the hb running this
 \ suite loads src/kiba.f and a file that calls MAIN. The child's HOME and
-\ store are its own, and no fake is on its PATH, so a probe calls nothing.
+\ store are its own, and its URL-BASE names a scheme libcurl may not speak,
+\ so a probe fails before it reaches any network.
 create UT-HB PATH-CAP allot
 create UT-PROG PATH-CAP allot    variable UT-PROG-U
 create UT-AT PATH-CAP allot      variable UT-AT-U
@@ -2779,9 +3077,13 @@ $1A4 constant UT-MODE-OUT                              \ 0644
 : UT-OUT$ ( -- ptr u8 n ) HOME$ s" /kiba-out" UT-AT$ ;
 : UT-ERR-OUT$ ( -- ptr u8 n ) HOME$ s" /kiba-err" UT-AT$ ;
 
+\ the child's program: requests go nowhere, then MAIN
+: UT-OFFLINE-MAIN$ ( -- ptr u8 n )
+   s\" package SW\n: UT-OFFLINE ( -- ) s\" none://\" URL-BASE URL-BASE-U PATH! ;\nUT-OFFLINE\n;package\nMAIN\n" ;
+
 \ kiba's MAIN, its arguments to follow
 : UT-KIBA-NEW ( -- PROCESS:request )
-   UT-MAIN-F$ s\" MAIN\n" FS:WRITE-ALL
+   UT-MAIN-F$ UT-OFFLINE-MAIN$ FS:WRITE-ALL
    UT-HB$ PROCESS:NEW
    s" --load" PROCESS:ARG
    UT-KIBA-F$ PROCESS:ARG
@@ -2879,9 +3181,7 @@ $1A4 constant UT-MODE-OUT                              \ 0644
    CFG-AB$ CREDS-B$ AUTH-D$ UT-PLACED=
    UT-HOME-BARE ;
 
-: UT-MAIN ( -- )
-   T-RESET
-   ALLOC-BUFFERS
+: UT-ALL ( -- )
    UT-B64
    UT-JWT
    UT-DOC
@@ -2930,7 +3230,6 @@ $1A4 constant UT-MODE-OUT                              \ 0644
    UT-PCT-CALLERS
    UT-SCOPED-LONG
    UT-LONG-TOKEN
-   UT-SCRATCH-APART
    UT-RENEWED-THROWS
    UT-OUTPUT-REFUSED
    UT-USAGE
@@ -2969,7 +3268,13 @@ $1A4 constant UT-MODE-OUT                              \ 0644
    UT-TURN-BUSY
    UT-TURN-ORDER
    UT-EXIT-CODES
-   UT-CONFIG-PLACES
+   UT-CONFIG-PLACES ;
+
+: UT-MAIN ( -- )
+   T-RESET
+   ALLOC-BUFFERS
+   UT-SERVE-START
+   [: UT-ALL ;] [: UT-SERVE-STOP ;] finally
    T-REPORT ;
 
 UT-MAIN

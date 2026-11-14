@@ -15,9 +15,6 @@ require src/lib/fd.f
 package SW
 
 $400000 constant BUF-CAP         \ 4 MiB per runtime buffer
-\ a request's token and account id come from one document, so together they
-\ never need more than BUF-CAP; the rest holds the fixed header lines
-BUF-CAP 4096 + constant HDR-CAP
 $180 constant MODE-PRIVATE-FILE  \ 0600
 $A000 constant S-IFLNK           \ the symlink file type in st_mode
 
@@ -25,11 +22,10 @@ $A000 constant S-IFLNK           \ the symlink file type in st_mode
 TYPED-VARIABLE CFG-A ptr u8    variable CFG-U     \ the live .claude.json document
 TYPED-VARIABLE OUT-A ptr u8    variable OUT-U     \ the spliced .claude.json
 TYPED-VARIABLE FILE-A ptr u8   variable FILE-U    \ the live credentials or auth document
-TYPED-VARIABLE OBJ-A ptr u8    variable OBJ-U     \ an oauthAccount object or a JWT payload
+TYPED-VARIABLE OBJ-A ptr u8    variable OBJ-U     \ an oauthAccount object, a JWT payload or a provider's answer
 TYPED-VARIABLE TOK-A ptr u8    variable TOK-U     \ a raw id_token string
 TYPED-VARIABLE VAL-A ptr u8    variable VAL-U     \ a decoded token
 TYPED-VARIABLE ACCT-ID-A ptr u8  variable ACCT-ID-U  \ a ChatGPT account id
-TYPED-VARIABLE HDR-A ptr u8    variable HDR-U     \ a request's header lines
 TYPED-VARIABLE JSON-A ptr u8                      \ the JSON writer's output
 TYPED-VARIABLE SDOC-A ptr u8   variable SDOC-U    \ one saved login's document
 TYPED-VARIABLE BACK-A ptr u8   variable BACK-U    \ the credentials read back after a failed install
@@ -39,7 +35,6 @@ create DEST-BUF PATH-CAP allot  variable DEST-U
 
 : VAL-BUF ( -- ptr u8 ) VAL-A @ ;
 : ACCT-ID-BUF ( -- ptr u8 ) ACCT-ID-A @ ;
-: HDR-BUF ( -- ptr u8 ) HDR-A @ ;
 
 \ E-SW-CAPACITY for a document over BUF-CAP, in kiba-mac's words
 : DOC-TOO-BIG ( -- )
@@ -107,7 +102,6 @@ public
    TOK-A ALLOC-ONE
    VAL-A ALLOC-ONE
    ACCT-ID-A ALLOC-ONE
-   HDR-CAP MEM-ALLOC-BYTES drop HDR-A !
    JSON-A ALLOC-ONE
    SDOC-A ALLOC-ONE
    BACK-A ALLOC-ONE ;
