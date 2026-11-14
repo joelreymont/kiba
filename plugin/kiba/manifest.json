@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "kiba",
   "name": "AI accounts",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "Joel",
   "license": "MIT",
   "description": "Shows the active Claude Code and Codex accounts and switches between saved logins.",

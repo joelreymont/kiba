@@ -33,15 +33,11 @@ holds that.
     calls (`src/sw-turn.f`).
   - `usage` records kiba-mac's nine states and the limit-reset offer, and
     `redeem` spends a reset (`src/sw-usage.f`).
-  - It builds on current Habu master. The turn, the store's transactions,
-    the status read, installs, save-back, probes and `usage` are
-    `FSM:DEFINE` machines.
-  - Missing against kiba-mac, all in the widget:
-    - model-only limits that leave the account usable (`plugin/kiba/Panel.qml:155`);
-    - the `status --json` shape the CLI now prints: the widget still reads
-      the old one (`plugin/kiba/Status.qml`);
-    - Log In Again;
-    - queued row actions.
+  - It builds on current Habu master. The turn, opening the store, its
+    transactions, installs, the provider exchanges and `usage` are
+    `FSM:DEFINE` machines; the status read and save-back are plain code.
+  - The widget matches kiba-mac's app, and its bar icon is kiba-mac's gauge
+    (`plugin/kiba/Gauge.qml`).
 - **spark**: Ubuntu 24.04 on aarch64 with GNOME, used over ssh.
   - The widget cannot run there: it has no Hyprland and no Omarchy shell.
   - `claude` and `codex` are in `~/.local/bin`.
@@ -91,7 +87,20 @@ holds that.
   AGENTS.md, Rules).
 - **Widget**: the user's choice (2026-11-13). It is brought to parity with
   kiba-mac's app for machines that run Omarchy; on the spark the CLI is the
-  only front end.
+  only front end. It is to suit Linux, not copy the Mac (the user,
+  2026-11-14), so where kiba-mac's behaviour comes from macOS it follows the
+  Omarchy shell instead:
+  - Tab and Shift-Tab switch panels, h/j/k/l move the cursor, Delete or x
+    asks to forget, and Ctrl+L stands for ⌘L. Backspace does nothing: the
+    Mac asks on ⌫ only because that is its delete key.
+  - A right click on the bar icon refreshes usage, in place of the Mac's
+    menu, as the shell's own panels give a right click a direct action.
+  - The green and amber follow the theme's light or dark background.
+  - The panel grows to the screen's height, as the shell fits it.
+  - Add runs `kiba add` through `plugin/kiba/add.sh` in the terminal
+    `xdg-terminal-exec` opens; `script(1)` keeps kiba's lines for the panel.
+  - Quit, Start at login and the macOS accessibility settings have no
+    counterpart.
 - **Base64url**: the id_token payload is decoded with Habu's
   `BASE64:DECODE-URL` (AGENTS.md, Rules), which also refuses unused low bits
   that are not zero; kiba-mac's decoder accepts them. RFC 4648 section 3.5

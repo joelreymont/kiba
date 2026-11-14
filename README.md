@@ -28,8 +28,8 @@ kiba save                                             # keep the logins you have
 ```
 
 To add another account, sign into it at claude.ai or chatgpt.com in your
-browser, then use "Add account…" in the widget or run `kiba add claude` /
-`kiba add codex`. The terminal first reminds you to sign into the account in
+browser, then use the "+" beside the provider in the widget or run
+`kiba add claude` / `kiba add codex`. The terminal first reminds you to sign into the account in
 the browser and waits for Enter, because the provider's login page authorizes
 whichever account the browser is signed into; kiba saves what comes back
 under that account's name and, when you named an account, tells you if a
@@ -178,19 +178,23 @@ first when it has expired or is rejected; the live login's never is.
 ## Bar widget
 
 `plugin/kiba` renders `kiba status --json` and only ever runs the CLI:
-an account row runs `use`, "Save the current login" runs `save`, "Add
-account…" opens a terminal running `add` (the login needs a browser and a
-prompt), and "Refresh usage" runs `usage`. The panel probes every account
-once each time it opens; the rows update as the answers arrive.
+an account row runs `use`, "Save the current login" runs `save`, a
+provider's "+" opens a terminal running `add` (the login needs a browser
+and a prompt), and "Refresh usage", or a right click on the bar icon, runs
+`usage`. The widget stays busy until the add's terminal closes, then says
+which account was added. The panel probes every account once each time it
+opens; the rows update once the probe ends.
 
-Rows are ordered by color, green first, then yellow, red, and grey. Red rows
-come in the order their limits reset, soonest first, with dead logins last;
-within any other color rows keep their name order. Each row carries a dot
-and what is left of the session, the week, and each model window, as three
-percentages in that order (the hover text names them): green with at least
-half of the session and of every weekly window left, yellow below that, red
-once any window is used up (the figures then read `limit` and the label
-carries the reset time, as in `(pro, 5d)`), grey with no data. The label
+Rows come with room to spare first, then running low, then a model window
+used up, then the session used up, then the week, then dead logins and
+accounts without a plan, then rows with no data. Limited rows come in the
+order their limits reset, soonest first; other ties keep the CLI's order.
+Each row carries a dot and what is left of the session, the week, and each
+model window, as percentages in that order (the hover text names them),
+amber below half. The dot is green while the account can take work, a used
+up model window included; red when its session or week is used up (the
+figures then read `limit` and the label carries the reset time, as in
+`(pro, 5d)`), its login is dead, or it has no plan; grey with no data. The label
 and the figures always fit: a long email is shortened in the middle to make
 room. A red row whose login no longer works says
 "log in again" and starts a login for that account when clicked: the
