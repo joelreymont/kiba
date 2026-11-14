@@ -7,9 +7,12 @@ checked Habu program; a thin Omarchy bar widget runs it.
 ## Goal
 
 - kiba does on Linux everything kiba-mac does (`~/Work/kiba-mac`, whose
-  `DESIGN.md` is its contract): it has fallen behind and is brought up to
-  par.
-- `PARITY.md` holds the parity design: what exists and what is settled.
+  `DESIGN.md` is its contract), suited to Linux rather than copied from the
+  Mac: where kiba-mac's behaviour comes from macOS, the widget follows the
+  Omarchy shell (the user, 2026-11-14).
+- Out of scope: a `usage --json` report, finding the login shell's `PATH`
+  (a CLI run from a shell already has it), and any daemon or background
+  switcher; the auto-switch mod schedules and picks.
 
 ## Habu code
 

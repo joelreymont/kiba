@@ -182,7 +182,9 @@ an account row runs `use`, "Save the current login" runs `save`, a
 provider's "+" opens a terminal running `add` (the login needs a browser
 and a prompt), and "Refresh usage", or a right click on the bar icon, runs
 `usage`. The widget stays busy until the add's terminal closes, then says
-which account was added. The panel probes every account once each time it
+which account was added. In the panel, the arrows or h/j/k/l move the
+cursor, Return or Space acts on it, Delete or x asks to forget the row,
+Ctrl+L logs it in again, Tab and Shift-Tab switch panels, and Esc backs out. The panel probes every account once each time it
 opens; the rows update once the probe ends.
 
 Rows come with room to spare first, then running low, then a model window

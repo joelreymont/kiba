@@ -131,7 +131,9 @@ private
 public
 
 \ OBJ = the decoded JWT payload; up to two trailing `=` are dropped first, as
-\ kiba-mac's Base64URL allows them; the decoder's E-BASE64 codes reach callers
+\ kiba-mac's Base64URL allows them. Unlike kiba-mac's, the decoder refuses
+\ unused low bits that are not zero, which conforming encoders never write
+\ (RFC 4648 section 3.5). Its E-BASE64 codes reach callers
 : DECODE-PAYLOAD ( ptr u8 n -- ) UNPADDED OBJ-BUF BUF-CAP SPAN:MAKE BASE64:DECODE-URL OBJ-U ! ;
 
 \ isAPIKey: OPENAI_API_KEY is a non-empty string in a document JSONFields reads
