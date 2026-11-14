@@ -11,8 +11,6 @@ package SW
 public
 
 \ kiba error block: -100000..-100099, in Habu's external range (src/lib/error.f)
--100000 constant E-SW-FIRST
--100099 constant E-SW-LAST
 -100000 constant E-SW-USAGE       \ bad command line
 -100001 constant E-SW-PROVIDER    \ unknown provider name
 -100002 constant E-SW-NO-LIVE     \ the provider has no live login to save

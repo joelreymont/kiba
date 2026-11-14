@@ -43,15 +43,11 @@ package SW
    1 ARG$ s" --json" STR= 0= if E-SW-USAGE throw then
    true CMD-STATUS ;
 
-: DISPATCH-SAVE ( -- )
-   SCRIPT-ARGC 1 = if -1 CMD-SAVE exit then
+: DISPATCH-PROVIDERS ( [ n -- ] -- )
+   {: cmd :}
+   SCRIPT-ARGC 1 = if -1 cmd execute exit then
    2 ARG-COUNT
-   1 PROVIDER# CMD-SAVE ;
-
-: DISPATCH-USAGE ( -- )
-   SCRIPT-ARGC 1 = if -1 CMD-USAGE exit then
-   2 ARG-COUNT
-   1 PROVIDER# CMD-USAGE ;
+   1 PROVIDER# cmd execute ;
 
 : DISPATCH-ADD ( -- )
    SCRIPT-ARGC 2 = if 1 PROVIDER# s" " CMD-ADD exit then
@@ -62,8 +58,8 @@ package SW
    SCRIPT-ARGC 0= if E-SW-USAGE throw then
    0 ARG$ {: c cu :}
    c cu s" status" STR= if DISPATCH-STATUS exit then
-   c cu s" save" STR= if DISPATCH-SAVE exit then
-   c cu s" usage" STR= if DISPATCH-USAGE exit then
+   c cu s" save" STR= if [: CMD-SAVE ;] DISPATCH-PROVIDERS exit then
+   c cu s" usage" STR= if [: CMD-USAGE ;] DISPATCH-PROVIDERS exit then
    c cu s" use" STR= if 3 ARG-COUNT 1 PROVIDER# 2 NAME-ARG$ CMD-USE exit then
    c cu s" add" STR= if DISPATCH-ADD exit then
    c cu s" forget" STR= if 3 ARG-COUNT 1 PROVIDER# 2 NAME-ARG$ CMD-FORGET exit then

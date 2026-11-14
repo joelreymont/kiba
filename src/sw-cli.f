@@ -382,13 +382,6 @@ create OLD-NAME NAME-CAP allot   variable OLD-NAME-U
    p o ou false PROBE-IN-TURN ;
 
 \ ---- usage --------------------------------------------------------------------
-\ Every saved login of one provider probed and recorded, inside its turn. A
-\ save-back failure is reported and the probe goes on; a provider whose turn
-\ cannot be taken, whose logins cannot be read or whose install is pending
-\ is not probed at all. The live login is probed as live, so its tokens are
-\ never refreshed; no outcome removes a login. When every saved login was
-\ probed after the second the run began, another holder's probe answered it
-\ while this one waited.
 ENUM usage-step checking saving listing listing-mixed probing reported failed ;ENUM
 ENUM check-input answered stale threw ;ENUM
 ENUM list-input listed threw ;ENUM
@@ -429,8 +422,8 @@ DYNAMIC-BUFFER FAULTS u8     variable FAULTS-U     \ the provider error; empty w
    loop
    true ;
 
-\ 1 when the recorded outcomes answer the run; the live names and the list
-\ are read again for them
+\ 1 when another kiba probed every row while this one waited for the turn;
+\ the live names and the list are read again for its records
 : CHECK-RUN ( n -- n ) {: p :}
    p DB-LIST
    ALL-PROBED? 0= if 0 exit then

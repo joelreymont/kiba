@@ -61,9 +61,6 @@ private
 100 constant LEVEL-FULL
 50 constant LEVEL-HALF
 
-: SESSION$ ( -- ptr u8 n ) s" Session (5-hour)" ;
-: WEEKLY$ ( -- ptr u8 n ) s" Weekly (7-day)" ;
-
 \ the first window under the label that has a reading; -1 for none
 : WINDOW ( ptr u8 n -- n ) {: a u :}
    DB-LIMIT# 0 ?do
@@ -155,7 +152,7 @@ ENUM row-state fine tight blocked dead unplanned unprobed ;ENUM
    active DEAD? if construct row-state dead exit then
    PLANLESS? if construct row-state unplanned exit then
    DB-LIMIT# 0= if construct row-state unprobed exit then
-   SESSION$ WINDOW WEEKLY$ WINDOW {: s w :}
+   SESSION-LABEL$ WINDOW WEEKLY-LABEL$ WINDOW {: s w :}
    s USED-UP? w USED-UP? or if construct row-state blocked exit then
    s w TIGHT? if construct row-state tight exit then
    construct row-state fine ;
@@ -176,7 +173,7 @@ public
 : FIGURES ( n -- ) {: p :}
    0 FIG-N !
    DB-LIMIT# dup FIG-LIMS-RESERVE FIG-LEFTS-RESERVE
-   SESSION$ WINDOW WEEKLY$ WINDOW {: s w :}
+   SESSION-LABEL$ WINDOW WEEKLY-LABEL$ WINDOW {: s w :}
    p s w SESSION-FIG+
    w 0 >= if w WINDOW-FIG+ then
    s w OTHER-FIGS+ ;

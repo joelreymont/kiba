@@ -66,6 +66,8 @@ variable REC-GRANT-AT     variable REC-GRANT-U
 : PCT-CELL ( n -- ptr n ) REC-LIMS LIM-PCT ;     \ whole percent used; negative for no reading
 : RESET-AT ( n -- ptr n ) REC-LIMS LIM-RESET-OFF ;
 : RESET-U ( n -- ptr n ) REC-LIMS LIM-RESET-LEN ;
+: SESSION-LABEL$ ( -- ptr u8 n ) s" Session (5-hour)" ;
+: WEEKLY-LABEL$ ( -- ptr u8 n ) s" Weekly (7-day)" ;
 
 \ a limit whose label and reset REC-TEXT already holds
 : LIM-ROW+ ( n n n n n -- ) {: lo lu pct ro ru :}

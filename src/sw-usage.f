@@ -41,9 +41,6 @@ create PSUB-BUF PATH-CAP allot   variable PSUB-U    \ a file inside it
 create DATE-BUF DATE:TIME-LEN allot   \ the UTC format fixes its length
 variable OUT-FD
 
-: SESSION-LABEL$ ( -- ptr u8 n ) s" Session (5-hour)" ;
-: WEEKLY-LABEL$ ( -- ptr u8 n ) s" Weekly (7-day)" ;
-
 \ ---- decimal parsing -----------------------------------------------------------
 : DIGIT ( n -- n ) $30 - ;
 
