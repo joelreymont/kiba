@@ -20,18 +20,19 @@ Item {
   property string probeError: ""
   property string message: ""          // the running action's label, then its plain result, which fades
   property bool panelOpen: false
-  property bool autoProbed: false      // one probe per open
-  // The latest probe of every saved account: {at, clean, records}, records
-  // holding, per row, the usage the run recorded; null until one ran.
-  property var lastProbe: null
+  // The latest probe of each provider's saved accounts, by provider id:
+  // {at, clean, records}, records holding, per row, the usage the run
+  // recorded. A provider is absent until a probe reached one of its rows.
+  // Usage is probed only when asked: opening the panel reads the status alone.
+  property var probes: ({})
 
   // The action runner, one action at a time:
   //   idle -run-> running -exit or no start-> rereading -read applied-> idle
   // rereading lasts until the forced status read after the action, and any
   // read queued behind it, has applied, so no control acts on rows from
   // before it. Until idle every action refuses and the panel shows each
-  // control that would start one disabled, rows and the usage refresh the
-  // panel starts on opening included: a click is never held for later.
+  // control that would start one disabled, rows included: a click is never
+  // held for later.
   property string phase: "idle"
   property var job: null
 
@@ -48,12 +49,27 @@ Item {
   readonly property bool busy: phase !== "idle"
   readonly property bool canDismiss: note !== "" || (statusError === "" && error !== "")
   readonly property bool canRetry: availability === "failed" && !refreshing
-  // the latest probe is clean and every row shows the usage it recorded
-  readonly property bool probeComplete: !!lastProbe && lastProbe.clean && providers.every(function(p) {
-    return p.accounts.every(function(a) {
-      return !!a.usage && lastProbe.records[recordKey(p.id, a.name)] === JSON.stringify(a.usage)
+  // every provider with saved accounts has a clean latest probe, and every
+  // row shows the usage it recorded
+  readonly property bool probeComplete: providers.some(function(p) { return p.accounts.length > 0 })
+    && providers.every(function(p) {
+      var r = probes[p.id]
+      return p.accounts.length === 0 || (!!r && r.clean && p.accounts.every(function(a) {
+        return !!a.usage && r.records[recordKey(p.id, a.name)] === JSON.stringify(a.usage)
+      }))
     })
-  })
+  // the oldest latest probe's start while every provider with saved accounts
+  // has one; 0 otherwise
+  readonly property double probedAt: {
+    var at = 0
+    for (var i = 0; i < providers.length; i += 1) {
+      if (providers[i].accounts.length === 0) continue
+      var r = probes[providers[i].id]
+      if (!r) return 0
+      if (at === 0 || r.at < at) at = r.at
+    }
+    return at
+  }
 
   signal closeRequested()
 
@@ -128,23 +144,18 @@ Item {
   }
 
   // An outcome is {text, held, errors} or {fail}. A plain result fades; a
-  // held one and every error stay until Dismiss or the next action. The
-  // probe that opening the panel starts adds only lines not shown yet.
+  // held one and every error stay until Dismiss or the next action.
   function show(o, scope) {
     if (o.fail !== undefined) { flash(""); fail(o.fail); return }
     var held = o.held ? o.text : ""
     if (scope === "action") {
       actionNote = held
-      // rows an action switched, saved, forgot or reset outdate the last probe
-      lastProbe = null
+      // rows an action switched, saved, forgot or reset outdate the probes
+      probes = ({})
       actionError = merge(actionError, o.errors)
-    } else if (scope === "probe") {
+    } else {
       probeNote = held
       probeError = o.errors.join("\n")
-    } else {
-      var shown = [].concat(split(actionNote), split(probeNote), split(actionError), split(probeError))
-      probeNote = merge(probeNote, split(held).filter(function(l) { return shown.indexOf(l) < 0 }))
-      probeError = merge(probeError, o.errors.filter(function(l) { return shown.indexOf(l) < 0 }))
     }
     if (o.held) flash("")
     else flash(o.text)
@@ -272,7 +283,6 @@ Item {
     }
     if (readQueued) refresh()
     if (!reading && phase === "rereading") settle()
-    maybeAutoProbe()
   }
 
   // ------------------------------------------------------------- actions
@@ -284,7 +294,7 @@ Item {
     phase = "running"
     flash("")
     message = label
-    if (scope === "action" || scope === "probe") supersede()
+    supersede()
     actionProcess.command = command
     actionProcess.running = true
   }
@@ -303,7 +313,6 @@ Item {
     job = null
     show(j.done(j.code, j.out, j.err), j.scope)
     phase = "idle"
-    maybeAutoProbe()
   }
 
   // a failed command's outcome: its reasons as the panel says them
@@ -391,43 +400,64 @@ Item {
     return decodeURIComponent(Qt.resolvedUrl(name).toString().replace(/^file:\/\//, ""))
   }
 
-  function probeUsage() { probe("probe") }
-
-  function probe(scope) {
+  // probes the saved accounts of `provider`, or of every provider for ""
+  function probeUsage(provider) {
     if (busy) return
+    var ids = provider ? [provider] : providers.map(function(p) { return p.id })
+    var command = ["kiba", "usage"]
+    if (provider) command.push(provider)
     var start = Math.floor(Date.now() / 1000)
-    run(probingText, ["kiba", "usage"], scope, function(code, stdout, stderr) {
+    var label = provider ? "Refreshing " + providerTitle(provider) + " usage…" : probingText
+    run(label, command, "probe", function(code, stdout, stderr) {
       if (code !== 0 && code !== 1) return root.failed(code, stdout, stderr)
       if (root.availability !== "ready") return { text: "", held: false, errors: root.cliLines(stderr) }
-      return root.tally(start, root.cliLines(stderr))
+      return root.tally(start, root.cliLines(stderr), ids)
     })
   }
 
-  // What the probe came to, counted per row the reread shows: refreshed
-  // (the provider answered, or Anthropic turned a saved Claude login away),
-  // waiting (an expired live login, its CLI's to refresh), failed (no fresh
-  // usage), not probed (no record from this run). `errors` are the CLI's
-  // save-back and provider failures.
-  function tally(start, errors) {
+  // an error line is provider p's when it starts with p's title, or names
+  // no provider at all
+  function errorOf(p, line) {
+    if (line.indexOf(p.title + ": ") === 0) return true
+    return !providers.some(function(q) { return line.indexOf(q.title + ": ") === 0 })
+  }
+
+  // What the probe of the providers `ids` came to, counted per row the
+  // reread shows: refreshed (the provider answered, or Anthropic turned a
+  // saved Claude login away), waiting (an expired live login, its CLI's to
+  // refresh), failed (no fresh usage), not probed (no record from this run).
+  // `errors` are the CLI's save-back and provider failures. Each provider
+  // whose rows the run reached gets it as its latest probe; one with no
+  // rows loses its probe; any other keeps the one it had.
+  function tally(start, errors, ids) {
     var refreshed = 0, failed = 0, waiting = 0, skipped = 0
-    var failures = [], records = {}
+    var failures = []
+    var next = Object.assign({}, probes)
     for (var i = 0; i < providers.length; i += 1) {
       var p = providers[i]
+      if (ids.indexOf(p.id) < 0) continue
+      var done = 0, bad = 0, wait = 0, skip = 0, records = {}
       for (var j = 0; j < p.accounts.length; j += 1) {
         var a = p.accounts[j], u = a.usage
-        if (!u || u.fetchedAt < start) { skipped += 1; continue }
+        if (!u || u.fetchedAt < start) { skip += 1; continue }
         records[recordKey(p.id, a.name)] = JSON.stringify(u)
-        if (["ok", "unknown", "unsubscribed", "free"].indexOf(u.state) >= 0) refreshed += 1
-        else if (u.state === "expired" && a.active) waiting += 1
-        else if (refused(p.id, u, a.active)) refreshed += 1
-        else { failed += 1; failures.push(p.title + ": " + a.name + ": " + u.note) }
+        if (["ok", "unknown", "unsubscribed", "free"].indexOf(u.state) >= 0) done += 1
+        else if (u.state === "expired" && a.active) wait += 1
+        else if (refused(p.id, u, a.active)) done += 1
+        else { bad += 1; failures.push(p.title + ": " + a.name + ": " + u.note) }
       }
+      var unprobed = errors.some(function(e) {
+        return root.errorOf(p, e) && e.indexOf(": live login not saved: ") < 0
+      })
+      if (p.accounts.length === 0) delete next[p.id]
+      else if (done + bad + wait > 0) next[p.id] = { at: start, clean: bad === 0 && wait === 0 && !unprobed, records: records }
+      refreshed += done
+      failed += bad
+      waiting += wait
+      skipped += skip
     }
-    var unprobed = errors.some(function(e) { return e.indexOf(": live login not saved: ") < 0 })
-    var covered = refreshed + failed + waiting
-    var total = covered + skipped
-    if (total === 0) lastProbe = null
-    else if (covered > 0) lastProbe = { at: start, clean: failed === 0 && waiting === 0 && !unprobed, records: records }
+    probes = next
+    var total = refreshed + failed + waiting + skipped
     var misses = []
     if (failed > 0) misses.push(failed + " failed")
     if (waiting > 0) misses.push(waiting === 1 ? "1 live login waiting for its CLI"
@@ -444,20 +474,9 @@ Item {
     return { text: [head].concat(failures).join("\n"), held: missed > 0, errors: errors }
   }
 
-  // Stale numbers cannot say which account to switch to, so each open
-  // probes once, as soon as the model shows saved accounts.
-  function maybeAutoProbe() {
-    if (autoProbed || !panelOpen || busy || availability !== "ready") return
-    if (!providers.some(function(p) { return p.accounts.length > 0 })) return
-    autoProbed = true
-    probe("autoProbe")
-  }
-
   function opened() {
     panelOpen = true
-    autoProbed = false
     refresh()
-    maybeAutoProbe()
   }
 
   function closed() { panelOpen = false }

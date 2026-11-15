@@ -180,15 +180,16 @@ first when it has expired or is rejected; the live login's never is.
 `plugin/kiba` renders `kiba status --json` and only ever runs the CLI:
 an account row runs `use`, "Save the current login" runs `save`, a
 provider's "+" opens a terminal running `add` (the login needs a browser
-and a prompt), and "Refresh usage", or a right click on the bar icon, runs
-`usage`. The widget stays busy until the add's terminal closes, then says
+and a prompt), the refresh arrow beside it runs `usage` for that provider,
+and "Refresh usage", or a right click on the bar icon, runs `usage` for
+every provider. The widget stays busy until the add's terminal closes, then says
 which account was added. In the panel, the arrows or h/j/k/l move the
 cursor, Return or Space acts on it, Delete or x asks to forget the row,
-Ctrl+L logs it in again, Tab and Shift-Tab switch panels, and Esc backs out. The panel probes every account once each time it
-opens; the rows update once the probe ends. While any command runs, that
-probe included, the account rows, their badges and every button that would
-start another command are dimmed and ignore clicks and keys; Dismiss and a
-confirmation's Keep stay live.
+Ctrl+L logs it in again, Tab and Shift-Tab switch panels, and Esc backs out. Opening the panel reads the saved status and
+probes nothing; usage is probed only when you ask, and the rows update once
+the probe ends. While any command runs, a probe included, the account rows,
+their badges and every button that would start another command are dimmed
+and ignore clicks and keys; Dismiss and a confirmation's Keep stay live.
 
 Rows come with room to spare first, then running low, then a model window
 used up, then the session used up, then the week, then dead logins and

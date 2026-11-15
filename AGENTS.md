@@ -11,9 +11,13 @@ checked Habu program; a thin Omarchy bar widget runs it.
   Mac: where kiba-mac's behaviour comes from macOS, the widget follows the
   Omarchy shell (the user, 2026-11-14).
 - Unlike kiba-mac, the widget holds no click for later: while a command
-  runs, the usage probe an open starts included, every control that would
-  start another, account rows and their badges included, is disabled and
-  looks it (the user, 2026-11-15).
+  runs, a usage probe included, every control that would start another,
+  account rows and their badges included, is disabled and looks it (the
+  user, 2026-11-15).
+- Unlike kiba-mac, opening the panel probes no usage: it reads the status
+  alone, and usage is probed only when asked, per provider from the
+  refresh arrow before its "+" or for every provider from "Refresh usage"
+  and a right click on the bar icon (the user, 2026-11-15).
 - Out of scope: a `usage --json` report, finding the login shell's `PATH`
   (a CLI run from a shell already has it), and any daemon or background
   switcher; the auto-switch mod schedules and picks.

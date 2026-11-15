@@ -266,18 +266,19 @@ Panel {
       canSave: !!p.live && p.error === "" && !p.accounts.some(function(a) { return a.active }) }
   })
 
-  // header meta: the latest probe's age and whether it reached every
-  // account; before any probe, the age of the oldest record shown
+  // header meta: while every provider's accounts have been probed, the
+  // oldest of those probes' age and whether they reached every account;
+  // otherwise the age of the oldest record shown
   readonly property string meta: {
     if (status.busy) return "Working…"
     if (status.refreshing) return "Refreshing…"
     if (status.availability !== "ready") return "Unavailable"
-    if (status.lastProbe) return (status.probeComplete ? "All usage probed " : "Some usage probed ") + age(status.lastProbe.at)
+    if (status.probedAt > 0) return (status.probeComplete ? "All usage probed " : "Some usage probed ") + age(status.probedAt)
     var oldest = status.oldestUsageAt()
     return oldest > 0 ? "Oldest usage from " + age(oldest) : "Saved logins"
   }
 
-  readonly property string probeAge: status.lastProbe ? age(status.lastProbe.at) : ""
+  readonly property string probeAge: status.probedAt > 0 ? age(status.probedAt) : ""
 
   function tooltip() {
     if (status.availability !== "ready") return "AI accounts"
@@ -321,7 +322,7 @@ Panel {
   }
 
   // Every control a click can reach, in panel order: Dismiss, Retry, then
-  // per provider its add, each account row followed by its log-in-again
+  // per provider its refresh (while it has saved accounts) and its add, each account row followed by its log-in-again
   // and limit-reset badges, and its save; Refresh usage last. A confirming
   // row offers its go and Keep buttons instead of the row and its badges.
   readonly property var actions: {
@@ -330,6 +331,7 @@ Panel {
     if (status.canRetry) out.push(mk("retry", "", ""))
     for (var i = 0; i < view.length; i += 1) {
       var p = view[i]
+      if (p.accounts.length > 0) out.push(mk("refresh", p.id, ""))
       out.push(mk("add", p.id, ""))
       for (var j = 0; j < p.accounts.length; j += 1) {
         var a = p.accounts[j]
@@ -380,6 +382,7 @@ Panel {
       if (view[i].id !== a.provider) continue
       var block = providerRepeater.itemAt(i)
       if (!block) return null
+      if (a.kind === "refresh") return block.refreshItem
       if (a.kind === "add") return block.addItem
       if (a.kind === "save") return block.saveItem
       for (var j = 0; j < view[i].accounts.length; j += 1)
@@ -421,12 +424,13 @@ Panel {
     else if (a.kind === "relogin") status.logInAgain(a.provider, a.name)
     else if (a.kind === "redeem") ask("reset", a.provider, a.name)
     else if (a.kind === "save") status.save(a.provider)
+    else if (a.kind === "refresh") status.probeUsage(a.provider)
     else if (a.kind === "add") status.add(a.provider, "")
     else if (a.kind === "confirm") confirm()
     else if (a.kind === "keep") keep()
     else if (a.kind === "retry") status.refresh(true)
     else if (a.kind === "dismiss") status.dismiss()
-    else if (a.kind === "usage") status.probeUsage()
+    else if (a.kind === "usage") status.probeUsage("")
   }
 
   function activate() {
@@ -539,7 +543,7 @@ Panel {
     // shell's own panels give a right click a direct action
     onPressed: function(buttonCode) {
       if (buttonCode !== Qt.RightButton) root.toggle()
-      else if (status.availability === "ready") status.probeUsage()
+      else if (status.availability === "ready") status.probeUsage("")
     }
   }
 
@@ -695,10 +699,11 @@ Panel {
               readonly property alias accountRows: accountRepeater
               readonly property alias saveItem: saveAction
               readonly property alias addItem: addButton
+              readonly property alias refreshItem: refreshButton
               width: content.width
               spacing: Style.space(2)
 
-              // the section header with the add action at its right
+              // the section header with refresh and add at its right
               Item {
                 width: parent.width
                 height: Math.max(sectionTitle.implicitHeight, addButton.height) + Style.space(4)
@@ -716,47 +721,28 @@ Panel {
                   font.bold: true
                 }
 
-                Item {
+                // probes this provider's saved accounts
+                HeaderButton {
+                  id: refreshButton
+                  visible: providerBlock.modelData.accounts.length > 0
+                  anchors.right: addButton.left
+                  anchors.verticalCenter: parent.verticalCenter
+                  key: root.keyOf("refresh", providerBlock.modelData.id, "")
+                  glyph: "󰑐"
+                  glyphSize: Style.font.body
+                  label: "Refresh " + providerBlock.modelData.title + " usage"
+                  onActivated: status.probeUsage(providerBlock.modelData.id)
+                }
+
+                HeaderButton {
                   id: addButton
-                  readonly property string key: root.keyOf("add", providerBlock.modelData.id, "")
-                  readonly property string label: "Add " + providerBlock.modelData.title + " account"
                   anchors.right: parent.right
                   anchors.rightMargin: Style.space(6)
                   anchors.verticalCenter: parent.verticalCenter
-                  width: addGlyph.implicitWidth + Style.space(12)
-                  height: addGlyph.implicitHeight + Style.space(2)
-                  opacity: status.busy ? root.disabledOpacity : 1
-
-                  Rectangle {
-                    anchors.fill: parent
-                    radius: Style.cornerRadius
-                    color: root.alpha(root.foreground, root.cursorKey === addButton.key ? 0.10 : 0)
-                  }
-
-                  Text {
-                    id: addGlyph
-                    anchors.centerIn: parent
-                    text: "+"
-                    color: root.cursorKey === addButton.key ? Color.accent : root.dim
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.title
-                    font.bold: true
-                  }
-
-                  MouseArea {
-                    id: addMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: status.busy ? Qt.ArrowCursor : Qt.PointingHandCursor
-                    onContainsMouseChanged: if (containsMouse) root.pointKey(addButton.key)
-                    onClicked: status.add(providerBlock.modelData.id, "")
-                  }
-
-                  PanelToolTip {
-                    visible: addMouse.containsMouse
-                    text: addButton.label
-                    fontFamily: root.fontFamily
-                  }
+                  key: root.keyOf("add", providerBlock.modelData.id, "")
+                  glyph: "+"
+                  label: "Add " + providerBlock.modelData.title + " account"
+                  onActivated: status.add(providerBlock.modelData.id, "")
                 }
               }
 
@@ -804,7 +790,7 @@ Panel {
             actionKey: root.keyOf("usage", "", "")
             label: "Refresh usage"
             detail: root.probeAge
-            onActivated: status.probeUsage()
+            onActivated: status.probeUsage("")
           }
         }
       }
@@ -1201,6 +1187,51 @@ Panel {
     PanelToolTip {
       visible: badgeMouse.containsMouse
       text: badge.tip
+      fontFamily: root.fontFamily
+    }
+  }
+
+  // A glyph button in a provider's header, lit with the row fill under the
+  // cursor; dimmed while a command runs, when it cannot act.
+  component HeaderButton: Item {
+    id: header
+    property string key: ""
+    property string glyph: ""
+    property string label: ""
+    property int glyphSize: Style.font.title
+    signal activated()
+    width: headerGlyph.implicitWidth + Style.space(12)
+    height: headerGlyph.implicitHeight + Style.space(2)
+    opacity: status.busy ? root.disabledOpacity : 1
+
+    Rectangle {
+      anchors.fill: parent
+      radius: Style.cornerRadius
+      color: root.alpha(root.foreground, root.cursorKey === header.key ? 0.10 : 0)
+    }
+
+    Text {
+      id: headerGlyph
+      anchors.centerIn: parent
+      text: header.glyph
+      color: root.cursorKey === header.key ? Color.accent : root.dim
+      font.family: root.fontFamily
+      font.pixelSize: header.glyphSize
+      font.bold: true
+    }
+
+    MouseArea {
+      id: headerMouse
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: status.busy ? Qt.ArrowCursor : Qt.PointingHandCursor
+      onContainsMouseChanged: if (containsMouse) root.pointKey(header.key)
+      onClicked: header.activated()
+    }
+
+    PanelToolTip {
+      visible: headerMouse.containsMouse
+      text: header.label
       fontFamily: root.fontFamily
     }
   }
