@@ -29,13 +29,11 @@ Item {
   //   idle -run-> running -exit or no start-> rereading -read applied-> idle
   // rereading lasts until the forced status read after the action, and any
   // read queued behind it, has applied, so no control acts on rows from
-  // before it. A probe's run is `probing`: row clicks then queue in
-  // `pending` ({kind: click | relogin, provider, name}, the latest winning)
-  // and run once it reaches idle.
+  // before it. Until idle every action refuses and the panel shows each
+  // control that would start one disabled, rows and the usage refresh the
+  // panel starts on opening included: a click is never held for later.
   property string phase: "idle"
-  property bool probing: false
   property var job: null
-  property var pending: null
 
   // The status read: reading or not; a refresh during a read queues one more.
   property bool reading: false
@@ -135,7 +133,7 @@ Item {
   function show(o, scope) {
     if (o.fail !== undefined) { flash(""); fail(o.fail); return }
     var held = o.held ? o.text : ""
-    if (scope === "action" || scope === "queued") {
+    if (scope === "action") {
       actionNote = held
       // rows an action switched, saved, forgot or reset outdate the last probe
       lastProbe = null
@@ -284,7 +282,6 @@ Item {
     if (phase !== "idle") return
     job = { command: command, scope: scope, done: done, code: -1, out: "", err: "" }
     phase = "running"
-    probing = scope === "probe" || scope === "autoProbe"
     flash("")
     message = label
     if (scope === "action" || scope === "probe") supersede()
@@ -306,12 +303,6 @@ Item {
     job = null
     show(j.done(j.code, j.out, j.err), j.scope)
     phase = "idle"
-    probing = false
-    if (pending) {
-      var q = pending
-      pending = null
-      act(q, "queued")
-    }
     maybeAutoProbe()
   }
 
@@ -328,48 +319,26 @@ Item {
     }
   }
 
-  function queuedText(provider, name, login) {
-    var t = providerTitle(provider)
-    return (login ? "Adding a " + t + " account" : "Switching " + t + " to " + name) + " once usage is refreshed…"
-  }
-
-  // A row action on the row as it reads now. While a probe runs it waits
-  // for the probe to end; the latest wins and a click on the active row
-  // drops it.
-  function act(r, scope) {
+  // A row action on the row as it reads now: a dead or rate-limited row
+  // logs in again, any other but the live one switches to its account.
+  function act(r) {
+    if (busy) return
     var a = account(r.provider, r.name)
-    if (!a) return
-    var login = r.kind === "relogin" || relogin(a.usage, a.active)
-    if (probing) {
-      if (!a.active) {
-        supersede()
-        pending = r
-        flash("")
-        message = queuedText(r.provider, r.name, login)
-      } else if (pending) {
-        pending = null
-        flash("")
-        message = probingText
-      }
-      return
-    }
-    if (busy || a.active) return
-    if (login) { add(r.provider, r.name); return }
+    if (!a || a.active) return
+    if (r.kind === "relogin" || relogin(a.usage, a.active)) { add(r.provider, r.name); return }
     run("Switching " + providerTitle(r.provider) + " to " + r.name + "…",
-      ["kiba", "use", r.provider, r.name], scope,
+      ["kiba", "use", r.provider, r.name], "action",
       plain(providerTitle(r.provider) + ": now " + r.name))
   }
 
   // switches to a saved account; a dead or rate-limited one logs in again
   function use(provider, name) {
-    act({ kind: "click", provider: provider, name: name }, "action")
+    act({ kind: "click", provider: provider, name: name })
   }
 
   // logs a saved account in again; the live login is its CLI's
   function logInAgain(provider, name) {
-    var a = account(provider, name)
-    if (!a || a.active) return
-    act({ kind: "relogin", provider: provider, name: name }, "action")
+    act({ kind: "relogin", provider: provider, name: name })
   }
 
   function save(provider) {

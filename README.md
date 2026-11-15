@@ -185,7 +185,10 @@ and a prompt), and "Refresh usage", or a right click on the bar icon, runs
 which account was added. In the panel, the arrows or h/j/k/l move the
 cursor, Return or Space acts on it, Delete or x asks to forget the row,
 Ctrl+L logs it in again, Tab and Shift-Tab switch panels, and Esc backs out. The panel probes every account once each time it
-opens; the rows update once the probe ends.
+opens; the rows update once the probe ends. While any command runs, that
+probe included, the account rows, their badges and every button that would
+start another command are dimmed and ignore clicks and keys; Dismiss and a
+confirmation's Keep stay live.
 
 Rows come with room to spare first, then running low, then a model window
 used up, then the session used up, then the week, then dead logins and

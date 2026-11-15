@@ -24,6 +24,9 @@ Panel {
   readonly property color good: lightTheme ? "#1f7f52" : "#4fc08a"
   readonly property color caution: lightTheme ? "#9e6a0e" : "#e2a93b"
   readonly property color track: alpha(foreground, 0.15)
+  // what a control that cannot act while a command runs is drawn at, an
+  // account row's content included
+  readonly property real disabledOpacity: 0.5
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property var providers: status.providers
   readonly property bool alerting: status.error !== ""
@@ -412,8 +415,7 @@ Panel {
     scrollIntoView(itemFor(actions[next]))
   }
 
-  // Each action refuses while one runs, but a row click during a probe
-  // queues; Keep, Dismiss and Retry always run.
+  // Each action refuses while one runs; Keep, Dismiss and Retry always run.
   function trigger(a) {
     if (a.kind === "use") status.use(a.provider, a.name)
     else if (a.kind === "relogin") status.logInAgain(a.provider, a.name)
@@ -723,6 +725,7 @@ Panel {
                   anchors.verticalCenter: parent.verticalCenter
                   width: addGlyph.implicitWidth + Style.space(12)
                   height: addGlyph.implicitHeight + Style.space(2)
+                  opacity: status.busy ? root.disabledOpacity : 1
 
                   Rectangle {
                     anchors.fill: parent
@@ -900,8 +903,8 @@ Panel {
     readonly property bool red: root.usable(standing) === false
     readonly property int offer: account.usage ? account.usage.resets : 0
     readonly property bool relogin: status.relogin(account.usage, account.active)
-    // account rows stay live during a probe and queue their action
-    readonly property bool live: !(status.busy && !status.probing)
+    // the row and its badges act only while no command runs
+    readonly property bool live: !status.busy
     readonly property real inset: Style.space(10)
     readonly property real badgeGap: Style.space(6)
     // the badges' span at the line's end, the gap between them included
@@ -921,6 +924,7 @@ Panel {
     Item {
       id: nameLine
       visible: !row.asking
+      opacity: row.live ? 1 : root.disabledOpacity
       anchors.left: parent.left
       anchors.leftMargin: row.inset
       anchors.right: parent.right
@@ -1011,6 +1015,7 @@ Panel {
     Reservoir {
       id: reservoirBar
       visible: !row.asking
+      opacity: row.live ? 1 : root.disabledOpacity
       anchors.left: parent.left
       anchors.leftMargin: row.inset
       anchors.right: parent.right
@@ -1060,7 +1065,7 @@ Panel {
         color: Color.accent
         key: root.keyOf("redeem", row.provider.id, row.account.name)
         label: String(row.offer)
-        live: !status.busy
+        live: row.live
         tip: root.resetsText(row.offer) + " available. Click to use one."
         onActivated: root.ask("reset", row.provider.id, row.account.name)
         onHoverEnded: if (rowMouse.containsMouse && !row.overBadge) root.pointKey(row.key)
@@ -1155,6 +1160,7 @@ Panel {
     readonly property alias hovered: badgeMouse.containsMouse
     signal activated()
     signal hoverEnded()
+    opacity: live ? 1 : root.disabledOpacity
     height: Style.space(18)
     width: Math.max(height, badgeText.implicitWidth + Style.space(10))
     radius: height / 2
