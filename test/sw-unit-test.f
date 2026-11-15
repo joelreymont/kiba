@@ -1436,6 +1436,27 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    P-CLAUDE CMD-SAVE
    P-CLAUDE s" t@x.test" CMD-FORGET ;
 
+4096 constant UT-OUT-CAP
+create UT-OUT UT-OUT-CAP allot   create UT-OUT-ERR UT-OUT-CAP allot
+variable UT-OUT-U
+
+\ the action's stdout, run in this process
+: UT-CAPTURE$ ( [ -- ] -- ptr u8 n ) {: act :}
+   act s" HOME" GETENV
+   UT-OUT UT-OUT-CAP SPAN:MAKE UT-OUT-ERR UT-OUT-CAP SPAN:MAKE
+   GT-CAPTURE-ACTION {: outu:len erru:len rc:n :}
+   rc 0 T=
+   outu LEN>N UT-OUT-U !
+   UT-OUT UT-OUT-U @ ;
+
+\ usage gives what is left, as status does: a used-up week leaves Claude's
+\ session nothing, and an account with no reading gives its note
+: UT-USAGE-TEXT ( ptr u8 n -- ) {: o ou :}
+   o ou s\" claude: a@x.test  Session (5-hour) 0% left · Weekly (7-day) 0% left · Fable Weekly 52% left\n" CONTAINS? TTRUE
+   o ou s\" claude: e@x.test  Anthropic's token endpoint answered 429\n" CONTAINS? TTRUE
+   o ou s\" codex: c@x.test  Weekly (7-day) 0% left\n" CONTAINS? TTRUE
+   o ou s\" codex: d@x.test  Session (5-hour) 88% left · Weekly (7-day) 60% left\n" CONTAINS? TTRUE ;
+
 \ each saved login UT-USAGE probes, every one there is
 : UT-USAGE-ROWS ( [ n ptr u8 n -- ] -- ) {: each :}
    [: P-CLAUDE DB-LIST DB-ROW# 4 T= P-CODEX DB-LIST DB-ROW# 3 T= ;] UT-STORE
@@ -1459,7 +1480,7 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    P-CLAUDE s" f@x.test" CREDS-F$ UT-PUT
    P-CODEX s" y@x.test" AUTH-Y$ UT-PUT
    [: UT-AGE ;] UT-USAGE-ROWS
-   -1 CMD-USAGE
+   [: -1 CMD-USAGE ;] UT-CAPTURE$ UT-USAGE-TEXT
    [: UT-PROBED? TTRUE ;] UT-USAGE-ROWS
    UT-USAGE-CLAUDE
    UT-USAGE-CODEX
@@ -2550,20 +2571,9 @@ create UT-SQL 2048 allot   variable UT-SQL-U
    DB-ERROR$ o UT-LONG$ T$=
    E-SW-DB REASON$ 0 UT-LONG$ T$= ;
 
-4096 constant UT-OUT-CAP
-create UT-OUT UT-OUT-CAP allot   create UT-OUT-ERR UT-OUT-CAP allot
-variable UT-OUT-U
-
 \ text status's stdout, run as the command runs it, with its own store open
 : UT-STATUS-TEXT$ ( -- ptr u8 n )
-   DB-CLOSE
-   [: false CMD-STATUS ;] s" HOME" GETENV
-   UT-OUT UT-OUT-CAP SPAN:MAKE UT-OUT-ERR UT-OUT-CAP SPAN:MAKE
-   GT-CAPTURE-ACTION {: outu:len erru:len rc:n :}
-   DB-OPEN
-   rc 0 T=
-   outu LEN>N UT-OUT-U !
-   UT-OUT UT-OUT-U @ ;
+   DB-CLOSE [: false CMD-STATUS ;] UT-CAPTURE$ DB-OPEN ;
 
 \ both forms of status carry every one of a record's 200 windows
 : UT-STATUS-MANY ( -- )

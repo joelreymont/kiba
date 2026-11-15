@@ -1519,14 +1519,6 @@ public
 
 EXPORT USED-PERCENT
 
-\ the usage record's windows on one line
-: .LIMITS ( -- )
-   DB-LIMIT# 0 ?do
-      i 0 > if s"  · " .TEXT then
-      i DB-LIMIT-LABEL$ .TEXT s"  " .TEXT
-      i DB-LIMIT-PERCENT SB-RESET FMT:SB-U SB$ .TEXT s" %" .TEXT
-   loop ;
-
 \ probes provider p's login document d du, live when the CLI is using it:
 \ the outcome is the usage record, PROBE-DOC$ with the login (renewed
 \ when a token was) and PROBED-PLAN$

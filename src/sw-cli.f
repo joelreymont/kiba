@@ -375,11 +375,13 @@ DYNAMIC-BUFFER FAULTS u8     variable FAULTS-U     \ the provider error; empty w
 
 : FAULT-NEXT ( -- ) FAULTS-U @ 0 > if s" ; " FAULT+ then ;
 
-\ provider p's account: its name, then its windows, or its note when none
+\ provider p's account: its name, then what is left of its windows, or its
+\ note when no window has a reading
 : .USAGE ( n ptr u8 n -- ) {: p a u :}
    p PROVIDER$ .TEXT s" : " .TEXT a u .TEXT s"   " .TEXT
-   DB-LIMIT# 0= if DB-USAGE-NOTE$ .TEXT .NL exit then
-   .LIMITS .NL ;
+   p LEFT-TEXT {: t tu :}
+   tu 0= if DB-USAGE-NOTE$ .TEXT .NL exit then
+   t tu .TEXT .NL ;
 
 \ every saved row holds a record fetched after the run began
 : ALL-PROBED? ( -- bool )

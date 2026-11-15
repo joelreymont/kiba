@@ -75,8 +75,16 @@ variable FIG-N
 : FIG-LIM ( n -- ptr n ) FIG-LIMS ;
 : FIG-LEFT ( n -- ptr n ) FIG-LEFTS ;
 
-create FIG-TEXT BUF:HDR-BYTES allot   \ FIGURES-TEXT's answer, which grows with the record
+create FIG-TEXT BUF:HDR-BYTES allot   \ the figures as text, which grows with the record
 : FIG-TEXT+ ( ptr u8 n -- ) BUF:N>BLEN FIG-TEXT BUF:APPEND-SPAN ;
+: FIG-TEXT-RESET ( -- ) FIG-TEXT 64 BUF:N>BLEN BUF:RESET ;
+: FIG-TEXT$ ( -- ptr u8 n ) FIG-TEXT BUF:SPAN$ BUF:BLEN>N ;
+
+\ the separator before every figure but the first
+: FIG-SEP+ ( n -- ) 0 > if s"  · " FIG-TEXT+ then ;
+: FIG-PERCENT+ ( n -- ) FIG-LEFT @ FMT:INT$ FIG-TEXT+ s" %" FIG-TEXT+ ;
+: FIG-LABEL+ ( n -- )
+   FIG-LIM @ DB-LIMIT-LABEL$ FIG-TEXT+ s"  " FIG-TEXT+ ;
 
 : FIG+ ( n n -- ) {: k left :}
    k FIG-N @ FIG-LIM ! left FIG-N @ FIG-LEFT !
@@ -190,13 +198,18 @@ public
 \ "72% · 40% · 9%", or "limit" while the session or the week is used up
 : FIGURES-TEXT ( n -- ptr u8 n ) {: p :}
    false ROW-STATE BLOCKED? if s" limit" exit then
-   p FIGURES
-   FIG-TEXT 64 BUF:N>BLEN BUF:RESET
+   p FIGURES FIG-TEXT-RESET
+   FIG-N @ 0 ?do i FIG-SEP+ i FIG-PERCENT+ loop
+   FIG-TEXT$ ;
+
+\ "Session (5-hour) 72% left · Weekly (7-day) 40% left", the figures
+\ FIGURES-TEXT gives, each under its window's label; empty when none
+: LEFT-TEXT ( n -- ptr u8 n ) {: p :}
+   p FIGURES FIG-TEXT-RESET
    FIG-N @ 0 ?do
-      i 0 > if s"  · " FIG-TEXT+ then
-      i FIG-LEFT @ FMT:INT$ FIG-TEXT+ s" %" FIG-TEXT+
+      i FIG-SEP+ i FIG-LABEL+ i FIG-PERCENT+ s"  left" FIG-TEXT+
    loop
-   FIG-TEXT BUF:SPAN$ BUF:BLEN>N ;
+   FIG-TEXT$ ;
 
 \ row i's plan as the panel shows it; probed when its usage is decoded
 : SHOWN-PLAN$ ( n bool -- ptr u8 n ) {: i probed :}
