@@ -58,6 +58,9 @@ variable REC-OFFER                         \ 1 when the record holds a reset off
 variable REC-COUNT
 variable REC-PROGRAM-AT   variable REC-PROGRAM-U
 variable REC-GRANT-AT     variable REC-GRANT-U
+\ when the earliest counted reset expires, YYYY-MM-DDTHH:MM:SSZ in REC-TEXT;
+\ empty when unknown
+variable REC-EXPIRY-AT    variable REC-EXPIRY-U
 
 : REC-CLEAR ( -- ) REC-TEXT TEXTS-RESET ;
 : REC-SPAN$ ( n n -- ^u8 n ) {: off u :} REC-TEXT off u TEXTS$ ;
@@ -106,12 +109,17 @@ public
    ra ru REC-TEXT TEXTS-PUT {: ro ru2 :}
    lo lu2 pct ro ru2 LIM-ROW+ ;
 
-\ resets available now, program, grant
+\ resets available now, program, grant; no expiry yet
 : DB-RESETS! ( n ^u8 n ^u8 n -- ) {: k pa pu ga gu :}
    k REC-COUNT !
    pa pu REC-TEXT TEXTS-PUT REC-PROGRAM-U ! REC-PROGRAM-AT !
    ga gu REC-TEXT TEXTS-PUT REC-GRANT-U ! REC-GRANT-AT !
+   0 REC-EXPIRY-AT ! 0 REC-EXPIRY-U !
    1 REC-OFFER ! ;
+
+\ when the earliest counted reset expires; called after DB-RESETS!
+: DB-RESETS-EXPIRY! ( ^u8 n -- )
+   REC-TEXT TEXTS-PUT REC-EXPIRY-U ! REC-EXPIRY-AT ! ;
 
 : DB-USAGE-AT ( -- n ) REC-AT @ ;
 : DB-USAGE-STATE ( -- usage-state ) REC-STATE @ ;
@@ -124,6 +132,7 @@ public
 : DB-RESETS-COUNT ( -- n ) REC-COUNT @ ;
 : DB-RESETS-PROGRAM$ ( -- ^u8 n ) REC-PROGRAM-AT @ REC-PROGRAM-U @ REC-SPAN$ ;
 : DB-RESETS-GRANT$ ( -- ^u8 n ) REC-GRANT-AT @ REC-GRANT-U @ REC-SPAN$ ;
+: DB-RESETS-EXPIRY$ ( -- ^u8 n ) REC-EXPIRY-AT @ REC-EXPIRY-U @ REC-SPAN$ ;
 
 \ ---- the encoder ------------------------------------------------------------
 \ The bytes kiba-mac's JSONEncoder writes with .sortedKeys: keys in order, no
@@ -184,11 +193,18 @@ create ENC-ONE 1 allot
    loop
    $5D ENC-C ENC-COMMA ;
 
+\ an empty expiry writes no key
+: ENC-EXPIRY ( -- )
+   DB-RESETS-EXPIRY$ {: a u :}
+   u 0= if exit then
+   s" expiresAt" ENC-KEY a u ENC-STR ENC-COMMA ;
+
 \ an absent offer writes no key
 : ENC-OFFER ( -- )
    DB-RESETS? 0= if exit then
    s" resets" ENC-KEY $7B ENC-C
    s" count" ENC-KEY DB-RESETS-COUNT ENC-INT ENC-COMMA
+   ENC-EXPIRY
    s" grant" ENC-KEY DB-RESETS-GRANT$ ENC-STR ENC-COMMA
    s" program" ENC-KEY DB-RESETS-PROGRAM$ ENC-STR
    $7D ENC-C ENC-COMMA ;
@@ -291,11 +307,12 @@ variable OFFER-COUNT
    s" count" MEMBER? if DEC-INT OFFER-COUNT ! 1 SEEN+ exit then
    s" program" MEMBER? if DEC-STR REC-PROGRAM-U ! REC-PROGRAM-AT ! 2 SEEN+ exit then
    s" grant" MEMBER? if DEC-STR REC-GRANT-U ! REC-GRANT-AT ! 4 SEEN+ exit then
+   s" expiresAt" MEMBER? if DEC-STR REC-EXPIRY-U ! REC-EXPIRY-AT ! exit then
    SKIP-MEMBER ;
 
 \ null, like an absent key, is no offer
 : DEC-OFFER ( JSON:reader -- JSON:reader )
-   0 REC-OFFER !
+   0 REC-OFFER ! 0 REC-EXPIRY-AT ! 0 REC-EXPIRY-U !
    JSON:READ-NEXT {: k :}
    k JSON:T-NULL = if exit then
    k JSON:T-OBJ <> if E-SW-JSON throw then

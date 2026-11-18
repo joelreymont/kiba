@@ -37,12 +37,15 @@ require src/lib/aio.f
 require src/lib/net/tcp4.f
 require src/lib/net/http.f
 
-\ White-box: reopens SW for sw-usage.f's private URL-BASE; SW-TEST: words land
-\ in SW-TEST, the rest in SW.
+\ White-box: reopens SW for sw-usage.f's private URL-BASE and RFC3339>EPOCH;
+\ SW-TEST: words land in SW-TEST, the rest in SW.
 package SW
 
 \ every request goes to b u followed by its URL after the https://
 : SW-TEST:UT-SERVE-AT ( ^u8 n -- ) URL-BASE URL-BASE-U PATH! ;
+
+\ the private RFC 3339 reader, under its own name for UT-RFC3339
+: SW-TEST:RFC3339>EPOCH ( ^u8 n -- n ) RFC3339>EPOCH ;
 
 ;package
 
@@ -841,6 +844,26 @@ create UT-WANT 16384 allot   variable UT-WANT-U
    s" -" USED-PERCENT -1 T=
    s" " USED-PERCENT -1 T= ;
 
+\ RFC 3339 instants as epoch seconds, -1 when malformed or before 1970
+: UT-RFC3339 ( -- )
+   s" 2026-11-24T14:00:00Z" RFC3339>EPOCH 1795528800 T=
+   s" 2026-11-24T16:00:00.123456+02:00" RFC3339>EPOCH 1795528800 T=
+   s" 2026-11-24t14:00:00z" RFC3339>EPOCH 1795528800 T=
+   s" 2026-11-24 09:30:00-04:30" RFC3339>EPOCH 1795528800 T=
+   s" 2026-11-24T15:00:00+02:00" RFC3339>EPOCH 1795525200 T=
+   s" 1970-01-01T00:00:00Z" RFC3339>EPOCH 0 T=
+   s" 2026-11-24T23:59:60Z" RFC3339>EPOCH 1795564799 T=
+   s" 2026-11-24T14:00:00" RFC3339>EPOCH -1 T=
+   s" 2026-11-24T14:00:00.Z" RFC3339>EPOCH -1 T=
+   s" 2026-13-01T00:00:00Z" RFC3339>EPOCH -1 T=
+   s" 2026-11-24T24:00:00Z" RFC3339>EPOCH -1 T=
+   s" 2026-11-24T14:60:00Z" RFC3339>EPOCH -1 T=
+   s" 2026-11-24T14:00:00+0200" RFC3339>EPOCH -1 T=
+   s" 2026-11-24T14:00:00+24:00" RFC3339>EPOCH -1 T=
+   s" 1969-12-31T23:59:59Z" RFC3339>EPOCH -1 T=
+   s" 2026-11-24T14:00:00Zx" RFC3339>EPOCH -1 T=
+   s" " RFC3339>EPOCH -1 T= ;
+
 : LOG$ ( -- ^u8 n )
    s" KIBA_TEST_LOG" GETENV ;
 
@@ -1059,6 +1082,8 @@ create UT-CODEX-TURN PATH-CAP allot   variable UT-CODEX-TURN-U
 : UT-CODEX-USAGE$ ( -- ^u8 n ) s" /chatgpt.com/backend-api/wham/usage" ;
 : UT-CODEX-CONSUME$ ( -- ^u8 n )
    s" /chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume" ;
+: UT-CODEX-CREDITS$ ( -- ^u8 n )
+   s" /chatgpt.com/backend-api/wham/rate-limit-reset-credits" ;
 : UT-CODEX-TOKEN$ ( -- ^u8 n ) s" /auth.openai.com/oauth/token" ;
 
 : UT-ROUTES ( -- )
@@ -1073,6 +1098,8 @@ create UT-CODEX-TURN PATH-CAP allot   variable UT-CODEX-TURN-U
    [: UT-CLAUDE-RESET$ P-CLAUDE UT-SERVE ;] HTTP:ROUTE
    s" GET" UT-CODEX-USAGE$
    [: UT-CODEX-USAGE$ P-CODEX UT-SERVE ;] HTTP:ROUTE
+   s" GET" UT-CODEX-CREDITS$
+   [: UT-CODEX-CREDITS$ P-CODEX UT-SERVE ;] HTTP:ROUTE
    s" POST" UT-CODEX-CONSUME$
    [: UT-CODEX-CONSUME$ P-CODEX UT-SERVE ;] HTTP:ROUTE
    s" POST" UT-CODEX-TOKEN$
@@ -1120,6 +1147,12 @@ create UT-CODEX-TURN PATH-CAP allot   variable UT-CODEX-TURN-U
    UT-CODEX-USAGE$ s" at-d2" 200 s\" {\"rate_limit\":{\"primary_window\":{\"used_percent\":12,\"limit_window_seconds\":18000,\"reset_at\":1789489142},\"secondary_window\":{\"used_percent\":40,\"limit_window_seconds\":604800,\"reset_at\":1790075942}}}" UT-ANSWER
    UT-CODEX-USAGE$ s" at-dup" 200 s\" {\"rate_limit\":{\"primary_window\":{\"used_percent\":10,\"limit_window_seconds\":18000,\"used_percent\":20}}}" UT-ANSWER
    UT-CODEX-USAGE$ s" at-whole" 200 s\" {\"rate_limit\":{\"primary_window\":{\"used_percent\":30,\"limit_window_seconds\":6048e2,\"reset_at\":1789904220.0}},\"rate_limit_reset_credits\":{\"available_count\":2.0}}" UT-ANSWER
+   UT-CODEX-CREDITS$ s" at-whole" 200 s\" {\"credits\":[{\"id\":\"c1\",\"status\":\"redeeming\",\"expires_at\":\"2026-11-20T00:00:00Z\"},{\"id\":\"c2\",\"status\":\"available\",\"expires_at\":\"2026-11-24T14:00:00Z\"},{\"expires_at\":\"2026-11-24T15:00:00+02:00\",\"id\":\"c3\",\"status\":\"available\"},{\"id\":\"c4\",\"status\":\"available\",\"expires_at\":null},\"x\",{\"id\":\"c5\",\"status\":\"available\",\"expires_at\":\"soon\"}],\"available_count\":4}" UT-ANSWER
+   UT-CODEX-USAGE$ s" at-nolist" 200 s\" {\"rate_limit\":{\"primary_window\":{\"used_percent\":10,\"limit_window_seconds\":604800,\"reset_at\":1789904220}},\"rate_limit_reset_credits\":{\"available_count\":1}}" UT-ANSWER
+   UT-CODEX-CREDITS$ s" at-nolist" 500 s\" {\"credits\":[{\"id\":\"c\",\"status\":\"available\",\"expires_at\":\"2026-11-24T14:00:00Z\"}],\"available_count\":1}" UT-ANSWER
+   UT-CODEX-USAGE$ s" at-html" 200 s\" {\"rate_limit\":{\"primary_window\":{\"used_percent\":10,\"limit_window_seconds\":604800,\"reset_at\":1789904220}},\"rate_limit_reset_credits\":{\"available_count\":1}}" UT-ANSWER
+   UT-CODEX-CREDITS$ s" at-html" 200 s" <html>" UT-ANSWER
+   UT-CODEX-USAGE$ s" at-none" 200 s\" {\"rate_limit\":{\"primary_window\":{\"used_percent\":10,\"limit_window_seconds\":604800,\"reset_at\":1789904220}},\"rate_limit_reset_credits\":{\"available_count\":0}}" UT-ANSWER
    UT-CODEX-USAGE$ s" at-long" 200 s\" {\"plan_type\":\"ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\",\"rate_limit\":{\"primary_window\":{\"used_percent\":30,\"limit_window_seconds\":18000}}}" UT-ANSWER
    UT-CODEX-USAGE$ s" at-z" 401 s\" {\"error\":{\"code\":\"token_revoked\"}}" UT-ANSWER
    UT-CODEX-USAGE$ s" at-y" 401 s\" {\"error\":{\"code\":\"token_revoked\"}}" UT-ANSWER ;
@@ -1546,14 +1579,17 @@ create UT-AT-BUF 1024 allot
    DB-USAGE-NOTE$ s" OpenAI's usage endpoint sent an answer that is not a JSON object" T$=
    DB-LIMIT# 0 T= ;
 
-\ integers spelled 6048e2, 1789904220.0 and 2.0 read as those integers
+\ integers spelled 6048e2, 1789904220.0 and 2.0 read as those integers; the
+\ expiry is the earliest available credit's as an instant, so c3 wins over
+\ c2, which is earlier as text, and c1 does not count: it is redeeming
 : UT-ANSWER-WHOLE ( -- )
    P-CODEX s" whole@x.test" UT-RECORD s" ok" UT-STATE=
    DB-LIMIT# 1 T=
    0 DB-LIMIT-LABEL$ s" Weekly (7-day)" T$=
    0 DB-LIMIT-PERCENT 30 T=
    0 DB-LIMIT-RESETS$ s" 2026-09-20T11:37:00Z" T$=
-   DB-RESETS? TTRUE ;
+   DB-RESETS? TTRUE
+   DB-RESETS-EXPIRY$ s" 2026-11-24T13:00:00Z" T$= ;
 
 \ a plan longer than PLAN-CAP is the probe's error, never a missing plan
 : UT-ANSWER-LONG ( -- )
@@ -1561,18 +1597,70 @@ create UT-AT-BUF 1024 allot
    DB-USAGE-NOTE$ s" too many: bytes in a JSON string (limit 64)" T$=
    DB-LIMIT# 0 T= ;
 
+\ a credit list that fails leaves the probe ok, with no expiry and no note
+: UT-ANSWER-NO-LIST ( -- )
+   P-CODEX s" nolist@x.test" UT-RECORD s" ok" UT-STATE=
+   DB-RESETS-COUNT 1 T=
+   DB-RESETS-EXPIRY$ s" " T$=
+   DB-USAGE-NOTE$ s" " T$= ;
+
+\ with no reset held the credit list is not asked for
+: UT-ANSWER-NO-OFFER ( -- )
+   P-CODEX s" none@x.test" UT-RECORD s" ok" UT-STATE=
+   DB-RESETS? TTRUE
+   DB-RESETS-COUNT 0 T=
+   DB-RESETS-EXPIRY$ s" " T$= ;
+
+\ a credit list not JSON leaves the probe ok, with no expiry and no note
+: UT-ANSWER-HTML-LIST ( -- )
+   P-CODEX s" html@x.test" UT-RECORD s" ok" UT-STATE=
+   DB-RESETS-COUNT 1 T=
+   DB-RESETS-EXPIRY$ s" " T$=
+   DB-USAGE-NOTE$ s" " T$= ;
+
 \ provider answers read as kiba-mac's JSONFields reads them
 : UT-ANSWER-READS ( -- )
    s" dup@x.test" s" dup" UT-PUT-AT
    s" whole@x.test" s" whole" UT-PUT-AT
    s" long@x.test" s" long" UT-PUT-AT
+   s" nolist@x.test" s" nolist" UT-PUT-AT
+   s" none@x.test" s" none" UT-PUT-AT
+   s" html@x.test" s" html" UT-PUT-AT
+   UT-LOG-MARK
    P-CODEX CMD-USAGE
+   UT-LOG-NEW$ {: l lu :}
+   l lu s" /rate-limit-reset-credits Authorization: Bearer at-whole" CONTAINS? TTRUE
+   l lu s" /rate-limit-reset-credits Authorization: Bearer at-nolist" CONTAINS? TTRUE
+   l lu s" /rate-limit-reset-credits Authorization: Bearer at-html" CONTAINS? TTRUE
+   l lu s" /rate-limit-reset-credits Authorization: Bearer at-none" CONTAINS? TFALSE
    UT-ANSWER-REPEATS
    UT-ANSWER-WHOLE
    UT-ANSWER-LONG
+   UT-ANSWER-NO-LIST
+   UT-ANSWER-NO-OFFER
+   UT-ANSWER-HTML-LIST
    P-CODEX s" dup@x.test" CMD-FORGET
    P-CODEX s" whole@x.test" CMD-FORGET
-   P-CODEX s" long@x.test" CMD-FORGET ;
+   P-CODEX s" long@x.test" CMD-FORGET
+   P-CODEX s" nolist@x.test" CMD-FORGET
+   P-CODEX s" none@x.test" CMD-FORGET
+   P-CODEX s" html@x.test" CMD-FORGET ;
+
+\ a credit list one byte past BUF-CAP leaves the probe ok with no expiry
+: UT-CREDITS-TOO-BIG ( -- )
+   UT-ANSWERS-RESET
+   UT-CODEX-USAGE$ s" at-big" 200 s\" {\"rate_limit\":{\"primary_window\":{\"used_percent\":10,\"limit_window_seconds\":604800,\"reset_at\":1789904220}},\"rate_limit_reset_credits\":{\"available_count\":1}}" UT-ANSWER
+   UT-CODEX-CREDITS$ s" at-big" 200 UT-ANSWER-OPEN
+   STR-SPACE 4194305 UT-BODY-FILL
+   UT-ANSWER-CLOSE
+   s" big@x.test" s" big" UT-PUT-AT
+   P-CODEX CMD-USAGE
+   P-CODEX s" big@x.test" UT-RECORD s" ok" UT-STATE=
+   DB-RESETS-COUNT 1 T=
+   DB-RESETS-EXPIRY$ s" " T$=
+   DB-USAGE-NOTE$ s" " T$=
+   P-CODEX s" big@x.test" CMD-FORGET
+   UT-ANSWERS-DEFAULT ;
 
 \ ---- Claude probe outcomes ----------------------------------------------------
 \ the Claude outcomes: the usage and profile calls answer by the bearer
@@ -2161,14 +2249,15 @@ create UT-AUTH-BUF 256 allot
 
 1100 constant UT-GRANT-U   \ bytes in UT-GRANT-ROWS' grant id, all g
 
-\ a usage answer with each window's reset that banks two grants, the next
-\ one UT-GRANT-U bytes of g; a Claude reset answers "reset"
+\ a usage answer with each window's reset that banks two grants, each with
+\ its ends_at, the next one UT-GRANT-U bytes of g with ends_at its first
+\ member; a Claude reset answers "reset"
 : UT-GRANT-ROWS ( -- )
    UT-ANSWERS-RESET
    UT-CLAUDE-USAGE$ s" " 200 UT-ANSWER-OPEN
    s\" {\"five_hour\":{\"utilization\":10,\"resets_at\":\"2026-10-01T10:00:00+00:00\"},\"seven_day\":{\"utilization\":20,\"resets_at\":\"2026-10-07T10:00:00+00:00\"},\"limits\":[{\"kind\":\"weekly_scoped\",\"scope\":{\"model\":{\"display_name\":\"Fable\"}},\"percent\":30,\"resets_at\":\"2026-10-08T10:00:00+00:00\"}],\"cedar_ember\":{\"eligible\":true,\"next_grant_id\":\"" UT-BODY+
    [char] g UT-GRANT-U UT-BODY-FILL
-   s\" \",\"grants\":[{\"id\":\"other\",\"resets_left\":9},{\"id\":\"" UT-BODY+
+   s\" \",\"grants\":[{\"id\":\"other\",\"resets_left\":9,\"ends_at\":\"2026-10-20T00:00:00Z\"},{\"ends_at\":\"2026-11-24T14:00:00+00:00\",\"id\":\"" UT-BODY+
    [char] g UT-GRANT-U UT-BODY-FILL
    s\" \",\"resets_left\":2}]}}" UT-BODY+
    UT-ANSWER-CLOSE
@@ -2192,6 +2281,7 @@ create UT-AUTH-BUF 256 allot
    DB-RESETS-COUNT 2 T=
    DB-RESETS-PROGRAM$ s" cedar_ember" T$=
    DB-RESETS-GRANT$ 0 UT-LONG$ T$=
+   DB-RESETS-EXPIRY$ s" 2026-11-24T14:00:00Z" T$=
    [: [: P-CLAUDE s" g@x.test" UT-BUF -1 DB-SET-USAGE ;] DB-WRITE ;] UT-STORE
    UT-LOG-MARK
    P-CLAUDE s" g@x.test" CMD-REDEEM
@@ -2199,6 +2289,18 @@ create UT-AUTH-BUF 256 allot
    UT-LONG-U @ {: o :}
    s\" \"grant_id\":\"" UT-LONG+ [char] g UT-GRANT-U UT-LONG-FILL [char] " 1 UT-LONG-FILL
    UT-LOG-NEW$ o UT-LONG$ CONTAINS? TTRUE
+   P-CLAUDE s" g@x.test" CMD-FORGET
+   UT-ANSWERS-DEFAULT ;
+
+\ a next grant whose ends_at is null records no expiry, whatever another had
+: UT-GRANT-NO-END ( -- )
+   UT-ANSWERS-RESET
+   UT-CLAUDE-USAGE$ s" " 200 s\" {\"five_hour\":{\"utilization\":10,\"resets_at\":\"2026-10-01T10:00:00+00:00\"},\"cedar_ember\":{\"eligible\":true,\"next_grant_id\":\"g-n\",\"grants\":[{\"id\":\"other\",\"resets_left\":9,\"ends_at\":\"2026-10-20T00:00:00Z\"},{\"id\":\"g-n\",\"resets_left\":1,\"ends_at\":null}]}}" UT-ANSWER
+   P-CLAUDE s" g@x.test" s" org-g" CREDS-G$ UT-PUT-ORG
+   P-CLAUDE CREDS-G$ false PROBE
+   s" ok" UT-STATE=
+   DB-RESETS-COUNT 1 T=
+   DB-RESETS-EXPIRY$ s" " T$=
    P-CLAUDE s" g@x.test" CMD-FORGET
    UT-ANSWERS-DEFAULT ;
 
@@ -2426,6 +2528,10 @@ variable UT-V
 : USAGE-LIT$ ( -- ^u8 n )
    s\" {\"fetchedAt\":1700000000,\"limits\":[{\"label\":\"Session (5-hour)\",\"percent\":30,\"resetsAt\":\"2026-11-13T10:00:00Z\"},{\"label\":\"Weekly \\/ Opus\",\"percent\":-1,\"resetsAt\":\"\"}],\"note\":\"a\\/b \\\"q\\\"\\n\",\"resets\":{\"count\":2,\"grant\":\"g-1\",\"program\":\"cedar_ember\"},\"state\":\"throttled\"}" ;
 
+\ USAGE-LIT$ with the reset offer's expiry
+: USAGE-EXPIRY-LIT$ ( -- ^u8 n )
+   s\" {\"fetchedAt\":1700000000,\"limits\":[{\"label\":\"Session (5-hour)\",\"percent\":30,\"resetsAt\":\"2026-11-13T10:00:00Z\"},{\"label\":\"Weekly \\/ Opus\",\"percent\":-1,\"resetsAt\":\"\"}],\"note\":\"a\\/b \\\"q\\\"\\n\",\"resets\":{\"count\":2,\"expiresAt\":\"2026-11-24T14:00:00Z\",\"grant\":\"g-1\",\"program\":\"cedar_ember\"},\"state\":\"throttled\"}" ;
+
 \ the first column of the last row sql selects; 0 when it selects none
 : UT-DB-INT ( ^u8 n -- n ) {: a u :}
    0 UT-V !
@@ -2468,6 +2574,7 @@ variable UT-V
    1 DB-LIMIT-LABEL$ s" Weekly / Opus" T$=
    1 DB-LIMIT-PERCENT -1 T=
    DB-RESETS? TTRUE DB-RESETS-COUNT 2 T=
+   DB-RESETS-EXPIRY$ nip 0 T=
    [: P-CLAUDE s" a@x.test" s" pro" DB-SET-USAGE ;] DB-WRITE
    s" {}" DB-USAGE-DECODE
    DB-USAGE-NOTE$ s" usage record is unreadable; refresh usage" T$=
@@ -2475,6 +2582,15 @@ variable UT-V
    0 DB-ROW-PLAN$ s" pro" T$=
    0 DB-ROW-USAGE TTRUE
    DB-USAGE-ENCODE USAGE-LIT$ T$= ;
+
+\ an expiry survives the store byte for byte; a new offer starts with none
+: UT-DB-EXPIRY ( -- )
+   USAGE-EXPIRY-LIT$ DB-USAGE-DECODE
+   DB-USAGE-ENCODE USAGE-EXPIRY-LIT$ T$=
+   DB-RESETS-EXPIRY$ s" 2026-11-24T14:00:00Z" T$=
+   1 s" juniper_tide" s" " DB-RESETS!
+   DB-RESETS-EXPIRY$ nip 0 T=
+   DB-USAGE-ENCODE s" expiresAt" CONTAINS? TFALSE ;
 
 \ a second note replaces the first; clearing leaves none
 : UT-DB-PENDING ( -- )
@@ -2687,6 +2803,7 @@ create UT-LABEL 200 allot   create UT-RESET 100 allot
    UT-DB-PUT
    UT-DB-FETCH
    UT-DB-USAGE
+   UT-DB-EXPIRY
    UT-DB-MANY
    UT-DB-PENDING
    UT-DB-ROLLBACK
@@ -3233,10 +3350,12 @@ $1A4 constant UT-MODE-OUT                              \ 0644
    UT-ADD-FAILED
    UT-LOGIN-ENVS
    UT-PCT
+   UT-RFC3339
    UT-PCT-CALLERS
    UT-SCOPED-LONG
    UT-LONG-TOKEN
    UT-RENEWED-THROWS
+   UT-CREDITS-TOO-BIG
    UT-OUTPUT-REFUSED
    UT-USAGE
    UT-USAGE-REFRESHED
@@ -3261,6 +3380,7 @@ $1A4 constant UT-MODE-OUT                              \ 0644
    UT-REDEEM-RENEWED
    UT-REDEEM-SEGMENT
    UT-REDEEM-LONG-GRANT
+   UT-GRANT-NO-END
    UT-REDEEM-LIVE
    UT-REDEEM-CODEX
    UT-REDEEM-REVOKED

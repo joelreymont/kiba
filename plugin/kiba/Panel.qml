@@ -221,6 +221,17 @@ Panel {
 
   function resetsText(n) { return n + (n === 1 ? " limit reset" : " limit resets") }
 
+  // "2 limit resets available · first expires Nov 24 at 14:00", "1 limit
+  // reset available · expires Nov 24 at 14:00" in local time, or the count
+  // alone when the CLI knows no expiry, so no reset is lost unspent
+  function resetsLine(u) {
+    var line = resetsText(u.resets) + " available"
+    var at = parseISO(u.resetsExpireAt)
+    if (!isFinite(at)) return line
+    return line + (u.resets === 1 ? " · expires " : " · first expires ")
+      + Qt.formatDateTime(new Date(at), "MMM d 'at' HH:mm")
+  }
+
   function tooltipText(p, a) {
     var head = a.name
     var label = planLabel(a)
@@ -236,7 +247,7 @@ Panel {
         var when = l.resetsAt !== "" ? " · resets in " + resetLong(l.resetsAt) : ""
         lines.push(l.label + ": " + left + when)
       }
-      if (u.resets > 0) lines.push(resetsText(u.resets) + " available")
+      if (u.resets > 0) lines.push(resetsLine(u))
       if (u.fetchedAt > 0) lines.push("Probed " + age(u.fetchedAt))
     } else lines.push("Usage not probed yet")
     if (status.relogin(u, a.active)) lines.push("Click to log in to this account again")
@@ -1097,7 +1108,7 @@ Panel {
         key: root.keyOf("redeem", row.provider.id, row.account.name)
         label: String(row.offer)
         live: row.live
-        tip: root.resetsText(row.offer) + " available. Click to use one."
+        tip: row.offer > 0 ? root.resetsLine(row.account.usage) + ". Click to use one." : ""
         onActivated: root.ask("reset", row.provider.id, row.account.name)
         onHoverEnded: if (rowMouse.containsMouse && !row.overBadge) root.pointKey(row.key)
       }

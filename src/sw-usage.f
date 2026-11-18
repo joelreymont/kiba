@@ -138,11 +138,11 @@ variable HTTP-CODE                  \ the last answer's status, -1 when there wa
 
 \ ---- requests -------------------------------------------------------------------
 \ A request is its header lines, its body and its URL, sent on one libcurl
-\ handle that SEND alone holds. Line i of HDR-TEXT ends at HDR-ENDS i.
+\ handle that TRANSFER alone holds. Line i of HDR-TEXT ends at HDR-ENDS i.
 create HDR-TEXT BUF:HDR-BYTES allot
 DYNAMIC-BUFFER HDR-ENDS n
 variable HDR-N
-\ borrowed from the caller until SEND returns; length -1 for a GET
+\ borrowed from the caller until TRANSFER returns; length -1 for a GET
 TYPED-VARIABLE REQ-BODY-A ^u8   variable REQ-BODY-U
 \ tests reach a local server through URL-BASE; length 0 sends each URL as written
 create URL-BASE PATH-CAP allot     variable URL-BASE-U
@@ -203,12 +203,13 @@ create TARGET-TEXT BUF:HDR-BYTES allot
    REQ-BODY-U @ 0 < if true exit then
    h REQ-BODY-A @ REQ-BODY-U @ CURL:BODY! SET? ;
 
-\ the answer's status, its body in OBJ-BUF; -1 when the transfer failed
+\ the answer's status, its body in OBJ-BUF; -1 when the transfer failed,
+\ -2 when the body overran OBJ-BUF
 : ANSWER ( CURL:fetch-result -- n )
    MATCH CURL:fetch-result
       response OF {: st:CURL:http-status got:len :}
          got LEN>N OBJ-U ! st CURL:HTTP-STATUS>N ENDOF
-      truncated OF 2drop DOC-TOO-BIG ENDOF
+      truncated OF 2drop -2 ENDOF
       failed OF drop -1 ENDOF
    ;MATCH ;
 
@@ -219,16 +220,19 @@ create TARGET-TEXT BUF:HDR-BYTES allot
    h url uu TARGET$ CURL:URL! SET? 0= if -1 exit then
    h OBJ-BUF BUF-CAP >LEN CURL:PERFORM ANSWER ;
 
-\ the staged request sent to url: the answer's status, or -1 when there was
-\ none; the handle, which holds copies of the bearer token, is freed on a
-\ throw too
-: SEND ( ^u8 n -- n ) {: url uu :}
+\ the staged request sent to url: ANSWER's status, or -1 when it was not sent;
+\ the handle, which holds copies of the bearer token, is freed on a throw too
+: TRANSFER ( ^u8 n -- n ) {: url uu :}
    0 OBJ-U !
    CURL:INIT MATCH CURL:init-result
       ready OF {: h:CURL:handle :}
          [: h url uu SEND-ON ;] [: h CURL:CLEANUP ;] finally ENDOF
       failed OF drop -1 ENDOF
    ;MATCH ;
+
+\ TRANSFER, where a body that overran OBJ-BUF throws
+: SEND ( ^u8 n -- n )
+   TRANSFER dup -2 = if DOC-TOO-BIG then ;
 
 \ the body of the last answer
 : ANSWER$ ( -- ^u8 n ) OBJ$ ;
@@ -528,16 +532,131 @@ variable SC-PCT
    wh 0 >= if WEEKLY-LABEL$ wh wo wu SCAN$ DB-LIMIT+ then
    d du CLAUDE-SCOPED ;
 
+\ ---- instants --------------------------------------------------------------------
+: EPOCH>RESET$ ( n -- ^u8 n )
+   dup 0 <= if drop DATE-BUF 0 exit then
+   DATE-BUF DATE:TIME-LEN DATE:FORMAT-EPOCH-UTC ;
+
+DATE:LEN 1+ constant RFC-HOUR-POS     \ HH after YYYY-MM-DD and its separator
+RFC-HOUR-POS 8 + constant RFC-CLOCK-END   \ just past HH:MM:SS
+
+\ the two digits at pos when they are at most top, else -1
+: RFC-PART ( ^u8 n n -- n )
+   {: a pos top :}
+   a pos 2 DATE:N MATCH option
+     none OF -1 ENDOF
+     some OF dup top > if drop -1 then ENDOF
+   ;MATCH ;
+
+\ the seconds of HH:MM at pos, HH to 23 and MM to 59, else -1
+: RFC-HM ( ^u8 n -- n )
+   {: a pos :}
+   a pos + 2 + c@ [char] : <> if -1 exit then
+   a pos 23 RFC-PART {: h :}
+   a pos 3 + 59 RFC-PART {: m :}
+   h 0 < m 0 < or if -1 exit then
+   h 3600 * m 60 * + ;
+
+\ the seconds into the day of HH:MM:SS, a leap second 60 read as 59;
+\ -1 when malformed
+: RFC-CLOCK ( ^u8 -- n )
+   {: a :}
+   a RFC-HOUR-POS RFC-HM {: hm :}
+   a RFC-HOUR-POS + 5 + c@ [char] : <> if -1 exit then
+   a RFC-HOUR-POS 6 + 60 RFC-PART {: sec :}
+   hm 0 < sec 0 < or if -1 exit then
+   hm sec 59 min + ;
+
+\ T, t or a space, which parts the date from the time
+: RFC-SEP? ( n -- bool )
+   {: c :}
+   c [char] T =  c [char] t = or  c STR-SPACE = or ;
+
+\ the epoch seconds of the date and time as if they were UTC
+: RFC-LOCAL ( ^u8 -- option<n> )
+   {: a :}
+   a DATE:LEN + c@ RFC-SEP? 0= if OPTION:NONE exit then
+   a RFC-CLOCK {: secs :}
+   secs 0 < if OPTION:NONE exit then
+   a DATE:LEN DATE:PARSE-YMD MATCH option
+     none OF OPTION:NONE ENDOF
+     some OF DATE:SECONDS-DAY * secs + OPTION:SOME ENDOF
+   ;MATCH ;
+
+\ the index past the time's fraction, if any; -1 for a dot without digits
+: RFC-FRACTION ( ^u8 n -- n )
+   {: a u :}
+   a RFC-CLOCK-END + c@ [char] . <> if RFC-CLOCK-END exit then
+   a u RFC-CLOCK-END 1+ DIGIT-RUN {: end :}
+   end RFC-CLOCK-END 1+ = if -1 exit then
+   end ;
+
+\ Z or z, which names UTC itself
+: UTC-ZONE? ( n -- bool )
+   {: c :}
+   c [char] Z =  c [char] z = or ;
+
+\ 1 for +, -1 for -, 0 for any other byte
+: OFFSET-SIGN ( n -- n )
+   {: c :}
+   c [char] + = if 1 exit then
+   c [char] - = if -1 exit then
+   0 ;
+
+\ the seconds east of UTC that Z, z or +HH:MM or -HH:MM names
+: RFC-OFFSET ( ^u8 n -- option<n> )
+   {: z zu :}
+   zu 1 = if z c@ UTC-ZONE? if 0 OPTION:SOME exit then then
+   zu 6 <> if OPTION:NONE exit then
+   z c@ OFFSET-SIGN {: sign :}
+   z 1 RFC-HM {: off :}
+   sign 0= off 0 < or if OPTION:NONE exit then
+   sign off * OPTION:SOME ;
+
+\ the zone's offset after the time and its fraction, the text's last bytes
+: RFC-ZONE ( ^u8 n -- option<n> )
+   {: a u :}
+   a u RFC-FRACTION {: pos :}
+   pos 0 < if OPTION:NONE exit then
+   a pos + u pos - RFC-OFFSET ;
+
+\ the epoch seconds of local seconds t in the text's zone, -1 when the
+\ zone is malformed or the instant is before 1970
+: RFC-UTC ( n ^u8 n -- n )
+   {: t a u :}
+   a u RFC-ZONE MATCH option
+     none OF -1 ENDOF
+     some OF t swap - dup 0 < if drop -1 then ENDOF
+   ;MATCH ;
+
+\ the epoch seconds of an RFC 3339 date-time, -1 when malformed or before 1970
+: RFC3339>EPOCH ( ^u8 n -- n )
+   {: a u :}
+   u RFC-CLOCK-END <= if -1 exit then
+   a RFC-LOCAL MATCH option
+     none OF -1 ENDOF
+     some OF a u RFC-UTC ENDOF
+   ;MATCH ;
+
+\ records epoch seconds n as the reset expiry; n below 0 records nothing
+: EXPIRY! ( n -- )
+   dup 0 < if drop exit then
+   EPOCH>RESET$ DB-RESETS-EXPIRY! ;
+
 \ ---- the reset offer -------------------------------------------------------------
-\ cedar_ember banks grants: the one named next_grant_id and its resets_left;
-\ else juniper_tide offers one reset a week while one is available
+\ cedar_ember banks grants: the one named next_grant_id, its resets_left and
+\ its ends_at; else juniper_tide offers one reset a week while one is available
 variable GRANT-NEXT-AT   variable GRANT-NEXT-U   \ in SCAN-TEXT
 variable GRANT-SEEN                 \ bool: the grant named next was found
 variable GRANT-IS                   \ bool: the grant in hand is the one named next
 variable GRANT-HAS-LEFT             \ bool: the grant in hand says how many resets are left
 variable GRANT-LEFT
+\ the grant in hand's ends_at, in SCAN-TEXT; empty when absent, null or not
+\ a string
+variable GRANT-ENDS-AT   variable GRANT-ENDS-U
 
 : GRANT-NEXT$ ( -- ^u8 n ) GRANT-NEXT-AT @ GRANT-NEXT-U @ SCAN$ ;
+: GRANT-ENDS$ ( -- ^u8 n ) GRANT-ENDS-AT @ GRANT-ENDS-U @ SCAN$ ;
 
 \ cedar_ember's next_grant_id onto SCAN-TEXT; false when absent, null or not a string
 : GRANT-NEXT-READ ( ^u8 n -- bool ) {: d du :}
@@ -553,14 +672,17 @@ variable GRANT-LEFT
    JSON:READ-TOKEN JSON:T-KEY <> if E-SW-JSON throw then
    s" id" JSON:READ-STR-EQ? {: idk :}
    s" resets_left" JSON:READ-STR-EQ? {: leftk :}
+   s" ends_at" JSON:READ-STR-EQ? {: endk :}
    JSON:READ-NEXT drop
    JSON:READ-TOKEN {: t :}
    idk t JSON:T-STR = and if GRANT-NEXT$ JSON:READ-STR-EQ? GRANT-IS ! exit then
    leftk t NUMBER-TOKEN? and if WHOLE GRANT-HAS-LEFT ! GRANT-LEFT ! exit then
+   endk if GRANT-ENDS-AT GRANT-ENDS-U SC-STR exit then
    JSON:READ-SKIP-VALUE ;
 
 : GRANT-OBJECT ( JSON:reader -- JSON:reader )
    false GRANT-IS ! false GRANT-HAS-LEFT !
+   0 GRANT-ENDS-AT ! 0 GRANT-ENDS-U !
    begin JSON:READ-NEXT JSON:T-OBJ-END <> while GRANT-MEMBER repeat
    GRANT-IS @ GRANT-SEEN ! ;
 
@@ -586,7 +708,10 @@ variable GRANT-LEFT
    GRANT-SEEN @ 0<> GRANT-HAS-LEFT @ 0<> and ;
 
 : CLAUDE-RESETS ( ^u8 n -- ) {: d du :}
-   d du BANKED? if GRANT-LEFT @ s" cedar_ember" GRANT-NEXT$ DB-RESETS! exit then
+   d du BANKED? if
+      GRANT-LEFT @ s" cedar_ember" GRANT-NEXT$ DB-RESETS!
+      GRANT-ENDS$ RFC3339>EPOCH EXPIRY! exit
+   then
    d du s" juniper_tide" s" eligible" TRUE2? 0= if exit then
    d du s" juniper_tide" s" available" TRUE2? if 1 else 0 then
    s" juniper_tide" s" " DB-RESETS! ;
@@ -935,6 +1060,8 @@ FSM:DEFINE CLAUDE-EXCHANGE ( n ) claude-step fresh-input
 
 \ ---- OpenAI ------------------------------------------------------------------------------
 : CODEX-USAGE-URL$ ( -- ^u8 n ) s" https://chatgpt.com/backend-api/wham/usage" ;
+: CODEX-CREDITS-URL$ ( -- ^u8 n )
+   s" https://chatgpt.com/backend-api/wham/rate-limit-reset-credits" ;
 : CODEX-TOKEN-URL$ ( -- ^u8 n ) s" https://auth.openai.com/oauth/token" ;
 : CODEX-CLIENT-ID$ ( -- ^u8 n ) s" app_EMoamEEZ73f0CkXaXp7hrann" ;
 : TOKENS-KEY$ ( -- ^u8 n ) s" tokens" ;
@@ -964,10 +1091,6 @@ FSM:DEFINE CLAUDE-EXCHANGE ( n ) claude-step fresh-input
    21600 <= if SESSION-LABEL$ exit then
    WEEKLY-LABEL$ ;
 
-: EPOCH>RESET$ ( n -- ^u8 n )
-   dup 0 <= if drop DATE-BUF 0 exit then
-   DATE-BUF DATE:TIME-LEN DATE:FORMAT-EPOCH-UTC ;
-
 : CODEX-WINDOW+ ( ^u8 n ^u8 n -- ) {: d du k ku :}
    d du k ku CODEX-WINDOW {: h secs at :}
    h 0 < if exit then
@@ -981,6 +1104,53 @@ FSM:DEFINE CLAUDE-EXCHANGE ( n ) claude-step fresh-input
 : CODEX-RESETS ( ^u8 n -- ) {: d du :}
    d du s" rate_limit_reset_credits" s" available_count" DOC-INT2 0= if drop exit then
    s" " s" " DB-RESETS! ;
+
+\ ---- the reset credits' expiry -----------------------------------------------------
+\ the credit list names each credit's status and expires_at; an available
+\ credit's expires_at, read as an instant, counts
+variable CREDIT-OPEN     \ bool: the credit in hand's status is available
+\ the credit in hand's expires_at in epoch seconds; -1 when absent, null,
+\ not a string or malformed
+variable CREDIT-ENDS
+variable CREDITS-FIRST   \ the earliest counted end so far; -1 for none
+
+\ expires_at's instant in epoch seconds; -1 when it is not one
+: CREDIT-END ( JSON:reader -- JSON:reader n )
+   JSON:READ-TOKEN JSON:T-STR <> if JSON:READ-SKIP-VALUE -1 exit then
+   SCAN-TEXT TEXTS-READ SCAN$ RFC3339>EPOCH ;
+
+: CREDIT-MEMBER ( JSON:reader -- JSON:reader )
+   JSON:READ-TOKEN JSON:T-KEY <> if E-SW-JSON throw then
+   s" status" JSON:READ-STR-EQ? {: statk :}
+   s" expires_at" JSON:READ-STR-EQ? {: endk :}
+   JSON:READ-NEXT drop
+   JSON:READ-TOKEN JSON:T-STR = statk and if
+      s" available" JSON:READ-STR-EQ? CREDIT-OPEN ! exit
+   then
+   endk if CREDIT-END CREDIT-ENDS ! exit then
+   JSON:READ-SKIP-VALUE ;
+
+: CREDIT-OBJECT ( JSON:reader -- JSON:reader )
+   false CREDIT-OPEN ! -1 CREDIT-ENDS !
+   begin JSON:READ-NEXT JSON:T-OBJ-END <> while CREDIT-MEMBER repeat
+   CREDIT-ENDS @ CREDITS-FIRST @ {: e f :}
+   CREDIT-OPEN @ 0= e 0 < or if exit then
+   f 0 < e f < or if e CREDITS-FIRST ! then ;
+
+: CREDIT-ARRAY ( JSON:reader -- JSON:reader )
+   begin JSON:READ-NEXT JSON:T-ARR-END <> while
+      JSON:READ-TOKEN JSON:T-OBJ = if CREDIT-OBJECT else JSON:READ-SKIP-VALUE then
+   repeat ;
+
+\ the earliest available credit's end in epoch seconds; -1 for none
+: CODEX-EARLIEST ( ^u8 n -- n )
+   {: d du :}
+   SCAN-RESET -1 CREDITS-FIRST !
+   d du OPEN-DOC ENTER-OBJECT
+   s" credits" JSON:READ-FIND-KEY if
+      JSON:READ-TOKEN JSON:T-ARR = if CREDIT-ARRAY then
+   then
+   JSON:READ-CLOSE CREDITS-FIRST @ ;
 
 \ the account's current plan, which the login's id_token only knew at sign-in
 : CODEX-PLAN ( ^u8 n -- ) {: d du :}
@@ -1009,13 +1179,23 @@ ENUM retry-input no-token unreachable fine unreadable rejected throttled other ;
    PROBE-DOC$ TOKENS-KEY$ s" id_token" KIND2 JSON:T-STR = if construct key-input tokens exit then
    construct key-input api-key ;
 
-\ the usage call with the access token CODEX-TOKEN left in VAL-BUF
-: CODEX-GET ( -- n )
+\ every ChatGPT call carries codex-cli's User-Agent, the bearer in VAL-BUF
+\ and the login's account id
+: CODEX-REQUEST ( -- )
    PROBE-DOC$ TOKENS-KEY$ s" account_id" ACCT-ID-BUF BUF-CAP DOC-STR2 0 max ACCT-ID-U !
    s" codex-cli" REQUEST
    VAL-BUF VAL-U @ BEARER
-   ACCT-ID-U @ 0 > if s" ChatGPT-Account-Id" ACCT-ID-BUF ACCT-ID-U @ HDR then
-   CODEX-USAGE-URL$ SEND dup HTTP-CODE ! ;
+   ACCT-ID-U @ 0 > if s" ChatGPT-Account-Id" ACCT-ID-BUF ACCT-ID-U @ HDR then ;
+
+\ the usage call with the access token CODEX-TOKEN left in VAL-BUF
+: CODEX-GET ( -- n ) CODEX-REQUEST CODEX-USAGE-URL$ SEND dup HTTP-CODE ! ;
+
+\ the earliest available credit's expiry; a list that fails or reads wrong
+\ records nothing and leaves the usage answer's state and note
+: CODEX-CREDITS ( -- )
+   CODEX-REQUEST CODEX-CREDITS-URL$ TRANSFER 200 <> if exit then
+   ANSWER$ FIELDS? 0= if exit then
+   ANSWER$ CODEX-EARLIEST EXPIRY! ;
 
 : CODEX-ANSWERED? ( -- bool ) ANSWER$ FIELDS? ;
 
@@ -1118,7 +1298,10 @@ ENUM retry-input no-token unreachable fine unreadable rejected throttled other ;
    ANSWER$ {: b bu :}
    b bu CODEX-LIMITS
    b bu CODEX-RESETS
-   b bu CODEX-PLAN ;
+   b bu CODEX-PLAN
+   \ the list call reuses the answer buffer, so it comes last; it is asked
+   \ only while the account holds a reset
+   DB-RESETS? DB-RESETS-COUNT 0 > and if CODEX-CREDITS then ;
 
 : CODEX-UNREADABLE ( n -- ) drop
    construct usage-state error s" OpenAI's usage endpoint" UNREADABLE-NOTE SAY ;
@@ -1339,12 +1522,7 @@ create RID-BUF 36 allot
    s" anthropic-beta" s" oauth-2025-04-20" HDR
    RESET-URL$ RESET-POST ;
 
-: CODEX-RESET-SEND ( -- n )
-   PROBE-DOC$ TOKENS-KEY$ s" account_id" ACCT-ID-BUF BUF-CAP DOC-STR2 0 max ACCT-ID-U !
-   s" codex-cli" REQUEST
-   VAL-BUF VAL-U @ BEARER
-   ACCT-ID-U @ 0 > if s" ChatGPT-Account-Id" ACCT-ID-BUF ACCT-ID-U @ HDR then
-   RESET-URL$ RESET-POST ;
+: CODEX-RESET-SEND ( -- n ) CODEX-REQUEST RESET-URL$ RESET-POST ;
 
 : RESET-SEND ( n -- n )
    P-CLAUDE = if CLAUDE-RESET-SEND exit then

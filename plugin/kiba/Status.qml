@@ -196,7 +196,8 @@ Item {
   // installedAt?, live?}]}; an account is {active, name, plan, usage?}; a
   // usage record is {fetchedAt, limits, note, resets?, state}; a limit is
   // {label, left?, percent, resetsAt}, `left` the percent left its figure
-  // shows. Members that are nil are left out.
+  // shows; resets is {count, expiresAt?, grant, program}, expiresAt when the
+  // earliest counted reset expires. Members that are nil are left out.
   function normalizeLive(live) {
     if (live === undefined || live === null) return null
     if (typeof live !== "object" || typeof live.email !== "string") return undefined
@@ -213,9 +214,11 @@ Item {
       limits.push({ label: l.label, percent: l.percent, left: typeof l.left === "number" ? l.left : null,
         resetsAt: String(l.resetsAt || "") })
     }
-    var resets = usage.resets && typeof usage.resets.count === "number" ? usage.resets.count : 0
+    var offer = usage.resets && typeof usage.resets === "object" ? usage.resets : null
+    var resets = offer && typeof offer.count === "number" ? offer.count : 0
+    var resetsExpireAt = offer && typeof offer.expiresAt === "string" ? offer.expiresAt : ""
     return { fetchedAt: Number(usage.fetchedAt || 0), state: usage.state, note: String(usage.note || ""),
-      limits: limits, resets: resets }
+      limits: limits, resets: resets, resetsExpireAt: resetsExpireAt }
   }
 
   function normalize(content) {

@@ -65,14 +65,16 @@ reads:
   "accounts":[{"name":"a@x","plan":"max","active":true,
     "usage":{"fetchedAt":1789480000,"state":"ok","note":"",
       "limits":[{"label":"Session (5-hour)","percent":56,"left":44,"resetsAt":"2026-09-15T14:00:00Z"}],
-      "resets":{"count":1,"program":"juniper_tide","grant":""}}}]}, ...]}
+      "resets":{"count":2,"expiresAt":"2026-11-24T14:00:00Z","grant":"g-1","program":"cedar_ember"}}}]}, ...]}
 ```
 
 A provider whose files cannot be read carries an `"error"` string and keeps
 its `accounts` list, so the other provider and every saved login stay
 usable. `usage` is absent until the account has been probed; `percent` is
 the whole number used, `-1` for a window without a reading; `resets` is
-absent when the provider said nothing about limit resets. `state` is one of:
+absent when the provider said nothing about limit resets, and its
+`expiresAt` is when the earliest of the counted resets expires, absent when
+the provider names no date. `state` is one of:
 
 | state | meaning |
 |-------|---------|
@@ -149,6 +151,12 @@ transaction:
   token and account id. Windows are named from their length: five hours is
   the session, seven days the week.
 
+A reset's expiry comes from Claude's next banked grant (its `ends_at`) and,
+for Codex, from `GET https://chatgpt.com/backend-api/wham/rate-limit-reset-credits`,
+asked only while the account holds a reset: the earliest `expires_at` among
+the credits still available. A failed list call leaves the date unknown and
+the probe's figures as they are.
+
 A saved (non-live) account is refreshed once through the provider's token
 endpoint when its token has expired (Claude) or is rejected (Codex), and the
 new tokens replace the saved ones. The live account is never refreshed by
@@ -165,11 +173,11 @@ is probed again.
 Requests are made in kiba's own process through libcurl, so a token reaches
 no argv, file or other process. No configuration file applies to them; the
 proxy environment variables (`https_proxy`, `all_proxy`, `no_proxy`) do, as
-libcurl reads them. Requests name
-`kiba` as their User-Agent, except the usage and reset calls: the ChatGPT
-ones keep `codex-cli`, and the Claude ones carry Claude Code's
-`claude-cli/<version>`, which alone opens the limit-reset offer. Anthropic's
-token endpoint answers 429 to curl's own User-Agent, whatever the grant.
+libcurl reads them. Requests name `kiba` as their User-Agent, except the
+usage and reset calls and Codex's reset-credit list: the ChatGPT ones keep
+`codex-cli`, and the Claude ones carry Claude Code's `claude-cli/<version>`,
+which alone opens the limit-reset offer. Anthropic's token endpoint answers
+429 to curl's own User-Agent, whatever the grant.
 
 `kiba redeem <provider> <name>` spends one limit reset the account's last
 probe offered, then probes it again. A saved login's token is refreshed
@@ -210,7 +218,10 @@ never hides the email. A red row whose login no longer works says
 does the red "!" badge it carries: the terminal first asks you to sign
 into it in the browser; the live account's expired token is not a dead
 login, its CLI refreshes it. A row's right-click menu offers Forget. Hovering a row
-shows every window with what is left and when it resets. The widget
+shows every window with what is left and when it resets, and, when the
+account holds limit resets, the date the earliest of them expires, as in
+`2 limit resets available · first expires Nov 24 at 14:00`; the reset
+badge's hover says the same. The widget
 refreshes status while the panel is open and after each action, not while
 it sits closed.
 

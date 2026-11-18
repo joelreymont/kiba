@@ -21,6 +21,10 @@ checked Habu program; a thin Omarchy bar widget runs it.
 - Since usage is probed only when asked, a reading more than an hour old
   is marked as old: its row dims the reading and shows its age, and the bar
   icon shows that provider's usage as unknown (the user, 2026-11-18).
+- Unlike kiba-mac, a row's hover says when the earliest of its counted
+  limit resets expires, so none is lost: Claude's next grant's `ends_at`,
+  Codex's earliest available credit's `expires_at` from its credit list,
+  asked only while the count is above 0 (the user, 2026-11-18).
 - Out of scope: a `usage --json` report, finding the login shell's `PATH`
   (a CLI run from a shell already has it), and any daemon or background
   switcher; the auto-switch mod schedules and picks.
@@ -107,10 +111,10 @@ checked Habu program; a thin Omarchy bar widget runs it.
   replaced atomically.
 - kiba keeps no history: the store holds saved logins and the live and
   in-flight markers, nothing that grows with each probe or switch.
-- Every request names its client: `KIBA-UA$`, except the usage and
-  reset calls, where the ChatGPT ones keep `codex-cli` and the Claude ones
-  carry Claude Code's `claude-cli/<version>` (`CLAUDE-UA$`), which alone
-  opens the limit-reset surface. Anthropic's token endpoint answers 429 to
-  curl's own User-Agent whatever the grant. Only a 400 or 401 from a token
-  endpoint means a saved login is gone; any other answer is an `error`
-  state, never `expired`.
+- Every request names its client: `KIBA-UA$`, except the usage, reset
+  and reset-credit-list calls, where the ChatGPT ones keep `codex-cli` and
+  the Claude ones carry Claude Code's `claude-cli/<version>`
+  (`CLAUDE-UA$`), which alone opens the limit-reset surface. Anthropic's
+  token endpoint answers 429 to curl's own User-Agent whatever the grant.
+  Only a 400 or 401 from a token endpoint means a saved login is gone; any
+  other answer is an `error` state, never `expired`.
