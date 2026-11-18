@@ -253,9 +253,15 @@ Panel {
     return Math.round(h / 24) + " days"
   }
 
+  // "just now", "12 min ago", "5 h ago" under 48 hours, else "3 days ago":
+  // usage is probed only when asked, so a reading can be days old
   function age(epoch) {
     var min = Math.max(0, Math.round((nowMs / 1000 - epoch) / 60))
-    return min < 1 ? "just now" : min + " min ago"
+    if (min < 1) return "just now"
+    if (min < 60) return min + " min ago"
+    var h = Math.floor(min / 60)
+    if (h < 48) return h + " h ago"
+    return Math.round(h / 24) + " days ago"
   }
 
   // ---------------------------------------------------------------- panel
