@@ -200,8 +200,10 @@ model window, as percentages in that order (the hover text names them),
 amber below half. The dot is green while the account can take work, a used
 up model window included; red when its session or week is used up (the
 figures then read `limit` and the label carries the reset time, as in
-`(pro, 5d)`), its login is dead, or it has no plan; grey with no data. The
-figures always fit; the email and the label share the rest, each shortened
+`(pro, 5d)`), its login is dead, or it has no plan; grey with no data. A
+reading more than an hour old is marked as old: its dot, figures and bars
+are drawn faint, its age, as in `2d ago`, ends the bars, and the bar icon draws the live account's old reading as unknown, an empty
+outline; rows still sort by it. The figures always fit; the email and the label share the rest, each shortened
 in the middle, so a long plan such as Codex's `self_serve_business_prolite`
 never hides the email. A red row whose login no longer works says
 "log in again" and starts a login for that account when clicked, and so

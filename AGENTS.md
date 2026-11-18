@@ -18,6 +18,9 @@ checked Habu program; a thin Omarchy bar widget runs it.
   alone, and usage is probed only when asked, per provider from the
   refresh arrow before its "+" or for every provider from "Refresh usage"
   and a right click on the bar icon (the user, 2026-11-15).
+- Since usage is probed only when asked, a reading more than an hour old
+  is marked as old: its row dims the reading and shows its age, and the bar
+  icon shows that provider's usage as unknown (the user, 2026-11-18).
 - Out of scope: a `usage --json` report, finding the login shell's `PATH`
   (a CLI run from a shell already has it), and any daemon or background
   switcher; the auto-switch mod schedules and picks.

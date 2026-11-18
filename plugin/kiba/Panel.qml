@@ -180,6 +180,21 @@ Panel {
   // every bar segment an empty track: no window holds anything usable
   function drained(state) { return state === "dead" || state === "unsubscribed" }
 
+  // A reading more than an hour old is marked as old: usage is probed only
+  // when asked, so a row may hold one from days ago.
+  readonly property real oldAfterMs: 3600000
+  readonly property real oldOpacity: 0.45
+
+  function aged(usage) {
+    return !!usage && usage.limits.length > 0 && usage.fetchedAt > 0 && nowMs - usage.fetchedAt * 1000 > oldAfterMs
+  }
+
+  // "5h ago" under 48 hours, else "2d ago"
+  function ageShort(epoch) {
+    var h = Math.floor(Math.max(0, nowMs / 1000 - epoch) / 3600)
+    return h < 48 ? h + "h ago" : Math.round(h / 24) + "d ago"
+  }
+
   function figuresText(usage) {
     if (rowState(usage, false) === "blocked") return "limit"
     return figures(usage).map(function(f) { return f.left + "%" }).join(" · ")
@@ -305,12 +320,15 @@ Panel {
     return gaugeCell(p)
   })
 
-  // the current account's headline room; spent when nothing usable is left
+  // the current account's headline room; spent when nothing usable is left,
+  // unknown while its reading is old
   function gaugeCell(p) {
     var a = p ? p.accounts.find(function(x) { return x.active }) : undefined
     if (!a) return { kind: "unknown", left: 0 }
     var s = rowState(a.usage, true)
-    if (s === "blocked" || s === "dead" || s === "unsubscribed") return { kind: "spent", left: 0 }
+    if (s === "dead" || s === "unsubscribed") return { kind: "spent", left: 0 }
+    if (aged(a.usage)) return { kind: "unknown", left: 0 }
+    if (s === "blocked") return { kind: "spent", left: 0 }
     var h = s === "unknown" ? null : headline(a.usage)
     if (!h) return { kind: "unknown", left: 0 }
     return { kind: "level", left: Math.max(0, Math.min(100, 100 - h.percent)) }
@@ -522,9 +540,11 @@ Panel {
     function onCloseRequested() { root.close() }
   }
 
+  // the clock ages and reset times read by; it runs while the panel is
+  // closed too, so the bar icon marks a reading as old once it is
   Timer {
     interval: 30000
-    running: root.opened
+    running: true
     repeat: true
     onTriggered: root.nowMs = Date.now()
   }
@@ -881,7 +901,8 @@ Panel {
   }
 
   // A saved account: dot, name, plan, figures, its log-in-again badge and
-  // its limit-reset badge, the reservoir below. No box: the row lights
+  // its limit-reset badge, the reservoir below, ended by an old reading's
+  // age. No box: the row lights
   // under the pointer or the keyboard cursor, and faintly while it is the
   // live login. A confirming row shows its question with its go and Keep
   // buttons instead.
@@ -895,6 +916,8 @@ Panel {
     readonly property bool red: root.usable(standing) === false
     readonly property int offer: account.usage ? account.usage.resets : 0
     readonly property bool relogin: status.relogin(account.usage, account.active)
+    // the dot, figures and bars of an old reading are drawn faint
+    readonly property bool aged: root.aged(account.usage)
     // the row and its badges act only while no command runs
     readonly property bool live: !status.busy
     readonly property real inset: Style.space(10)
@@ -960,7 +983,7 @@ Panel {
         radius: width / 2
         readonly property var verdict: root.usable(row.standing)
         color: verdict === true ? root.good : (verdict === false ? root.urgent : root.dim)
-        opacity: verdict === null ? 0.6 : 1
+        opacity: row.aged ? root.oldOpacity : (verdict === null ? 0.6 : 1)
       }
 
       Text {
@@ -997,7 +1020,7 @@ Panel {
         anchors.verticalCenter: parent.verticalCenter
         text: root.figuresText(row.account.usage)
         textFormat: Text.PlainText
-        color: row.red ? root.urgent : root.foreground
+        color: row.aged ? root.dim : (row.red ? root.urgent : root.foreground)
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
         font.features: ({ "tnum": 1 })
@@ -1007,15 +1030,31 @@ Panel {
     Reservoir {
       id: reservoirBar
       visible: !row.asking
-      opacity: row.live ? 1 : root.disabledOpacity
+      opacity: (row.live ? 1 : root.disabledOpacity) * (row.aged ? root.oldOpacity : 1)
       anchors.left: parent.left
       anchors.leftMargin: row.inset
       anchors.right: parent.right
-      anchors.rightMargin: row.inset
+      anchors.rightMargin: row.inset + (ageText.visible ? ageText.implicitWidth + Style.space(6) : 0)
       anchors.top: nameLine.bottom
       anchors.topMargin: Style.space(5)
       figures: root.figures(row.account.usage)
       drained: root.drained(row.standing)
+    }
+
+    // an old reading's age at the end of its bars, which leaves the name its room
+    Text {
+      id: ageText
+      visible: !row.asking && row.aged
+      opacity: row.live ? 1 : root.disabledOpacity
+      anchors.right: parent.right
+      anchors.rightMargin: row.inset
+      anchors.verticalCenter: reservoirBar.verticalCenter
+      text: row.aged ? root.ageShort(row.account.usage.fetchedAt) : ""
+      textFormat: Text.PlainText
+      color: root.dim
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      font.features: ({ "tnum": 1 })
     }
 
     MouseArea {
