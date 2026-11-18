@@ -1,3 +1,4 @@
+split-str
 \ sw-store.f - saved logins moved between the account store and the live
 \ files.
 require ../src/sw-claude.f
@@ -21,11 +22,11 @@ create LIVE-ROW NAME-CAP allot   variable LIVE-ROW-U
 
 \ the name PUT-LIVE last saved under; its callers empty it first, so it is
 \ empty when there was no login
-: LIVE-ROW$ ( -- ptr u8 n ) LIVE-ROW LIVE-ROW-U @ ;
+: LIVE-ROW$ ( -- ^u8 n ) LIVE-ROW LIVE-ROW-U @ ;
 
 \ the live login as one read: its login and profile (length -1 for none),
 \ the identity in ID-LIVE; false when there is none
-: LIVE-LOGIN ( n -- ptr u8 n ptr u8 n bool )
+: LIVE-LOGIN ( n -- ^u8 n ^u8 n bool )
    case
      P-CLAUDE of CLAUDE-LIVE-LOGIN endof
      P-CODEX of CODEX-LIVE-LOGIN endof
@@ -62,7 +63,7 @@ private
       p PUT-LIVE ;] DB-WRITE ;
 
 \ E-SW-NO-ACCOUNT when there is no such saved login
-: FORGET-ROW ( n ptr u8 n -- ) {: p a u :}
+: FORGET-ROW ( n ^u8 n -- ) {: p a u :}
    [: p a u DB-FETCH 0= if E-SW-NO-ACCOUNT throw then
       p a u DB-REMOVE ;] DB-WRITE ;
 
@@ -71,11 +72,11 @@ create SWAP-NAME NAME-CAP allot   variable SWAP-NAME-U
 variable SWAP-SETTLED             \ bool: no install was pending before this one
 variable SWAP-RC                  \ what the failed live write threw
 
-: SWAP$ ( -- ptr u8 n ) SWAP-NAME SWAP-NAME-U @ ;
+: SWAP$ ( -- ^u8 n ) SWAP-NAME SWAP-NAME-U @ ;
 
 \ the completed install of the name, noted at the clock's time once the
 \ live files are written
-: NOTE-SWITCH ( n ptr u8 n -- ) {: p a u :}
+: NOTE-SWITCH ( n ^u8 n -- ) {: p a u :}
    p a u epoch-seconds true DB-NOTE-INSTALLED ;
 
 \ the row's profile into OBJ and login into SDOC, both checked
@@ -184,13 +185,13 @@ FSM:DEFINE INSTALLING ( n ) install-state swap-input
 
 \ E-SW-NO-ACCOUNT, E-SW-MISMATCH or E-SW-JSON for a row unfit to install;
 \ once noted, any throw but a failed live write's leaves the marker pending
-: CLAUDE-INSTALL ( ptr u8 n -- )
+: CLAUDE-INSTALL ( ^u8 n -- )
    SWAP-NAME SWAP-NAME-U NAME-CAP SPAN!
    P-CLAUDE construct install-state noting INSTALLING ;
 
 \ one transaction, so the row read is the row installed: it must exist
 \ (E-SW-NO-ACCOUNT) and name an email the name belongs to (E-SW-MISMATCH)
-: CODEX-SWITCH ( ptr u8 n -- ) {: a u :}
+: CODEX-SWITCH ( ^u8 n -- ) {: a u :}
    P-CODEX a u DB-FETCH 0= if E-SW-NO-ACCOUNT throw then
    0 DB-ROW-LOGIN$ SDOC-BUF SDOC-U BUF-CAP SPAN!
    SDOC$ ID-SLOT CODEX-IDENTITY 0= if E-SW-JSON throw then
@@ -198,11 +199,11 @@ FSM:DEFINE INSTALLING ( n ) install-state swap-input
    SDOC$ PUT-AUTH
    P-CODEX a u NOTE-SWITCH ;
 
-: CODEX-INSTALL ( ptr u8 n -- ) {: a u :}
+: CODEX-INSTALL ( ^u8 n -- ) {: a u :}
    [: a u CODEX-SWITCH ;] DB-WRITE ;
 
 \ makes the saved login live and records the switch
-: INSTALL ( n ptr u8 n -- ) {: p a u :}
+: INSTALL ( n ^u8 n -- ) {: p a u :}
    p case
      P-CLAUDE of a u CLAUDE-INSTALL endof
      P-CODEX of a u CODEX-INSTALL endof

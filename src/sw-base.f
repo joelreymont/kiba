@@ -1,3 +1,4 @@
+split-str
 \ sw-base.f - errors, providers, and byte helpers shared by every kiba module.
 require src/lib/error.f
 require src/lib/string.f
@@ -40,7 +41,7 @@ public
 $3D constant EQUALS
 128 constant NAME-CAP           \ longest account name plus its length byte
 
-: PROVIDER$ ( n -- ptr u8 n )
+: PROVIDER$ ( n -- ^u8 n )
    case
      P-CLAUDE of s" claude" endof
      P-CODEX of s" codex" endof
@@ -49,10 +50,10 @@ $3D constant EQUALS
 
 \ a diagnostic whose refused write must not change the outcome: a degraded
 \ result stays one, and a failure keeps its exit code
-: ERR-PART ( ptr u8 n -- ) {: a u :}
+: ERR-PART ( ^u8 n -- ) {: a u :}
    2 a u write drop ;
 
-: ERR-NOTE ( ptr u8 n -- )
+: ERR-NOTE ( ^u8 n -- )
    ERR-PART s\" \n" ERR-PART ;
 
 private
@@ -64,13 +65,13 @@ public
 
 \ E-SW-CAPACITY, keeping what overflowed, cut to TOO-MANY-CAP, for its
 \ reason; kiba-mac's form is "<what> (limit <n>)"
-: TOO-MANY ( ptr u8 n -- ) {: a u :}
+: TOO-MANY ( ^u8 n -- ) {: a u :}
    u TOO-MANY-CAP min {: k :}
    a TOO-MANY-BUF k BYTE-COPY
    k TOO-MANY-U !
    E-SW-CAPACITY throw ;
 
-: TOO-MANY$ ( -- ptr u8 n ) TOO-MANY-BUF TOO-MANY-U @ ;
+: TOO-MANY$ ( -- ^u8 n ) TOO-MANY-BUF TOO-MANY-U @ ;
 
 private
 
@@ -78,18 +79,18 @@ private
    s"  (limit " SB-APPEND FMT:SB-INT s" )" SB-APPEND ;
 
 \ "<what> (limit <n>)", built in SB
-: LIMIT$ ( ptr u8 n n -- ptr u8 n ) {: a u cap :}
+: LIMIT$ ( ^u8 n n -- ^u8 n ) {: a u cap :}
    SB-RESET a u SB-APPEND cap SB-LIMIT SB$ ;
 
 public
 
 \ copy a span into caller storage with an explicit capacity and length cell
-: SPAN! ( ptr u8 n ptr u8 ptr n n -- ) {: a u dst up cap :}
+: SPAN! ( ^u8 n ^u8 ^n n -- ) {: a u dst up cap :}
    u cap > if s" bytes in a value" cap LIMIT$ TOO-MANY then
    a dst u BYTE-COPY
    u up ! ;
 
-: PATH! ( ptr u8 n ptr u8 ptr n -- )
+: PATH! ( ^u8 n ^u8 ^n -- )
    PATH-CAP SPAN! ;
 
 : NAME-BYTE? ( n -- bool ) {: c :}
@@ -99,7 +100,7 @@ public
 
 \ account names become directory names: no control bytes, no slash, no
 \ leading dot; any other byte an email may carry is fine in a path
-: NAME-OK? ( ptr u8 n -- bool ) {: a u :}
+: NAME-OK? ( ^u8 n -- bool ) {: a u :}
    u 0 <= if false exit then
    u NAME-CAP 1- > if false exit then
    a c@ FS:DOT = if false exit then
@@ -108,11 +109,11 @@ public
       1+
    repeat drop true ;
 
-: CHECK-NAME ( ptr u8 n -- )
+: CHECK-NAME ( ^u8 n -- )
    NAME-OK? 0= if E-SW-NAME throw then ;
 
 \ the number after "email #", or -1 when the name is not of that form
-: NAME-SUFFIX# ( ptr u8 n ptr u8 n -- n ) {: a u e eu :}
+: NAME-SUFFIX# ( ^u8 n ^u8 n -- n ) {: a u e eu :}
    u eu 2 + <= if -1 exit then
    a eu e eu STR= 0= if -1 exit then
    a eu + 2 s"  #" STR= 0= if -1 exit then
@@ -123,24 +124,24 @@ public
    ;MATCH ;
 
 \ a slot name belongs to an email when it is the email or "email #n"
-: NAME-FOR-EMAIL? ( ptr u8 n ptr u8 n -- bool ) {: a u e eu :}
+: NAME-FOR-EMAIL? ( ^u8 n ^u8 n -- bool ) {: a u e eu :}
    a u e eu STR= if true exit then
    a u e eu NAME-SUFFIX# 0 > ;
 
 \ the email part of a slot name
-: NAME-EMAIL ( ptr u8 n -- ptr u8 n ) {: a u :}
+: NAME-EMAIL ( ^u8 n -- ^u8 n ) {: a u :}
    a u s"  #" FIND-SUB MATCH option
      none OF a u ENDOF
      some OF IDX>N {: i :} a i ENDOF
    ;MATCH ;
 
-: LAST-SLASH ( ptr u8 n -- n ) {: a u :}
+: LAST-SLASH ( ^u8 n -- n ) {: a u :}
    u begin dup 0 > while
       1- dup a + c@ FS:SLASH = if exit then
    repeat
    drop -1 ;
 
-: DIRNAME ( ptr u8 n -- ptr u8 n ) {: a u :}
+: DIRNAME ( ^u8 n -- ^u8 n ) {: a u :}
    a u LAST-SLASH {: i :}
    i 0 < if a 0 exit then
    i 0= if a 1 exit then

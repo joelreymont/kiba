@@ -1,3 +1,4 @@
+split-str
 \ sw-unit-test.f - checked kiba tests.
 \ Run through test.sh: HOME, XDG_DATA_HOME, and PATH must point at a scratch tree.
 \ kiba's requests reach a server in this process, which answers them from
@@ -41,7 +42,7 @@ require src/lib/net/http.f
 package SW
 
 \ every request goes to b u followed by its URL after the https://
-: SW-TEST:UT-SERVE-AT ( ptr u8 n -- ) URL-BASE URL-BASE-U PATH! ;
+: SW-TEST:UT-SERVE-AT ( ^u8 n -- ) URL-BASE URL-BASE-U PATH! ;
 
 ;package
 
@@ -50,58 +51,58 @@ using SW
 
 create UT-BUF 256 allot
 
-: SPAN-COPY ( ptr u8 n ptr u8 n -- ptr u8 n ) {: a u dst cap :}
+: SPAN-COPY ( ^u8 n ^u8 n -- ^u8 n ) {: a u dst cap :}
    u cap > if E-SW-CAPACITY throw then
    a dst u BYTE-COPY
    dst u ;
 
-: CFG-A$ ( -- ptr u8 n )
+: CFG-A$ ( -- ^u8 n )
    s\" {\"numStartups\":3,\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-a\",\"organizationName\":\"Org A\"},\"projects\":{\"/x\":{\"allowedTools\":[]}}}" ;
 
-: OAUTH-A$ ( -- ptr u8 n )
+: OAUTH-A$ ( -- ^u8 n )
    s\" {\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-a\",\"organizationName\":\"Org A\"}" ;
 
-: CFG-B$ ( -- ptr u8 n )
+: CFG-B$ ( -- ^u8 n )
    s\" {\"numStartups\":4,\"oauthAccount\":{\"accountUuid\":\"u2\",\"emailAddress\":\"b@x.test\"},\"projects\":{\"/x\":{\"allowedTools\":[]}}}" ;
 
 \ CFG-B with account A spliced back in
-: CFG-BA$ ( -- ptr u8 n )
+: CFG-BA$ ( -- ^u8 n )
    s\" {\"numStartups\":4,\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-a\",\"organizationName\":\"Org A\"},\"projects\":{\"/x\":{\"allowedTools\":[]}}}" ;
 
-: CREDS-A$ ( -- ptr u8 n )
+: CREDS-A$ ( -- ^u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-a\",\"refreshToken\":\"r-a\",\"expiresAt\":4102444800000,\"scopes\":[\"user:inference\"],\"subscriptionType\":\"max\",\"rateLimitTier\":\"default_claude_max_20x\"}}" ;
 
-: CREDS-B$ ( -- ptr u8 n )
+: CREDS-B$ ( -- ^u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-b\",\"refreshToken\":\"r-b\",\"expiresAt\":2,\"refreshTokenExpiresAt\":1,\"scopes\":[\"user:inference\"],\"subscriptionType\":\"pro\"}}" ;
 
-: CREDS-E$ ( -- ptr u8 n )
+: CREDS-E$ ( -- ^u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-e\",\"refreshToken\":\"r-e\",\"expiresAt\":2,\"scopes\":[\"user:inference\"],\"subscriptionType\":\"max\"}}" ;
 
-: CREDS-F$ ( -- ptr u8 n )
+: CREDS-F$ ( -- ^u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-f\",\"expiresAt\":2,\"scopes\":[\"user:inference\"],\"subscriptionType\":\"max\"}}" ;
 
-: AUTH-C$ ( -- ptr u8 n )
+: AUTH-C$ ( -- ^u8 n )
    s\" {\"OPENAI_API_KEY\":null,\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImNAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicGx1cyIsImNoYXRncHRfYWNjb3VudF9pZCI6ImFjY3QifSwiZXhwIjoxfQ.c2ln\",\"access_token\":\"at-c\",\"refresh_token\":\"rt-c\",\"account_id\":\"acct\"},\"last_refresh\":\"2026-09-14T07:11:36Z\"}" ;
 
-: AUTH-D$ ( -- ptr u8 n )
+: AUTH-D$ ( -- ^u8 n )
    s\" {\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d\",\"refresh_token\":\"rt-d\",\"account_id\":\"acct\"}}" ;
 
-: AUTH-KEY$ ( -- ptr u8 n )
+: AUTH-KEY$ ( -- ^u8 n )
    s\" {\"auth_mode\":\"apikey\",\"OPENAI_API_KEY\":\"sk-x\"}" ;
 
-: AUTH-KEY-NULL$ ( -- ptr u8 n )
+: AUTH-KEY-NULL$ ( -- ^u8 n )
    s\" {\"OPENAI_API_KEY\":\"sk-x\",\"tokens\":null,\"last_refresh\":null}" ;
 
-: CREDS-NULL-PLAN$ ( -- ptr u8 n )
+: CREDS-NULL-PLAN$ ( -- ^u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-n\",\"subscriptionType\":null}}" ;
 
-: CFG-EMPTY$ ( -- ptr u8 n ) s\" {}" ;
-: CFG-NOAUTH$ ( -- ptr u8 n ) s\" {\"numStartups\":1}" ;
+: CFG-EMPTY$ ( -- ^u8 n ) s\" {}" ;
+: CFG-NOAUTH$ ( -- ^u8 n ) s\" {\"numStartups\":1}" ;
 
-: UT-PAYLOAD= ( ptr u8 n ptr u8 n -- ) {: a u w wu :}
+: UT-PAYLOAD= ( ^u8 n ^u8 n -- ) {: a u w wu :}
    a u DECODE-PAYLOAD OBJ$ w wu T$= ;
 
-: UT-PAYLOAD-BAD ( ptr u8 n n -- ) {: a u code :}
+: UT-PAYLOAD-BAD ( ^u8 n n -- ) {: a u code :}
    [: a u DECODE-PAYLOAD ;] code TTHROWSQ ;
 
 : UT-B64 ( -- )
@@ -173,10 +174,10 @@ create UT-BUF 256 allot
    ID-LIVE PLAN$ nip 0 T= ;
 
 \ claims whose seats object, two objects down, repeats a key
-: CLAIMS-R$ ( -- ptr u8 n )
+: CLAIMS-R$ ( -- ^u8 n )
    s\" {\"email\":\"r@x.test\",\"https://api.openai.com/auth\":{\"chatgpt_plan_type\":\"plus\",\"seats\":{\"n\":1,\"n\":2}}}" ;
 
-: AUTH-R$ ( -- ptr u8 n )
+: AUTH-R$ ( -- ^u8 n )
    s\" {\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InJAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicGx1cyIsInNlYXRzIjp7Im4iOjEsIm4iOjJ9fX0.c2ln\"}}" ;
 
 \ claims that repeat a key deeper than JSONDoc looks are no login, as
@@ -200,13 +201,13 @@ DYNAMIC-BUFFER UT-BIG u8   variable UT-BIG-U
 
 : BIG-C+ ( n -- ) UT-BIG-U @ UT-BIG c!  1 UT-BIG-U +! ;
 
-: BIG+ ( ptr u8 n -- ) {: a u :}
+: BIG+ ( ^u8 n -- ) {: a u :}
    a UT-BIG-U @ UT-BIG u BYTE-COPY  u UT-BIG-U +! ;
 
-: BIG$ ( -- ptr u8 n ) 0 UT-BIG UT-BIG-U @ ;
+: BIG$ ( -- ^u8 n ) 0 UT-BIG UT-BIG-U @ ;
 
 \ an object nested UT-DEPTH deep, six bytes a level
-: UT-NESTED$ ( -- ptr u8 n )
+: UT-NESTED$ ( -- ^u8 n )
    UT-DEPTH 6 * 2 + UT-BIG-RESERVE  0 UT-BIG-U !
    UT-DEPTH 0 ?do s\" {\"a\":" BIG+ loop
    s" {}" BIG+
@@ -220,7 +221,7 @@ DYNAMIC-BUFFER UT-BIG u8   variable UT-BIG-U
    s\" \":0," BIG+ ;
 
 \ one object of UT-KEYS keys, nine bytes a member
-: UT-WIDE$ ( -- ptr u8 n )
+: UT-WIDE$ ( -- ^u8 n )
    UT-KEYS 9 * 2 + UT-BIG-RESERVE  0 UT-BIG-U !
    s" {" BIG+
    UT-KEYS 0 ?do i UT-MEMBER+ loop
@@ -228,7 +229,7 @@ DYNAMIC-BUFFER UT-BIG u8   variable UT-BIG-U
    BIG$ ;
 
 \ FIELDS? takes d du in under a second
-: FAST-FIELDS ( ptr u8 n -- ) {: d du :}
+: FAST-FIELDS ( ^u8 n -- ) {: d du :}
    TIME:MONO-NS {: t0 :}
    d du FIELDS? TTRUE
    TIME:MONO-NS t0 - 1000000000 < TTRUE ;
@@ -286,17 +287,17 @@ DYNAMIC-BUFFER UT-BIG u8   variable UT-BIG-U
 
 \ ---- saved logins in the account store -------------------------------------
 \ save, use and forget open the store themselves; a test opens it only to look
-: CREDS-A9$ ( -- ptr u8 n )
+: CREDS-A9$ ( -- ^u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-a9\",\"refreshToken\":\"r-a9\",\"expiresAt\":4102444800000,\"scopes\":[\"user:inference\"],\"subscriptionType\":\"max\"}}" ;
 
-: AUTH-C9$ ( -- ptr u8 n )
+: AUTH-C9$ ( -- ^u8 n )
    s\" {\"OPENAI_API_KEY\":null,\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImNAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicGx1cyIsImNoYXRncHRfYWNjb3VudF9pZCI6ImFjY3QifSwiZXhwIjoxfQ.c2ln\",\"access_token\":\"at-c9\",\"refresh_token\":\"rt-c\",\"account_id\":\"acct\"},\"last_refresh\":\"2026-09-14T07:11:36Z\"}" ;
 
 \ CFG-A with account B spliced in
-: CFG-AB$ ( -- ptr u8 n )
+: CFG-AB$ ( -- ^u8 n )
    s\" {\"numStartups\":3,\"oauthAccount\":{\"accountUuid\":\"u2\",\"emailAddress\":\"b@x.test\"},\"projects\":{\"/x\":{\"allowedTools\":[]}}}" ;
 
-: CFG-ONLY-A$ ( -- ptr u8 n )
+: CFG-ONLY-A$ ( -- ^u8 n )
    s\" {\"oauthAccount\":{\"accountUuid\":\"u1\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-a\",\"organizationName\":\"Org A\"}}" ;
 
 variable UT-N
@@ -306,15 +307,15 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
 : UT-STORE ( [ -- ] -- ) {: body :}
    DB-OPEN [: body execute ;] [: DB-CLOSE ;] finally ;
 
-: UT-LOGIN= ( n ptr u8 n ptr u8 n -- ) {: p a u l lu :}
+: UT-LOGIN= ( n ^u8 n ^u8 n -- ) {: p a u l lu :}
    [: p a u DB-FETCH TTRUE 0 DB-ROW-LOGIN$ l lu T$= ;] UT-STORE ;
 
-: UT-FETCH ( n ptr u8 n -- ) {: p a u :} p a u DB-FETCH UT-N ! ;
+: UT-FETCH ( n ^u8 n -- ) {: p a u :} p a u DB-FETCH UT-N ! ;
 
-: UT-ROW? ( n ptr u8 n -- bool ) {: p a u :}
+: UT-ROW? ( n ^u8 n -- bool ) {: p a u :}
    [: p a u UT-FETCH ;] UT-STORE UT-N @ ;
 
-: UT-INSTALLED= ( n ptr u8 n -- ) {: p a u :}
+: UT-INSTALLED= ( n ^u8 n -- ) {: p a u :}
    [: p DB-INSTALLED TTRUE a u T$= ;] UT-STORE ;
 
 : UT-PENDING-KEEP ( n -- ) DB-PENDING UT-N ! 2drop ;
@@ -322,7 +323,7 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
 : UT-PENDING? ( n -- bool ) {: p :}
    [: p UT-PENDING-KEEP ;] UT-STORE UT-N @ ;
 
-: UT-PENDING= ( n ptr u8 n -- ) {: p a u :}
+: UT-PENDING= ( n ^u8 n -- ) {: p a u :}
    [: p DB-PENDING TTRUE a u T$= ;] UT-STORE ;
 
 : UT-KEEP-NAME ( n -- ) {: p :}
@@ -330,7 +331,7 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
    p ID-LIVE DB-LIVE-NAME UT-BUF 256 SPAN-COPY nip UT-N ! ;
 
 \ the name DB-LIVE-NAME gives the live login now
-: UT-LIVE-NAME ( n -- ptr u8 n ) {: p :}
+: UT-LIVE-NAME ( n -- ^u8 n ) {: p :}
    [: p UT-KEEP-NAME ;] UT-STORE UT-BUF UT-N @ ;
 
 : UT-NO-CREDS ( -- ) CLAUDE-CREDS$ FS:REMOVE-FILE ;
@@ -406,14 +407,14 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
 
 \ a second login under the same email but another organization gets its own
 \ name, "a@x.test #2"
-: CFG-A2$ ( -- ptr u8 n )
+: CFG-A2$ ( -- ^u8 n )
    s\" {\"oauthAccount\":{\"accountUuid\":\"u9\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-c\",\"organizationName\":\"Org C\"}}" ;
 
 \ a third organization whose name only repeats the email
-: CFG-A3$ ( -- ptr u8 n )
+: CFG-A3$ ( -- ^u8 n )
    s\" {\"oauthAccount\":{\"accountUuid\":\"u8\",\"emailAddress\":\"a@x.test\",\"organizationUuid\":\"org-d\",\"organizationName\":\"a@x.test's Organization\"}}" ;
 
-: CREDS-A2$ ( -- ptr u8 n )
+: CREDS-A2$ ( -- ^u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-a2\",\"subscriptionType\":\"team\"}}" ;
 
 : UT-SAME-EMAIL ( -- )
@@ -497,7 +498,7 @@ create UT-REAL-BUF 256 allot     variable UT-REAL-U
 
 create UT-INNER-BUF 256 allot
 
-: UT-INNER$ ( -- ptr u8 n )
+: UT-INNER$ ( -- ^u8 n )
    CLAUDE-CONFIG$ {: c cu :}
    SB-RESET c cu SB-APPEND s" /keep.json" SB-APPEND SB$ UT-INNER-BUF 256 SPAN-COPY ;
 
@@ -513,11 +514,11 @@ create UT-INNER-BUF 256 allot
    CLAUDE-CONFIG$ FS:REMOVE-TREE
    CLAUDE-CONFIG$ CFG-ONLY-A$ WRITE-PRIVATE ;
 
-: UT-LOCKED$ ( -- ptr u8 n )
+: UT-LOCKED$ ( -- ^u8 n )
    HOME$ {: h hu :}
    SB-RESET h hu SB-APPEND s" /locked" SB-APPEND SB$ UT-LOCKED-BUF 256 SPAN-COPY ;
 
-: UT-REAL$ ( -- ptr u8 n )
+: UT-REAL$ ( -- ^u8 n )
    UT-LOCKED$ {: l lu :}
    SB-RESET l lu SB-APPEND s" /creds.json" SB-APPEND SB$ UT-REAL-BUF 256 SPAN-COPY ;
 
@@ -588,11 +589,11 @@ create UT-INNER-BUF 256 allot
    P-CLAUDE UT-PENDING? TFALSE
    P-CLAUDE s" bad@x.test" CMD-FORGET ;
 
-: CFG-Q$ ( -- ptr u8 n )
+: CFG-Q$ ( -- ^u8 n )
    s\" {\"oauthAccount\":{\"accountUuid\":\"u9\",\"emailAddress\":\"q@x.test\"}}" ;
 
 \ credentials whose claudeAiOauth repeats a key
-: CREDS-Q$ ( -- ptr u8 n )
+: CREDS-Q$ ( -- ^u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-q\",\"subscriptionType\":\"max\",\"subscriptionType\":\"pro\"}}" ;
 
 \ a claudeAiOauth that repeats a key saves with no plan (planFromCreds) and
@@ -642,20 +643,20 @@ create UT-LINK-TEXT PATH-CAP allot
 create UT-CFG0 UT-CFG0-CAP allot   variable UT-CFG0-U
 
 \ where a relative link at p whose text is f points
-: UT-SIBLING$ ( ptr u8 n ptr u8 n -- ptr u8 n )
+: UT-SIBLING$ ( ^u8 n ^u8 n -- ^u8 n )
    {: p pu f fu :}
    p pu DIRNAME {: d du :}
    SB-RESET d du SB-APPEND s" /" SB-APPEND f fu SB-APPEND
    SB$ UT-REL-BUF PATH-CAP SPAN-COPY ;
 
-: UT-LINK$ ( ptr u8 n -- ptr u8 n )
+: UT-LINK$ ( ^u8 n -- ^u8 n )
    FS:>PATHZ UT-LINK-TEXT PATH-CAP readlink {: n :}
    n 0 < if E-FS-IO throw then
    UT-LINK-TEXT n ;
 
 \ live file p moved to where text f points from p's directory, and p made
 \ a link whose text is f
-: UT-REL-LINK ( ptr u8 n ptr u8 n -- )
+: UT-REL-LINK ( ^u8 n ^u8 n -- )
    {: p pu f fu :}
    p pu f fu UT-SIBLING$ {: r ru :}
    r ru DIRNAME ENSURE-PRIVATE
@@ -663,13 +664,13 @@ create UT-CFG0 UT-CFG0-CAP allot   variable UT-CFG0-U
    f fu p pu FS:MAKE-SYMLINK ;
 
 \ p is still a link whose text is f, and the file f names holds w
-: UT-REL-HOLDS ( ptr u8 n ptr u8 n ptr u8 n -- )
+: UT-REL-HOLDS ( ^u8 n ^u8 n ^u8 n -- )
    {: p pu f fu w wu :}
    p pu FS:SYMLINK? TTRUE
    p pu UT-LINK$ f fu T$=
    p pu f fu UT-SIBLING$ READ-FILE$ w wu T$= ;
 
-: UT-REL-UNLINK ( ptr u8 n ptr u8 n -- )
+: UT-REL-UNLINK ( ^u8 n ^u8 n -- )
    {: p pu f fu :}
    p pu FS:REMOVE-FILE
    p pu f fu UT-SIBLING$ p pu FS:RENAME-FILE ;
@@ -750,16 +751,16 @@ create UT-WANT 16384 allot   variable UT-WANT-U
 
 \ a root under HOME whose .claude.json path is 1010 bytes; a slash every 200
 \ bytes keeps each name under NAME_MAX
-: UT-DEEP-ROOT$ ( -- ptr u8 n )
+: UT-DEEP-ROOT$ ( -- ^u8 n )
    SB-RESET HOME$ SB-APPEND
    989 HOME$ nip - 0 ?do i 200 mod 0= if [char] / else [char] a then SB-APPEND-C loop
    SB$ UT-DEEP 1024 SPAN-COPY ;
 
-: UT-WANT+ ( ptr u8 n -- ) {: a u :}
+: UT-WANT+ ( ^u8 n -- ) {: a u :}
    a UT-WANT UT-WANT-U @ + u BYTE-COPY
    u UT-WANT-U +! ;
 
-: UT-WANT$ ( -- ptr u8 n ) UT-WANT UT-WANT-U @ ;
+: UT-WANT$ ( -- ^u8 n ) UT-WANT UT-WANT-U @ ;
 
 \ the orphan reason, longer than SB holds, names a 1010-byte config path whole
 : UT-ORPHAN-LONG ( -- )
@@ -791,25 +792,25 @@ create UT-WANT 16384 allot   variable UT-WANT-U
    CLAUDE-CREDS$ CREDS-A$ WRITE-PRIVATE
    CODEX-AUTH$ AUTH-C$ WRITE-PRIVATE ;
 
-: UT-WRITE-SCRIPT ( ptr u8 n ptr u8 n -- ) {: n nu body bu :}
+: UT-WRITE-SCRIPT ( ^u8 n ^u8 n -- ) {: n nu body bu :}
    HOME$ {: h hu :}
    SB-RESET h hu SB-APPEND s" /bin" SB-APPEND SB$ ENSURE-PRIVATE
    SB-RESET h hu SB-APPEND s" /bin/" SB-APPEND n nu SB-APPEND SB$ UT-BUF 256 SPAN-COPY {: f fu :}
    f fu body bu FS:WRITE-ALL
    f fu FS:CHMOD-X ;
 
-: AUTH-D2$ ( -- ptr u8 n )
+: AUTH-D2$ ( -- ^u8 n )
    s\" {\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-d2\",\"refresh_token\":\"rt-d2\",\"account_id\":\"acct\"}}" ;
 
-: AUTH-Y$ ( -- ptr u8 n )
+: AUTH-Y$ ( -- ^u8 n )
    s\" {\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-y\",\"refresh_token\":\"rt-y\",\"account_id\":\"acct\"}}" ;
 
 \ a saved Codex login whose access token is at-<t>
-: AUTH-AT$ ( ptr u8 n -- ptr u8 n ) {: t tu :}
+: AUTH-AT$ ( ^u8 n -- ^u8 n ) {: t tu :}
    SB-RESET s\" {\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-" SB-APPEND
    t tu SB-APPEND s\" \",\"refresh_token\":\"rt-n\",\"account_id\":\"acct\"}}" SB-APPEND SB$ ;
 
-: AUTH-Z$ ( -- ptr u8 n )
+: AUTH-Z$ ( -- ^u8 n )
    s\" {\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-z\",\"refresh_token\":\"rt-z\",\"account_id\":\"acct\"}}" ;
 
 \ readings in percent, rounded once from their decimal spelling
@@ -840,7 +841,7 @@ create UT-WANT 16384 allot   variable UT-WANT-U
    s" -" USED-PERCENT -1 T=
    s" " USED-PERCENT -1 T= ;
 
-: LOG$ ( -- ptr u8 n )
+: LOG$ ( -- ^u8 n )
    s" KIBA_TEST_LOG" GETENV ;
 
 variable UT-LOG0
@@ -848,7 +849,7 @@ variable UT-LOG0
 : UT-LOG-MARK ( -- ) LOG$ READ-FILE$ nip UT-LOG0 ! ;
 
 \ what the fakes and the server logged since the mark
-: UT-LOG-NEW$ ( -- ptr u8 n )
+: UT-LOG-NEW$ ( -- ^u8 n )
    LOG$ READ-FILE$ {: l lu :}
    l UT-LOG0 @ + lu UT-LOG0 @ - ;
 
@@ -871,29 +872,29 @@ $500000 constant UT-ARENA-CAP   \ the rows' bytes: one body past BUF-CAP and the
 UT-ROW-MAX UT-ROW-CELLS * constant UT-CELL-MAX
 
 UT-CELL-MAX TYPED-BUFFER UT-ROWS n
-TYPED-VARIABLE UT-ARENA-A ptr u8   variable UT-ARENA-U
+TYPED-VARIABLE UT-ARENA-A ^u8   variable UT-ARENA-U
 variable UT-ROW-N                  \ the rows a worker may read, published with atomic!
 create UT-LOG-PATH PATH-CAP allot     variable UT-LOG-PATH-U
 create UT-CLAUDE-TURN PATH-CAP allot  variable UT-CLAUDE-TURN-U
 create UT-CODEX-TURN PATH-CAP allot   variable UT-CODEX-TURN-U
 
-: UT-ARENA ( -- ptr u8 ) UT-ARENA-A @ ;
-: UT-ROW-CELL ( n n -- ptr n ) swap UT-ROW-CELLS * + UT-ROWS ;
+: UT-ARENA ( -- ^u8 ) UT-ARENA-A @ ;
+: UT-ROW-CELL ( n n -- ^n ) swap UT-ROW-CELLS * + UT-ROWS ;
 
 \ field f of row i, a span in the arena
-: UT-ROW$ ( n n -- ptr u8 n ) {: i f :}
+: UT-ROW$ ( n n -- ^u8 n ) {: i f :}
    UT-ARENA i f UT-ROW-CELL @ + i f 1+ UT-ROW-CELL @ ;
 
 : UT-ARENA-ROOM ( n -- )
    UT-ARENA-U @ + UT-ARENA-CAP > if E-SW-CAPACITY throw then ;
 
-: UT-ARENA+ ( ptr u8 n -- ) {: a u :}
+: UT-ARENA+ ( ^u8 n -- ) {: a u :}
    u UT-ARENA-ROOM
    a UT-ARENA UT-ARENA-U @ + u BYTE-COPY
    u UT-ARENA-U +! ;
 
 \ field f of row i becomes a copy of a u
-: UT-FIELD! ( ptr u8 n n n -- ) {: a u i f :}
+: UT-FIELD! ( ^u8 n n n -- ) {: a u i f :}
    UT-ARENA-U @ i f UT-ROW-CELL !
    u i f 1+ UT-ROW-CELL !
    a u UT-ARENA+ ;
@@ -904,7 +905,7 @@ create UT-CODEX-TURN PATH-CAP allot   variable UT-CODEX-TURN-U
 \ a row for route r ru: a request whose key is k ku, or any request when
 \ k ku is empty, gets status st and the body UT-BODY+ and UT-BODY-FILL
 \ append; status 0 closes the connection without an answer
-: UT-ANSWER-OPEN ( ptr u8 n ptr u8 n n -- ) {: r ru k ku st :}
+: UT-ANSWER-OPEN ( ^u8 n ^u8 n n -- ) {: r ru k ku st :}
    UT-NEXT-ROW {: i :}
    i UT-ROW-MAX >= if E-SW-CAPACITY throw then
    r ru i UT-F-ROUTE UT-FIELD!
@@ -912,7 +913,7 @@ create UT-CODEX-TURN PATH-CAP allot   variable UT-CODEX-TURN-U
    st i UT-F-STATUS UT-ROW-CELL !
    UT-ARENA 0 i UT-F-BODY UT-FIELD! ;
 
-: UT-BODY+ ( ptr u8 n -- ) {: a u :}
+: UT-BODY+ ( ^u8 n -- ) {: a u :}
    a u UT-ARENA+
    u UT-NEXT-ROW UT-F-BODY 1+ UT-ROW-CELL +! ;
 
@@ -926,7 +927,7 @@ create UT-CODEX-TURN PATH-CAP allot   variable UT-CODEX-TURN-U
 : UT-ANSWER-CLOSE ( -- ) UT-NEXT-ROW 1+ UT-ROW-N atomic! ;
 
 \ route r ru answers a request keyed k ku with status st and body b bu
-: UT-ANSWER ( ptr u8 n ptr u8 n n ptr u8 n -- ) {: r ru k ku st b bu :}
+: UT-ANSWER ( ^u8 n ^u8 n n ^u8 n -- ) {: r ru k ku st b bu :}
    r ru k ku st UT-ANSWER-OPEN
    b bu UT-BODY+
    UT-ANSWER-CLOSE ;
@@ -934,7 +935,7 @@ create UT-CODEX-TURN PATH-CAP allot   variable UT-CODEX-TURN-U
 \ no rows: every request is answered 404
 : UT-ANSWERS-RESET ( -- ) 0 UT-ROW-N atomic! 0 UT-ARENA-U ! ;
 
-: UT-LOG+ ( ptr u8 n -- ) {: a u :}
+: UT-LOG+ ( ^u8 n -- ) {: a u :}
    UT-LOG-PATH UT-LOG-PATH-U @ a u FS:APPEND-FILE ;
 
 : UT-LOG-END ( -- ) s\" \n" UT-LOG+ ;
@@ -968,13 +969,13 @@ create UT-CODEX-TURN PATH-CAP allot   variable UT-CODEX-TURN-U
    q UT-AUTH-LOG
    UT-LOG-END ;
 
-: UT-TURN-FILE$ ( n -- ptr u8 n )
+: UT-TURN-FILE$ ( n -- ^u8 n )
    P-CLAUDE = if UT-CLAUDE-TURN UT-CLAUDE-TURN-U @ exit then
    UT-CODEX-TURN UT-CODEX-TURN-U @ ;
 
 \ flock locks belong to the open file description, so a fresh open of the
 \ turn file cannot lock it while a command holds the turn
-: UT-TURN-STATE$ ( n -- ptr u8 n )
+: UT-TURN-STATE$ ( n -- ^u8 n )
    UT-TURN-FILE$ FS:>PATHZ open-rd {: fd :}
    fd 0 < if s" unknown" exit then
    fd >FD FS-LOCK:TRY {: got :}
@@ -993,24 +994,24 @@ create UT-CODEX-TURN PATH-CAP allot   variable UT-CODEX-TURN-U
    q UT-URL-LOG
    p UT-TURN-LOG ;
 
-: UT-BEARER$ ( HTTP:request -- ptr u8 n )
+: UT-BEARER$ ( HTTP:request -- ^u8 n )
    s" Authorization" HTTP:HEADER-OF$ 0= if drop 0 exit then
    {: v vu :}
    s" Bearer " nip {: n :}
    vu n < if v 0 exit then
    v n + vu n - ;
 
-: UT-GRANT-KEY$ ( -- ptr u8 n ) s\" \"refresh_token\":\"" ;
+: UT-GRANT-KEY$ ( -- ^u8 n ) s\" \"refresh_token\":\"" ;
 
 \ b bu up to its first quote
-: UT-TO-QUOTE ( ptr u8 n -- ptr u8 n ) {: b bu :}
+: UT-TO-QUOTE ( ^u8 n -- ^u8 n ) {: b bu :}
    b bu s\" \"" FIND-SUB MATCH option
       none OF b bu ENDOF
       some OF IDX>N b swap ENDOF
    ;MATCH ;
 
 \ the refresh token a grant body names; empty when it names none
-: UT-REFRESH$ ( ptr u8 n -- ptr u8 n ) {: b bu :}
+: UT-REFRESH$ ( ^u8 n -- ^u8 n ) {: b bu :}
    b bu UT-GRANT-KEY$ FIND-SUB MATCH option
       none OF b 0 ENDOF
       some OF IDX>N UT-GRANT-KEY$ nip + {: at :} b at + bu at - UT-TO-QUOTE ENDOF
@@ -1018,13 +1019,13 @@ create UT-CODEX-TURN PATH-CAP allot   variable UT-CODEX-TURN-U
 
 \ key k ku takes a request when it is empty, the request's bearer token t tu
 \ or the refresh token g gu it posts
-: UT-KEY? ( ptr u8 n ptr u8 n ptr u8 n -- bool ) {: k ku t tu g gu :}
+: UT-KEY? ( ^u8 n ^u8 n ^u8 n -- bool ) {: k ku t tu g gu :}
    ku 0= if true exit then
    k ku t tu STR= if true exit then
    k ku g gu STR= ;
 
 \ the newest row for route r ru whose key takes the request; -1 when none does
-: UT-FIND ( ptr u8 n ptr u8 n ptr u8 n -- n ) {: r ru t tu g gu :}
+: UT-FIND ( ^u8 n ^u8 n ^u8 n -- n ) {: r ru t tu g gu :}
    UT-ROW-N atomic@ {: n :}
    n 0 ?do
       n 1- i - dup UT-F-ROUTE UT-ROW$ r ru STR=
@@ -1044,21 +1045,21 @@ create UT-CODEX-TURN PATH-CAP allot   variable UT-CODEX-TURN-U
    a i UT-F-BODY UT-ROW$ HTTP:BODY! ;
 
 \ a request to route r ru of provider p: logged, then answered from the rows
-: UT-SERVE ( HTTP:request HTTP:response ptr u8 n n -- )
+: UT-SERVE ( HTTP:request HTTP:response ^u8 n n -- )
    {: q:HTTP:request a:HTTP:response r ru p :}
    q p UT-SEEN
    r ru q UT-BEARER$ q HTTP:BODY$ UT-REFRESH$ UT-FIND {: i :}
    q a i UT-REPLY ;
 
-: UT-CLAUDE-USAGE$ ( -- ptr u8 n ) s" /api.anthropic.com/api/oauth/usage" ;
-: UT-CLAUDE-PROFILE$ ( -- ptr u8 n ) s" /api.anthropic.com/api/oauth/profile" ;
-: UT-CLAUDE-TOKEN$ ( -- ptr u8 n ) s" /platform.claude.com/v1/oauth/token" ;
-: UT-CLAUDE-RESET$ ( -- ptr u8 n )
+: UT-CLAUDE-USAGE$ ( -- ^u8 n ) s" /api.anthropic.com/api/oauth/usage" ;
+: UT-CLAUDE-PROFILE$ ( -- ^u8 n ) s" /api.anthropic.com/api/oauth/profile" ;
+: UT-CLAUDE-TOKEN$ ( -- ^u8 n ) s" /platform.claude.com/v1/oauth/token" ;
+: UT-CLAUDE-RESET$ ( -- ^u8 n )
    s" /api.anthropic.com/api/organizations/{org}/reset_rate_limits" ;
-: UT-CODEX-USAGE$ ( -- ptr u8 n ) s" /chatgpt.com/backend-api/wham/usage" ;
-: UT-CODEX-CONSUME$ ( -- ptr u8 n )
+: UT-CODEX-USAGE$ ( -- ^u8 n ) s" /chatgpt.com/backend-api/wham/usage" ;
+: UT-CODEX-CONSUME$ ( -- ^u8 n )
    s" /chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume" ;
-: UT-CODEX-TOKEN$ ( -- ptr u8 n ) s" /auth.openai.com/oauth/token" ;
+: UT-CODEX-TOKEN$ ( -- ^u8 n ) s" /auth.openai.com/oauth/token" ;
 
 : UT-ROUTES ( -- )
    HTTP:ROUTES-RESET
@@ -1077,7 +1078,7 @@ create UT-CODEX-TURN PATH-CAP allot   variable UT-CODEX-TURN-U
    s" POST" UT-CODEX-TOKEN$
    [: UT-CODEX-TOKEN$ P-CODEX UT-SERVE ;] HTTP:ROUTE ;
 
-: UT-TURN-PATH! ( n ptr u8 ptr n -- ) {: p buf up :}
+: UT-TURN-PATH! ( n ^u8 ^n -- ) {: p buf up :}
    STORE$ {: s su :}
    SB-RESET s su SB-APPEND s" /turn-" SB-APPEND p PROVIDER$ SB-APPEND
    SB$ buf up PATH! ;
@@ -1098,7 +1099,7 @@ create UT-CODEX-TURN PATH-CAP allot   variable UT-CODEX-TURN-U
 : UT-SERVE-STOP ( -- ) HTTP:STOP AIO:STOP ;
 
 \ a Claude reset keyed k ku answers word w wu
-: UT-RESULT ( ptr u8 n ptr u8 n -- ) {: k ku w wu :}
+: UT-RESULT ( ^u8 n ^u8 n -- ) {: k ku w wu :}
    UT-CLAUDE-RESET$ k ku 200 UT-ANSWER-OPEN
    s\" {\"result\":\"" UT-BODY+ w wu UT-BODY+ s\" \"}" UT-BODY+
    UT-ANSWER-CLOSE ;
@@ -1144,7 +1145,7 @@ create UT-CODEX-TURN PATH-CAP allot   variable UT-CODEX-TURN-U
 create UT-ERR-PATH 256 allot   variable UT-ERR-U
 
 \ the file a usage run's stderr is captured in, under the scratch HOME
-: UT-ERR$ ( -- ptr u8 n ) UT-ERR-PATH UT-ERR-U @ ;
+: UT-ERR$ ( -- ^u8 n ) UT-ERR-PATH UT-ERR-U @ ;
 
 : UT-ERR-PATH! ( -- )
    SB-RESET s" HOME" GETENV SB-APPEND s" /usage-stderr" SB-APPEND SB$
@@ -1158,30 +1159,30 @@ create UT-ERR-PATH 256 allot   variable UT-ERR-U
    [: [: p CMD-USAGE ;] E-SW-REPORTED TTHROWSQ ;] [: STDERR:;CAPTURE ;] finally ;
 
 \ ID-SLOT: email a u, organization o ou (none when empty), no plan
-: UT-ID ( ptr u8 n ptr u8 n -- ) {: a u o ou :}
+: UT-ID ( ^u8 n ^u8 n -- ) {: a u o ou :}
    SB-RESET s\" {\"emailAddress\":\"" SB-APPEND a u SB-APPEND [char] " SB-APPEND-C
    ou 0 > if s\" ,\"organizationUuid\":\"" SB-APPEND o ou SB-APPEND [char] " SB-APPEND-C then
    [char] } SB-APPEND-C
    SB$ ID-SLOT CLAUDE-OAUTH-IDENTITY ;
 
-: UT-PUT-RAW ( n ptr u8 n ptr u8 n -- ) {: p a u l lu :}
+: UT-PUT-RAW ( n ^u8 n ^u8 n -- ) {: p a u l lu :}
    [: p a u ID-SLOT l lu UT-BUF -1 false DB-PUT ;] DB-WRITE ;
 
 \ the row p a u holding login l lu, for email a u in organization o ou
-: UT-PUT-ORG ( n ptr u8 n ptr u8 n ptr u8 n -- ) {: p a u o ou l lu :}
+: UT-PUT-ORG ( n ^u8 n ^u8 n ^u8 n -- ) {: p a u o ou l lu :}
    a u o ou UT-ID
    [: p a u l lu UT-PUT-RAW ;] UT-STORE ;
 
-: UT-PUT ( n ptr u8 n ptr u8 n -- ) {: p a u l lu :}
+: UT-PUT ( n ^u8 n ^u8 n -- ) {: p a u l lu :}
    p a u s" " l lu UT-PUT-ORG ;
 
-: UT-RECORD-KEEP ( n ptr u8 n -- ) DB-FETCH TTRUE 0 DB-ROW-USAGE TTRUE ;
+: UT-RECORD-KEEP ( n ^u8 n -- ) DB-FETCH TTRUE 0 DB-ROW-USAGE TTRUE ;
 
 \ row p a u's usage record, in the record readers
-: UT-RECORD ( n ptr u8 n -- ) {: p a u :}
+: UT-RECORD ( n ^u8 n -- ) {: p a u :}
    [: p a u UT-RECORD-KEEP ;] UT-STORE ;
 
-: UT-STATE= ( ptr u8 n -- ) {: a u :}
+: UT-STATE= ( ^u8 n -- ) {: a u :}
    DB-USAGE-STATE DB-STATE$ a u T$= ;
 
 \ usage answers with readings to round, chosen by the bearer token
@@ -1192,7 +1193,7 @@ create UT-ERR-PATH 256 allot   variable UT-ERR-U
    UT-CODEX-USAGE$ s" at-r1" 200 s\" {\"rate_limit\":{\"primary_window\":{\"used_percent\":12.495,\"limit_window_seconds\":18000},\"secondary_window\":{\"used_percent\":12.5,\"limit_window_seconds\":604800}}}" UT-ANSWER
    UT-CODEX-USAGE$ s" at-r2" 200 s\" {\"rate_limit\":{\"primary_window\":{\"used_percent\":0,\"limit_window_seconds\":18000},\"secondary_window\":{\"used_percent\":-2,\"limit_window_seconds\":604800}}}" UT-ANSWER ;
 
-: UT-LIMIT= ( n ptr u8 n n -- ) {: i a u pct :}
+: UT-LIMIT= ( n ^u8 n n -- ) {: i a u pct :}
    i DB-LIMIT-LABEL$ a u T$=
    i DB-LIMIT-PERCENT pct T= ;
 
@@ -1237,7 +1238,7 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
 : UT-LONG-ROOM ( n -- )
    UT-LONG-U @ + UT-LONG-CAP > if E-SW-CAPACITY throw then ;
 
-: UT-LONG+ ( ptr u8 n -- ) {: a u :}
+: UT-LONG+ ( ^u8 n -- ) {: a u :}
    u UT-LONG-ROOM
    a UT-LONG UT-LONG-U @ + u BYTE-COPY
    UT-LONG-U @ u + UT-LONG-U ! ;
@@ -1252,7 +1253,7 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    UT-LONG-U @ n + UT-LONG-U ! ;
 
 \ UT-LONG from offset o to its end
-: UT-LONG$ ( n -- ptr u8 n ) {: o :}
+: UT-LONG$ ( n -- ^u8 n ) {: o :}
    UT-LONG o + UT-LONG-U @ o - ;
 
 \ a 5000-byte access token and a 200-byte account id
@@ -1274,14 +1275,14 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    s" ChatGPT-Account-Id: " UT-LONG+ UT-ACCT+ $0A 1 UT-LONG-FILL
    LOG$ READ-FILE$ i UT-LONG$ CONTAINS? TTRUE ;
 
-: UT-PLAN= ( n ptr u8 n ptr u8 n -- ) {: p a u l lu :}
+: UT-PLAN= ( n ^u8 n ^u8 n -- ) {: p a u l lu :}
    [: p a u DB-FETCH TTRUE 0 DB-ROW-PLAN$ l lu T$= ;] UT-STORE ;
 
-: UT-ROW-LOGIN ( n ptr u8 n [ ptr u8 n -- ] -- ) {: p a u check :}
+: UT-ROW-LOGIN ( n ^u8 n [ ^u8 n -- ] -- ) {: p a u check :}
    [: p a u DB-FETCH TTRUE 0 DB-ROW-LOGIN$ check execute ;] UT-STORE ;
 
 \ row p a u's record replaced by an ok one fetched at epoch second at
-: UT-SET-AT ( n ptr u8 n n -- ) {: p a u at :}
+: UT-SET-AT ( n ^u8 n n -- ) {: p a u at :}
    SB-RESET s\" {\"fetchedAt\":" SB-APPEND at FMT:SB-U
    s\" ,\"limits\":[],\"note\":\"\",\"state\":\"ok\"}" SB-APPEND SB$ DB-USAGE-DECODE
    DB-USAGE-AT at T=
@@ -1290,10 +1291,10 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
 1 constant UT-OLD-AT                  \ a fetchedAt every probe moves past
 
 \ row p a u's record fetched at UT-OLD-AT, so a probe shows in it
-: UT-AGE ( n ptr u8 n -- ) UT-OLD-AT UT-SET-AT ;
+: UT-AGE ( n ^u8 n -- ) UT-OLD-AT UT-SET-AT ;
 
 \ whether a probe recorded row p a u's outcome since UT-AGE
-: UT-PROBED? ( n ptr u8 n -- bool ) UT-RECORD DB-USAGE-AT UT-OLD-AT > ;
+: UT-PROBED? ( n ^u8 n -- bool ) UT-RECORD DB-USAGE-AT UT-OLD-AT > ;
 
 \ a@x.test is Claude's one saved login
 : UT-CLAUDE-ONLY-A ( -- )
@@ -1356,7 +1357,7 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    l lu s" ua User-Agent: claude-cli/2.1.282 (external, cli)" CONTAINS? TTRUE ;
 
 \ a saved Claude login whose access token has expired
-: CREDS-T$ ( -- ptr u8 n )
+: CREDS-T$ ( -- ^u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-t\",\"refreshToken\":\"r-t\",\"expiresAt\":2,\"scopes\":[\"user:inference\"],\"subscriptionType\":\"max\"}}" ;
 
 \ any Claude grant renewed to sk-t-new, whose usage call is answered with a
@@ -1369,7 +1370,7 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    STR-SPACE 4194305 UT-BODY-FILL
    UT-ANSWER-CLOSE ;
 
-: UT-RENEWED-T ( ptr u8 n -- ) {: c cu :}
+: UT-RENEWED-T ( ^u8 n -- ) {: c cu :}
    c cu CHECK-OBJECT
    c cu s\" \"accessToken\":\"sk-t-new\"" CONTAINS? TTRUE
    c cu s\" \"refreshToken\":\"r-t-new\"" CONTAINS? TTRUE
@@ -1436,29 +1437,24 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    P-CLAUDE CMD-SAVE
    P-CLAUDE s" t@x.test" CMD-FORGET ;
 
-4096 constant UT-OUT-CAP
-create UT-OUT UT-OUT-CAP allot   create UT-OUT-ERR UT-OUT-CAP allot
-variable UT-OUT-U
-
 \ the action's stdout, run in this process
-: UT-CAPTURE$ ( [ -- ] -- ptr u8 n ) {: act :}
-   act s" HOME" GETENV
-   UT-OUT UT-OUT-CAP SPAN:MAKE UT-OUT-ERR UT-OUT-CAP SPAN:MAKE
+: UT-CAPTURE$ ( [ -- ] -- ^u8 n ) {: act :}
+   act s" HOME" GETENV [: GT-OUT-ROOM ;] [: GT-ERR-ROOM ;]
    GT-CAPTURE-ACTION {: outu:len erru:len rc:n :}
    rc 0 T=
-   outu LEN>N UT-OUT-U !
-   UT-OUT UT-OUT-U @ ;
+   outu LEN>N GT-OUT-U !
+   GT-OUT$ ;
 
 \ usage gives what is left, as status does: a used-up week leaves Claude's
 \ session nothing, and an account with no reading gives its note
-: UT-USAGE-TEXT ( ptr u8 n -- ) {: o ou :}
+: UT-USAGE-TEXT ( ^u8 n -- ) {: o ou :}
    o ou s\" claude: a@x.test  Session (5-hour) 0% left · Weekly (7-day) 0% left · Fable Weekly 52% left\n" CONTAINS? TTRUE
    o ou s\" claude: e@x.test  Anthropic's token endpoint answered 429\n" CONTAINS? TTRUE
    o ou s\" codex: c@x.test  Weekly (7-day) 0% left\n" CONTAINS? TTRUE
    o ou s\" codex: d@x.test  Session (5-hour) 88% left · Weekly (7-day) 60% left\n" CONTAINS? TTRUE ;
 
 \ each saved login UT-USAGE probes, every one there is
-: UT-USAGE-ROWS ( [ n ptr u8 n -- ] -- ) {: each :}
+: UT-USAGE-ROWS ( [ n ^u8 n -- ] -- ) {: each :}
    [: P-CLAUDE DB-LIST DB-ROW# 4 T= P-CODEX DB-LIST DB-ROW# 3 T= ;] UT-STORE
    P-CLAUDE s" a@x.test" each execute
    P-CLAUDE s" b@x.test" each execute
@@ -1489,7 +1485,7 @@ variable UT-OUT-U
    P-CLAUDE s" f@x.test" CMD-FORGET
    P-CODEX s" y@x.test" CMD-FORGET ;
 
-: UT-RENEWED-B ( ptr u8 n -- ) {: c cu :}
+: UT-RENEWED-B ( ^u8 n -- ) {: c cu :}
    c cu CHECK-OBJECT
    c cu s\" \"accessToken\":\"sk-b-new\"" CONTAINS? TTRUE
    c cu s\" \"refreshToken\":\"r-b-new\"" CONTAINS? TTRUE
@@ -1498,7 +1494,7 @@ variable UT-OUT-U
    c cu s\" \"refreshTokenExpiresAt\":" CONTAINS? TTRUE
    c cu s\" \"subscriptionType\":\"pro\"" CONTAINS? TTRUE ;
 
-: UT-RENEWED-D ( ptr u8 n -- ) {: d du :}
+: UT-RENEWED-D ( ^u8 n -- ) {: d du :}
    d du CHECK-OBJECT
    d du s\" \"access_token\":\"at-d2\"" CONTAINS? TTRUE
    d du s\" \"refresh_token\":\"rt-d2\"" CONTAINS? TTRUE
@@ -1540,7 +1536,7 @@ variable UT-OUT-U
 create UT-AT-BUF 1024 allot
 
 \ row a u holding the Codex login whose access token is at-<t>
-: UT-PUT-AT ( ptr u8 n ptr u8 n -- ) {: a u t tu :}
+: UT-PUT-AT ( ^u8 n ^u8 n -- ) {: a u t tu :}
    t tu AUTH-AT$ UT-AT-BUF 1024 SPAN-COPY {: l lu :}
    P-CODEX a u l lu UT-PUT ;
 
@@ -1604,25 +1600,25 @@ create UT-AT-BUF 1024 allot
 
 \ a saved Claude login holding sk-<t> and r-<t>, expiring at epoch
 \ millisecond ms
-: CREDS-TOKEN$ ( ptr u8 n n -- ptr u8 n ) {: t tu ms :}
+: CREDS-TOKEN$ ( ^u8 n n -- ^u8 n ) {: t tu ms :}
    SB-RESET s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-" SB-APPEND t tu SB-APPEND
    s\" \",\"refreshToken\":\"r-" SB-APPEND t tu SB-APPEND
    s\" \",\"expiresAt\":" SB-APPEND ms FMT:SB-U
    s\" ,\"subscriptionType\":\"max\"}}" SB-APPEND
    SB$ UT-AT-BUF 1024 SPAN-COPY ;
 
-: UT-OUTCOME$ ( -- ptr u8 n ) s" o@x.test" ;
+: UT-OUTCOME$ ( -- ^u8 n ) s" o@x.test" ;
 
 \ usage claude over the saved row o@x.test holding CREDS-TOKEN$ t ms; its record
 \ is then in the record readers
-: UT-CLAUDE-PROBE ( ptr u8 n n -- ) {: t tu ms :}
+: UT-CLAUDE-PROBE ( ^u8 n n -- ) {: t tu ms :}
    t tu ms CREDS-TOKEN$ {: l lu :}
    P-CLAUDE UT-OUTCOME$ l lu UT-PUT
    P-CLAUDE CMD-USAGE
    P-CLAUDE UT-OUTCOME$ UT-RECORD ;
 
 \ the record reads state s su and note n nu
-: UT-OUTCOME= ( ptr u8 n ptr u8 n -- ) {: s su n nu :}
+: UT-OUTCOME= ( ^u8 n ^u8 n -- ) {: s su n nu :}
    s su UT-STATE=
    DB-USAGE-NOTE$ n nu T$= ;
 
@@ -1711,7 +1707,7 @@ create UT-AT-BUF 1024 allot
    UT-WRITE-SCRIPT ;
 
 \ HOME's file f, made or removed by the test to steer the fake codex
-: UT-HOME-FILE$ ( ptr u8 n -- ptr u8 n ) {: f fu :}
+: UT-HOME-FILE$ ( ^u8 n -- ^u8 n ) {: f fu :}
    HOME$ {: h hu :}
    SB-RESET h hu SB-APPEND f fu SB-APPEND SB$ UT-BUF 256 SPAN-COPY ;
 
@@ -1801,20 +1797,20 @@ create UT-OFF-PATH 256 allot
 \ ---- a variable in kiba's own environment ------------------------------------
 \ GETENV and PROC-ENV-INHERIT-MISSING read the startup envp cell, which libc's
 \ setenv never changes: a test points that cell at a copy with one row added
-DYNAMIC-BUFFER UT-ENVP ptr u8
+DYNAMIC-BUFFER UT-ENVP ^u8
 create UT-ENV-ROW 512 allot
 
-: UT-ENVP! ( ptr ptr u8 -- ) ENV-DATA ENVP-CELL CELL / ptr-field ! ;
+: UT-ENVP! ( ^^u8 -- ) ENV-DATA ENVP-CELL CELL / ptr-field ! ;
 
 : UT-ENV-ROWS ( -- n ) 0 begin dup ENVP 0= 0= while 1+ repeat ;
 
-: UT-ENV-ROW! ( ptr u8 n ptr u8 n -- ) {: name nu val vu :}
+: UT-ENV-ROW! ( ^u8 n ^u8 n -- ) {: name nu val vu :}
    SB-RESET name nu SB-APPEND s" =" SB-APPEND val vu SB-APPEND
    0 SB-APPEND-C SB$ UT-ENV-ROW 512 SPAN-COPY 2drop ;
 
 \ body runs with name=val in this process's environment, and the startup
 \ environment is back afterwards
-: UT-WITH-ENV ( ptr u8 n ptr u8 n [ -- ] -- ) {: name nu val vu body :}
+: UT-WITH-ENV ( ^u8 n ^u8 n [ -- ] -- ) {: name nu val vu body :}
    ENVP-BASE {: old :}
    name nu val vu UT-ENV-ROW!
    UT-ENV-ROWS {: n :}
@@ -1827,13 +1823,13 @@ create UT-ENV-ROW 512 allot
 
 create UT-REAL 256 allot
 
-: UT-DIR-TAIL$ ( n -- ptr u8 n )
+: UT-DIR-TAIL$ ( n -- ^u8 n )
    P-CLAUDE = if s" /.claude" exit then
    s" /.codex" ;
 
 \ a provider's home variable set in kiba's own environment never reaches
 \ the login, which gets exactly the throwaway login dir under that name
-: UT-LOGIN-ENV ( n ptr u8 n -- ) {: p var vu :}
+: UT-LOGIN-ENV ( n ^u8 n -- ) {: p var vu :}
    s" /real-home" UT-HOME-FILE$ UT-REAL 256 SPAN-COPY {: r ru :}
    UT-LOG-MARK
    var vu r ru [: var vu GETENV r ru T$= p s" " CMD-ADD ;] UT-WITH-ENV
@@ -1854,7 +1850,7 @@ create UT-REAL 256 allot
    P-CODEX s" CODEX_HOME" UT-LOGIN-ENV ;
 
 \ a's login with its access token expired
-: CREDS-A-OLD$ ( -- ptr u8 n )
+: CREDS-A-OLD$ ( -- ^u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-a-old\",\"refreshToken\":\"r-a\",\"expiresAt\":1,\"subscriptionType\":\"max\"}}" ;
 
 \ the live account's expired token is reported, never sent
@@ -1974,7 +1970,7 @@ create UT-REAL 256 allot
    P-CODEX s" c@x.test" 1 UT-SET-AT
    P-CODEX s" d@x.test" 1 UT-SET-AT ;
 
-: UT-SET-LOGIN ( n ptr u8 n ptr u8 n -- ) {: p a u l lu :}
+: UT-SET-LOGIN ( n ^u8 n ^u8 n -- ) {: p a u l lu :}
    [: [: p a u l lu DB-SET-LOGIN ;] DB-WRITE ;] UT-STORE ;
 
 \ use probes the login it installs as live, then the one it saved back as
@@ -1994,11 +1990,11 @@ create UT-REAL 256 allot
    CODEX-AUTH$ READ-FILE$ AUTH-C$ T$=
    P-CODEX s" d@x.test" AUTH-D2$ UT-SET-LOGIN ;
 
-: OAUTH-N$ ( -- ptr u8 n )
+: OAUTH-N$ ( -- ^u8 n )
    s\" {\"accountUuid\":\"u3\",\"emailAddress\":\"n@x.test\",\"organizationUuid\":\"org-n\"}" ;
 
 \ a login whose token has expired; no shared usage answer is ok for it
-: CREDS-N-OLD$ ( -- ptr u8 n )
+: CREDS-N-OLD$ ( -- ^u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-n-old\",\"refreshToken\":\"r-n\",\"expiresAt\":1,\"subscriptionType\":\"pro\"}}" ;
 
 \ the Claude row n@x.test, with the profile an install splices in
@@ -2007,7 +2003,7 @@ create UT-REAL 256 allot
    [: [: P-CLAUDE s" n@x.test" ID-SLOT CREDS-N-OLD$ OAUTH-N$ false DB-PUT ;] DB-WRITE ;] UT-STORE ;
 
 \ a refresh request for refresh token r, as the server logs it
-: UT-GRANT$ ( ptr u8 n -- ptr u8 n ) {: r ru :}
+: UT-GRANT$ ( ^u8 n -- ^u8 n ) {: r ru :}
    SB-RESET s\" body {\"grant_type\":\"refresh_token\",\"refresh_token\":\"" SB-APPEND
    r ru SB-APPEND s\" \"" SB-APPEND SB$ ;
 
@@ -2039,7 +2035,7 @@ create UT-AUTH-BUF 256 allot
 
 \ row p a u's record replaced by an ok one fetched at UT-OLD-AT, offering
 \ a reset of program g under grant w
-: UT-OFFER ( n ptr u8 n ptr u8 n ptr u8 n -- ) {: p a u g gu w wu :}
+: UT-OFFER ( n ^u8 n ^u8 n ^u8 n -- ) {: p a u g gu w wu :}
    SB-RESET s\" {\"fetchedAt\":" SB-APPEND UT-OLD-AT FMT:SB-U
    s\" ,\"limits\":[],\"note\":\"\",\"resets\":{\"count\":1,\"grant\":\"" SB-APPEND
    w wu SB-APPEND s\" \",\"program\":\"" SB-APPEND g gu SB-APPEND
@@ -2047,32 +2043,32 @@ create UT-AUTH-BUF 256 allot
    DB-RESETS? TTRUE
    [: [: p a u UT-BUF -1 DB-SET-USAGE ;] DB-WRITE ;] UT-STORE ;
 
-: CREDS-R$ ( -- ptr u8 n )
+: CREDS-R$ ( -- ^u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-r\",\"refreshToken\":\"r-r\",\"expiresAt\":4102444800000,\"subscriptionType\":\"max\"}}" ;
 
 \ a Codex login whose token UT-CODEX-WORD answers
-: UT-AUTH-W$ ( ptr u8 n -- ptr u8 n ) {: w wu :}
+: UT-AUTH-W$ ( ^u8 n -- ^u8 n ) {: w wu :}
    SB-RESET s\" {\"auth_mode\":\"chatgpt\",\"tokens\":{\"access_token\":\"at-w-" SB-APPEND
    w wu SB-APPEND
    s\" \",\"refresh_token\":\"rt-w\",\"account_id\":\"acct\"}}" SB-APPEND
    SB$ UT-AUTH-BUF 256 SPAN-COPY ;
 
 \ r@x.test's banked grant w-<word> spent: the answer's word is the outcome
-: UT-CLAUDE-WORD ( ptr u8 n ptr u8 n -- ) {: g gu t tu :}
+: UT-CLAUDE-WORD ( ^u8 n ^u8 n -- ) {: g gu t tu :}
    s" sk-r" g 2 + gu 2 - UT-RESULT
    P-CLAUDE s" r@x.test" s" cedar_ember" g gu UT-OFFER
    P-CLAUDE s" r@x.test" CMD-REDEEM
    s" r@x.test" REDEEMED$ t tu T$= ;
 
 \ at-w-<w>'s reset is answered with code w, its usage call with {}
-: UT-CODE-ROWS ( ptr u8 n -- ) {: w wu :}
+: UT-CODE-ROWS ( ^u8 n -- ) {: w wu :}
    SB-RESET s" at-w-" SB-APPEND w wu SB-APPEND SB$ {: k ku :}
    UT-CODEX-CONSUME$ k ku 200 UT-ANSWER-OPEN
    s\" {\"code\":\"" UT-BODY+ w wu UT-BODY+ s\" \"}" UT-BODY+
    UT-ANSWER-CLOSE
    UT-CODEX-USAGE$ k ku 200 s" {}" UT-ANSWER ;
 
-: UT-CODEX-WORD ( ptr u8 n ptr u8 n -- ) {: w wu t tu :}
+: UT-CODEX-WORD ( ^u8 n ^u8 n -- ) {: w wu t tu :}
    w wu UT-CODE-ROWS
    w wu UT-AUTH-W$ {: d du :}
    P-CODEX s" w@x.test" d du UT-PUT
@@ -2087,7 +2083,7 @@ create UT-AUTH-BUF 256 allot
    c STR-DIGIT? c [char] A >= c [char] F <= and or ;
 
 \ where the request id starts in the log, -1 when none is logged
-: UT-RID-AT ( ptr u8 n -- n ) {: l lu :}
+: UT-RID-AT ( ^u8 n -- n ) {: l lu :}
    l lu s\" \"request_id\":\"" FIND-SUB MATCH option
      none OF -1 ENDOF
      some OF IDX>N 14 + ENDOF
@@ -2095,7 +2091,7 @@ create UT-AUTH-BUF 256 allot
 
 \ the first request id in the log is 36 bytes as UUID().uuidString writes
 \ them, then the closing quote
-: UT-RID ( ptr u8 n -- ) {: l lu :}
+: UT-RID ( ^u8 n -- ) {: l lu :}
    l lu UT-RID-AT {: at :}
    at 0 >= TTRUE
    at 36 + lu < TTRUE
@@ -2136,7 +2132,7 @@ create UT-AUTH-BUF 256 allot
    P-CLAUDE s" r@x.test" CMD-FORGET
    UT-ANSWERS-DEFAULT ;
 
-: CREDS-S$ ( -- ptr u8 n )
+: CREDS-S$ ( -- ^u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-s\",\"refreshToken\":\"r-s\",\"expiresAt\":4102444800000,\"subscriptionType\":\"pro\"}}" ;
 
 \ a saved Claude login's rejected reset renews its token, which is saved
@@ -2178,7 +2174,7 @@ create UT-AUTH-BUF 256 allot
    UT-ANSWER-CLOSE
    s" " s" reset" UT-RESULT ;
 
-: CREDS-G$ ( -- ptr u8 n )
+: CREDS-G$ ( -- ^u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-g\",\"refreshToken\":\"r-g\",\"expiresAt\":4102444800000,\"subscriptionType\":\"max\"}}" ;
 
 \ a probe records each window's reset and the banked grant named next,
@@ -2277,7 +2273,7 @@ create UT-REASON 512 allot
    LOG$ FS:FILE? 0= if LOG$ s" " FS:WRITE-ALL then
    UT-LOG-MARK ;
 
-: UT-SNAP+ ( ptr u8 n -- ) {: a u :}
+: UT-SNAP+ ( ^u8 n -- ) {: a u :}
    UT-SNAP-U @ u + 8192 > if E-SW-CAPACITY throw then
    a UT-SNAP UT-SNAP-U @ + u BYTE-COPY
    u UT-SNAP-U +! ;
@@ -2288,18 +2284,18 @@ create UT-REASON 512 allot
    DB-ROW# 0 ?do i DB-ROW-NAME$ UT-SNAP+ i DB-ROW-LOGIN$ UT-SNAP+ loop ;
 
 \ every saved row of p, its name then its login
-: UT-SNAP$ ( n -- ptr u8 n ) {: p :}
+: UT-SNAP$ ( n -- ^u8 n ) {: p :}
    [: p UT-SNAP-KEEP ;] UT-STORE UT-SNAP UT-SNAP-U @ ;
 
 \ rc's reason as usage prints it on stderr, without the "kiba: " lead
-: UT-BARE$ ( n -- ptr u8 n ) REASON$ {: r ru :} r 6 + ru 6 - ;
+: UT-BARE$ ( n -- ^u8 n ) REASON$ {: r ru :} r 6 + ru 6 - ;
 
 : UT-JSON-C ( n -- ) {: c :}
    c [char] / = if $5C SB-APPEND-C then
    c SB-APPEND-C ;
 
 \ "error":"<rc's bare reason>" as the snapshot writes it, its slashes escaped
-: UT-ERROR-KEY$ ( n -- ptr u8 n )
+: UT-ERROR-KEY$ ( n -- ^u8 n )
    UT-BARE$ UT-REASON 512 SPAN-COPY {: r ru :}
    SB-RESET s\" \"error\":\"" SB-APPEND
    ru 0 ?do r i + c@ UT-JSON-C loop
@@ -2361,7 +2357,7 @@ create UT-REASON 512 allot
 
 \ p's live file f made d, which names no account: status shows that as p's
 \ error and usage refreshes no saved login; f is put back afterwards
-: UT-UNNAMED ( n ptr u8 n ptr u8 n -- ) {: p f fu d du :}
+: UT-UNNAMED ( n ^u8 n ^u8 n -- ) {: p f fu d du :}
    f fu UT-PATH 256 SPAN-COPY {: g gu :}
    g gu READ-FILE$ UT-KEPT 2048 SPAN-COPY {: k ku :}
    p UT-SNAP$ UT-SNAP0 8192 SPAN-COPY {: s su :}
@@ -2376,7 +2372,7 @@ create UT-REASON 512 allot
    g gu k ku WRITE-PRIVATE ;
 
 \ a Codex login with neither an id_token nor an API key
-: AUTH-NO-ID$ ( -- ptr u8 n )
+: AUTH-NO-ID$ ( -- ^u8 n )
    s\" {\"OPENAI_API_KEY\":null,\"auth_mode\":\"chatgpt\",\"tokens\":{\"access_token\":\"at-c\",\"refresh_token\":\"rt-c\",\"account_id\":\"acct\"}}" ;
 
 : UT-UNNAMED-CLAUDE ( -- ) P-CLAUDE CLAUDE-CONFIG$ CFG-NOAUTH$ UT-UNNAMED ;
@@ -2427,11 +2423,11 @@ create UT-NUL 3 allot                 \ a login blob holding a NUL byte
 variable UT-V
 
 \ kiba-mac's JSONEncoder (.sortedKeys) bytes for one usage record
-: USAGE-LIT$ ( -- ptr u8 n )
+: USAGE-LIT$ ( -- ^u8 n )
    s\" {\"fetchedAt\":1700000000,\"limits\":[{\"label\":\"Session (5-hour)\",\"percent\":30,\"resetsAt\":\"2026-11-13T10:00:00Z\"},{\"label\":\"Weekly \\/ Opus\",\"percent\":-1,\"resetsAt\":\"\"}],\"note\":\"a\\/b \\\"q\\\"\\n\",\"resets\":{\"count\":2,\"grant\":\"g-1\",\"program\":\"cedar_ember\"},\"state\":\"throttled\"}" ;
 
 \ the first column of the last row sql selects; 0 when it selects none
-: UT-DB-INT ( ptr u8 n -- n ) {: a u :}
+: UT-DB-INT ( ^u8 n -- n ) {: a u :}
    0 UT-V !
    a u s" test" [: ;] [: 0 DB-COL-INT UT-V ! ;] DB-QUERY
    UT-V @ ;
@@ -2507,11 +2503,11 @@ variable UT-V
 
 \ kiba-mac's snapshot bytes: two saved Claude logins under one email, the
 \ live one in the second organization, and a live Codex login never saved
-: SNAP-LIT$ ( -- ptr u8 n )
+: SNAP-LIT$ ( -- ^u8 n )
    s\" {\"providers\":[{\"accounts\":[{\"active\":false,\"name\":\"a@x.test\",\"plan\":\"max\",\"usage\":{\"fetchedAt\":1700000000,\"limits\":[{\"label\":\"Session (5-hour)\",\"left\":70,\"percent\":30,\"resetsAt\":\"2026-11-13T10:00:00Z\"},{\"label\":\"Weekly \\/ Opus\",\"percent\":-1,\"resetsAt\":\"\"}],\"note\":\"a\\/b \\\"q\\\"\\n\",\"resets\":{\"count\":2,\"grant\":\"g-1\",\"program\":\"cedar_ember\"},\"state\":\"throttled\"}},{\"active\":true,\"name\":\"a@x.test #2\",\"plan\":\"team\"}],\"installedAt\":1700000500,\"live\":{\"email\":\"a@x.test\",\"plan\":\"team\"},\"provider\":\"claude\"},{\"accounts\":[],\"live\":{\"email\":\"c@x.test\",\"plan\":\"plus\"},\"provider\":\"codex\"}]}" ;
 
 \ the same store once the Claude config is not JSON and c@x.test is saved
-: SNAP-ERROR-LIT$ ( -- ptr u8 n )
+: SNAP-ERROR-LIT$ ( -- ^u8 n )
    s\" {\"providers\":[{\"accounts\":[{\"active\":false,\"name\":\"a@x.test\",\"plan\":\"max\",\"usage\":{\"fetchedAt\":1700000000,\"limits\":[{\"label\":\"Session (5-hour)\",\"left\":70,\"percent\":30,\"resetsAt\":\"2026-11-13T10:00:00Z\"},{\"label\":\"Weekly \\/ Opus\",\"percent\":-1,\"resetsAt\":\"\"}],\"note\":\"a\\/b \\\"q\\\"\\n\",\"resets\":{\"count\":2,\"grant\":\"g-1\",\"program\":\"cedar_ember\"},\"state\":\"throttled\"}},{\"active\":false,\"name\":\"a@x.test #2\",\"plan\":\"team\"}],\"error\":\"a login file is not valid JSON\",\"installedAt\":1700000500,\"provider\":\"claude\"},{\"accounts\":[{\"active\":true,\"name\":\"c@x.test\",\"plan\":\"plus\"}],\"live\":{\"email\":\"c@x.test\",\"plan\":\"plus\"},\"provider\":\"codex\"}]}" ;
 
 : UT-STATUS-ROWS ( -- )
@@ -2545,12 +2541,12 @@ variable UT-V
    STATUS-JSON$ SNAP-ERROR-LIT$ T$= ;
 
 \ live Claude credentials whose plan is one byte past PLAN-CAP
-: CREDS-LONG$ ( -- ptr u8 n )
+: CREDS-LONG$ ( -- ^u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-l\",\"subscriptionType\":\"ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\"}}" ;
 
 create UT-SQL 2048 allot   variable UT-SQL-U
 
-: UT-SQL+ ( ptr u8 n -- ) {: a u :}
+: UT-SQL+ ( ^u8 n -- ) {: a u :}
    a UT-SQL UT-SQL-U @ + u BYTE-COPY
    u UT-SQL-U +! ;
 
@@ -2572,7 +2568,7 @@ create UT-SQL 2048 allot   variable UT-SQL-U
    E-SW-DB REASON$ 0 UT-LONG$ T$= ;
 
 \ text status's stdout, run as the command runs it, with its own store open
-: UT-STATUS-TEXT$ ( -- ptr u8 n )
+: UT-STATUS-TEXT$ ( -- ^u8 n )
    DB-CLOSE [: false CMD-STATUS ;] UT-CAPTURE$ DB-OPEN ;
 
 \ both forms of status carry every one of a record's 200 windows
@@ -2608,7 +2604,7 @@ create UT-SQL 2048 allot   variable UT-SQL-U
    CFG-A$ CREDS-A$ ID-SLOT CLAUDE-IDENTITY TTRUE
    [: P-CLAUDE s" w@x.test" ID-SLOT CREDS-A$ OAUTH-A$ true DB-PUT ;] DB-WRITE ;
 
-: FIGURES-LIT$ ( -- ptr u8 n )
+: FIGURES-LIT$ ( -- ^u8 n )
    s\" {\"active\":false,\"name\":\"w@x.test\",\"plan\":\"max\",\"usage\":{\"fetchedAt\":1,\"limits\":[{\"label\":\"Weekly \\/ Opus\",\"left\":9,\"percent\":91,\"resetsAt\":\"2026-11-21T00:00:00Z\"},{\"label\":\"Weekly (7-day)\",\"left\":40,\"percent\":60,\"resetsAt\":\"2026-11-20T00:00:00Z\"},{\"label\":\"Weekly \\/ Sonnet\",\"percent\":-1,\"resetsAt\":\"\"},{\"label\":\"Session (5-hour)\",\"left\":70,\"percent\":30,\"resetsAt\":\"2026-11-14T10:00:00Z\"}],\"note\":\"\",\"state\":\"ok\"}}" ;
 
 \ the text gives the session, the week, then the other windows with a
@@ -2719,20 +2715,20 @@ create UT-STALE PATH-CAP allot   variable UT-STALE-U
 1024 constant UT-LIST-CAP
 create UT-LIST UT-LIST-CAP allot
 
-: UT-TURN$ ( -- ptr u8 n )
+: UT-TURN$ ( -- ^u8 n )
    STORE$ {: s su :}
    SB-RESET s su SB-APPEND s" /turn-claude" SB-APPEND
    SB$ UT-TURN UT-TURN-U PATH!
    UT-TURN UT-TURN-U @ ;
 
-: UT-QUEUE$ ( -- ptr u8 n )
+: UT-QUEUE$ ( -- ^u8 n )
    UT-TURN$ {: t tu :}
    SB-RESET t tu SB-APPEND s" .queue" SB-APPEND
    SB$ UT-QUEUE UT-QUEUE-U PATH!
    UT-QUEUE UT-QUEUE-U @ ;
 
 \ an entry no waiter holds, sorting before any a waiter makes
-: UT-STALE$ ( -- ptr u8 n )
+: UT-STALE$ ( -- ^u8 n )
    UT-QUEUE$ {: q qu :}
    SB-RESET q qu SB-APPEND
    s" /00000000000000000000-0000000001-00000000000000000000" SB-APPEND
@@ -2782,30 +2778,30 @@ create UT-LIST UT-LIST-CAP allot
    UT-CODEX-TOKEN$ s" rt-u" 200 s\" {\"refresh_token\":\"rt-u2\"}" UT-ANSWER ;
 
 \ an API-key login whose tokens hold an access token but no id_token
-: AUTH-KEY-AT$ ( -- ptr u8 n )
+: AUTH-KEY-AT$ ( -- ^u8 n )
    s\" {\"auth_mode\":\"apikey\",\"OPENAI_API_KEY\":\"sk-k\",\"tokens\":{\"access_token\":\"at-k\",\"refresh_token\":\"rt-k\"}}" ;
 
-: AUTH-X$ ( -- ptr u8 n )
+: AUTH-X$ ( -- ^u8 n )
    s\" {\"auth_mode\":\"chatgpt\",\"tokens\":{\"access_token\":\"at-x\",\"refresh_token\":\"rt-x\",\"account_id\":\"acct\"}}" ;
 
 \ a ChatGPT login with no refresh token
-: AUTH-M$ ( -- ptr u8 n )
+: AUTH-M$ ( -- ^u8 n )
    s\" {\"auth_mode\":\"chatgpt\",\"tokens\":{\"access_token\":\"at-m\",\"account_id\":\"acct\"}}" ;
 
-: AUTH-U$ ( -- ptr u8 n )
+: AUTH-U$ ( -- ^u8 n )
    s\" {\"auth_mode\":\"chatgpt\",\"tokens\":{\"access_token\":\"at-u\",\"refresh_token\":\"rt-u\",\"account_id\":\"acct\"}}" ;
 
-: AUTH-T$ ( -- ptr u8 n )
+: AUTH-T$ ( -- ^u8 n )
    s\" {\"auth_mode\":\"chatgpt\",\"tokens\":{\"access_token\":\"at-t\",\"refresh_token\":\"rt-t\",\"account_id\":\"acct\"}}" ;
 
 \ usage codex run with row a u holding login l lu, the log marked
 \ before it
-: UT-OUTCOME-RUN ( ptr u8 n ptr u8 n -- ) {: a u l lu :}
+: UT-OUTCOME-RUN ( ^u8 n ^u8 n -- ) {: a u l lu :}
    P-CODEX a u l lu UT-PUT
    UT-LOG-MARK
    P-CODEX CMD-USAGE ;
 
-: UT-NOTE= ( ptr u8 n -- ) {: a u :}
+: UT-NOTE= ( ^u8 n -- ) {: a u :}
    DB-USAGE-NOTE$ a u T$= ;
 
 \ an API-key login without an id_token has no windows: nothing is called
@@ -2939,19 +2935,19 @@ create UT-OWN-TURN PATH-CAP allot    variable UT-OWN-TURN-U
 create UT-WRAP-BUF 1024 allot
 
 \ provider p's turn file
-: UT-TURN-OF$ ( n -- ptr u8 n )
+: UT-TURN-OF$ ( n -- ^u8 n )
    UT-OWN-TURN UT-OWN-TURN-U UT-TURN-PATH!
    UT-OWN-TURN UT-OWN-TURN-U @ ;
 
 \ the fake script name in the scratch PATH
-: UT-FAKE$ ( ptr u8 n -- ptr u8 n ) {: n nu :}
+: UT-FAKE$ ( ^u8 n -- ^u8 n ) {: n nu :}
    HOME$ {: h hu :}
    SB-RESET h hu SB-APPEND s" /bin/" SB-APPEND n nu SB-APPEND
    SB$ UT-FAKE-PATH UT-FAKE-U PATH!
    UT-FAKE-PATH UT-FAKE-U @ ;
 
 \ where the fake name goes once a turn check runs in front of it
-: UT-ANSWERS$ ( ptr u8 n -- ptr u8 n ) {: n nu :}
+: UT-ANSWERS$ ( ^u8 n -- ^u8 n ) {: n nu :}
    HOME$ {: h hu :}
    SB-RESET h hu SB-APPEND s" /bin/" SB-APPEND n nu SB-APPEND
    s" -answers" SB-APPEND
@@ -2960,7 +2956,7 @@ create UT-WRAP-BUF 1024 allot
 
 \ a script that logs "turn held <name>" when provider p's turn is locked as
 \ it starts, "turn free <name>" when it is not, then runs the fake name
-: UT-WRAP$ ( n ptr u8 n -- ptr u8 n ) {: p n nu :}
+: UT-WRAP$ ( n ^u8 n -- ^u8 n ) {: p n nu :}
    p UT-TURN-OF$ {: t tu :}
    n nu UT-ANSWERS$ {: x xu :}
    SB-RESET s\" #!/bin/sh\n/usr/bin/flock -n -E 9 '" SB-APPEND
@@ -2972,17 +2968,17 @@ create UT-WRAP-BUF 1024 allot
    SB$ UT-WRAP-BUF 1024 SPAN-COPY ;
 
 \ the fake name, already written, runs behind a check of p's turn
-: UT-TURN-WRAP ( n ptr u8 n -- ) {: p n nu :}
+: UT-TURN-WRAP ( n ^u8 n -- ) {: p n nu :}
    n nu UT-FAKE$ n nu UT-ANSWERS$ FS:RENAME-FILE
    n nu p n nu UT-WRAP$ UT-WRITE-SCRIPT ;
 
-: UT-TURN-LINE$ ( ptr u8 n ptr u8 n -- ptr u8 n ) {: s su n nu :}
+: UT-TURN-LINE$ ( ^u8 n ^u8 n -- ^u8 n ) {: s su n nu :}
    SB-RESET s" turn " SB-APPEND s su SB-APPEND
    STR-SPACE SB-APPEND-C n nu SB-APPEND SB$ ;
 
 \ since the mark, name ran with its provider's turn held, never without:
 \ a fake's name, or request for the requests the server took
-: UT-RAN-HELD ( ptr u8 n -- ) {: n nu :}
+: UT-RAN-HELD ( ^u8 n -- ) {: n nu :}
    UT-LOG-NEW$ {: l lu :}
    l lu s" held" n nu UT-TURN-LINE$ CONTAINS? TTRUE
    l lu s" free" n nu UT-TURN-LINE$ CONTAINS? TFALSE
@@ -3061,34 +3057,34 @@ create UT-CX PATH-CAP allot      variable UT-CX-U      \ its CODEX_HOME
 $1A4 constant UT-MODE-OUT                              \ 0644
 
 \ directory d's entry f, f starting with a slash
-: UT-AT$ ( ptr u8 n ptr u8 n -- ptr u8 n )
+: UT-AT$ ( ^u8 n ^u8 n -- ^u8 n )
    {: d du f fu :}
    SB-RESET d du SB-APPEND f fu SB-APPEND SB$ UT-AT UT-AT-U PATH!
    UT-AT UT-AT-U @ ;
 
-: UT-CHILD$ ( -- ptr u8 n ) UT-CHILD UT-CHILD-U @ ;
-: UT-CC$ ( -- ptr u8 n ) UT-CC UT-CC-U @ ;
-: UT-CX$ ( -- ptr u8 n ) UT-CX UT-CX-U @ ;
+: UT-CHILD$ ( -- ^u8 n ) UT-CHILD UT-CHILD-U @ ;
+: UT-CC$ ( -- ^u8 n ) UT-CC UT-CC-U @ ;
+: UT-CX$ ( -- ^u8 n ) UT-CX UT-CX-U @ ;
 
 \ the child's HOME, HOME's entry f
-: UT-CHILD! ( ptr u8 n -- ) HOME$ 2swap UT-AT$ UT-CHILD UT-CHILD-U PATH! ;
+: UT-CHILD! ( ^u8 n -- ) HOME$ 2swap UT-AT$ UT-CHILD UT-CHILD-U PATH! ;
 
-: UT-HB$ ( -- ptr u8 n )
+: UT-HB$ ( -- ^u8 n )
    s" /proc/self/exe" FS:>PATHZ UT-HB PATH-CAP readlink {: n :}
    n 0 < if E-FS-IO throw then
    UT-HB n ;
 
-: UT-KIBA-F$ ( -- ptr u8 n )
+: UT-KIBA-F$ ( -- ^u8 n )
    SB-RESET SOURCE-ROOT:CURRENT$ SB-APPEND s" /../src/kiba.f" SB-APPEND
    SB$ UT-PROG UT-PROG-U PATH!
    UT-PROG UT-PROG-U @ ;
 
-: UT-MAIN-F$ ( -- ptr u8 n ) HOME$ s" /kiba-main.f" UT-AT$ ;
-: UT-OUT$ ( -- ptr u8 n ) HOME$ s" /kiba-out" UT-AT$ ;
-: UT-ERR-OUT$ ( -- ptr u8 n ) HOME$ s" /kiba-err" UT-AT$ ;
+: UT-MAIN-F$ ( -- ^u8 n ) HOME$ s" /kiba-main.f" UT-AT$ ;
+: UT-OUT$ ( -- ^u8 n ) HOME$ s" /kiba-out" UT-AT$ ;
+: UT-ERR-OUT$ ( -- ^u8 n ) HOME$ s" /kiba-err" UT-AT$ ;
 
 \ the child's program: requests go nowhere, then MAIN
-: UT-OFFLINE-MAIN$ ( -- ptr u8 n )
+: UT-OFFLINE-MAIN$ ( -- ^u8 n )
    s\" package SW\n: UT-OFFLINE ( -- ) s\" none://\" URL-BASE URL-BASE-U PATH! ;\nUT-OFFLINE\n;package\nMAIN\n" ;
 
 \ kiba's MAIN, its arguments to follow
@@ -3103,7 +3099,7 @@ $1A4 constant UT-MODE-OUT                              \ 0644
    s" XDG_DATA_HOME" UT-CHILD$ s" /data" UT-AT$ PROCESS:ENV
    s" PATH" UT-CHILD$ s" /bin" UT-AT$ PROCESS:ENV ;
 
-: UT-CREATE ( ptr u8 n -- n )
+: UT-CREATE ( ^u8 n -- n )
    FS:>PATHZ FS:O-WRONLY FS:O-CREAT or FS:O-TRUNC or UT-MODE-OUT open {: fd :}
    fd 0 < if E-FS-OPEN throw then
    fd ;
@@ -3121,14 +3117,14 @@ $1A4 constant UT-MODE-OUT                              \ 0644
    pid PROCESS:WAIT PROCESS:STATUS>RC RC>N ;
 
 \ the run printed o on stdout and e on stderr, then exited with c
-: UT-KIBA= ( PROCESS:request ptr u8 n ptr u8 n n -- )
+: UT-KIBA= ( PROCESS:request ^u8 n ^u8 n n -- )
    {: o ou e eu c :}
    UT-KIBA-RUN {: rc :}
    UT-OUT$ READ-FILE$ o ou T$=
    UT-ERR-OUT$ READ-FILE$ e eu T$=
    rc c T= ;
 
-: USAGE-TEXT$ ( -- ptr u8 n )
+: USAGE-TEXT$ ( -- ^u8 n )
    s\" usage: kiba status [--json]\n       kiba save [claude|codex]\n       kiba use <claude|codex> <email>\n       kiba add <claude|codex> [name]\n       kiba forget <claude|codex> <email>\n       kiba redeem <claude|codex> <email>\n       kiba usage [claude|codex]\n" ;
 
 \ MAIN exits 0 after a run, 1 with the reason when a command fails, and 64
@@ -3152,13 +3148,13 @@ $1A4 constant UT-MODE-OUT                              \ 0644
 
 \ the placed live files hold Claude's config c and credentials k and
 \ Codex's auth x
-: UT-PLACED! ( ptr u8 n ptr u8 n ptr u8 n -- )
+: UT-PLACED! ( ^u8 n ^u8 n ^u8 n -- )
    {: c cu k ku x xu :}
    UT-CC$ s" /.claude.json" UT-AT$ c cu WRITE-PRIVATE
    UT-CC$ s" /.credentials.json" UT-AT$ k ku WRITE-PRIVATE
    UT-CX$ s" /auth.json" UT-AT$ x xu WRITE-PRIVATE ;
 
-: UT-PLACED= ( ptr u8 n ptr u8 n ptr u8 n -- )
+: UT-PLACED= ( ^u8 n ^u8 n ^u8 n -- )
    {: c cu k ku x xu :}
    UT-CC$ s" /.claude.json" UT-AT$ READ-FILE$ c cu T$=
    UT-CC$ s" /.credentials.json" UT-AT$ READ-FILE$ k ku T$=
@@ -3170,7 +3166,7 @@ $1A4 constant UT-MODE-OUT                              \ 0644
    UT-CHILD$ s" /.claude" UT-AT$ FS:EXISTS? TFALSE
    UT-CHILD$ s" /.codex" UT-AT$ FS:EXISTS? TFALSE ;
 
-: UT-PLACED-USE ( ptr u8 n ptr u8 n -- PROCESS:request )
+: UT-PLACED-USE ( ^u8 n ^u8 n -- PROCESS:request )
    {: p pu a au :}
    UT-PLACED-NEW s" use" PROCESS:ARG p pu PROCESS:ARG a au PROCESS:ARG ;
 

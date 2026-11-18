@@ -1,3 +1,4 @@
+split-str
 \ sw-db.f - the account store: saved logins and the live and in-flight
 \ markers, in one SQLite database, plus the usage record's codec.
 \ Every read fills the row table, which the next read replaces; every write
@@ -24,9 +25,9 @@ package SW
 create SQL-TEXT SQL-TEXT-CAP allot   variable SQL-TEXT-U
 
 : SQL-RESET ( -- ) 0 SQL-TEXT-U ! ;
-: SQL$ ( -- ptr u8 n ) SQL-TEXT SQL-TEXT-U @ ;
+: SQL$ ( -- ^u8 n ) SQL-TEXT SQL-TEXT-U @ ;
 
-: SQL+ ( ptr u8 n -- ) {: a u :}
+: SQL+ ( ^u8 n -- ) {: a u :}
    SQL-TEXT-U @ u + SQL-TEXT-CAP > if
       s" bytes in an SQL statement" SQL-TEXT-CAP LIMIT$ TOO-MANY
    then
@@ -59,15 +60,15 @@ variable REC-PROGRAM-AT   variable REC-PROGRAM-U
 variable REC-GRANT-AT     variable REC-GRANT-U
 
 : REC-CLEAR ( -- ) REC-TEXT TEXTS-RESET ;
-: REC-SPAN$ ( n n -- ptr u8 n ) {: off u :} REC-TEXT off u TEXTS$ ;
+: REC-SPAN$ ( n n -- ^u8 n ) {: off u :} REC-TEXT off u TEXTS$ ;
 
-: LABEL-AT ( n -- ptr n ) REC-LIMS LIM-LABEL-OFF ;
-: LABEL-U ( n -- ptr n ) REC-LIMS LIM-LABEL-LEN ;
-: PCT-CELL ( n -- ptr n ) REC-LIMS LIM-PCT ;     \ whole percent used; negative for no reading
-: RESET-AT ( n -- ptr n ) REC-LIMS LIM-RESET-OFF ;
-: RESET-U ( n -- ptr n ) REC-LIMS LIM-RESET-LEN ;
-: SESSION-LABEL$ ( -- ptr u8 n ) s" Session (5-hour)" ;
-: WEEKLY-LABEL$ ( -- ptr u8 n ) s" Weekly (7-day)" ;
+: LABEL-AT ( n -- ^n ) REC-LIMS LIM-LABEL-OFF ;
+: LABEL-U ( n -- ^n ) REC-LIMS LIM-LABEL-LEN ;
+: PCT-CELL ( n -- ^n ) REC-LIMS LIM-PCT ;     \ whole percent used; negative for no reading
+: RESET-AT ( n -- ^n ) REC-LIMS LIM-RESET-OFF ;
+: RESET-U ( n -- ^n ) REC-LIMS LIM-RESET-LEN ;
+: SESSION-LABEL$ ( -- ^u8 n ) s" Session (5-hour)" ;
+: WEEKLY-LABEL$ ( -- ^u8 n ) s" Weekly (7-day)" ;
 
 \ a limit whose label and reset REC-TEXT already holds
 : LIM-ROW+ ( n n n n n -- ) {: lo lu pct ro ru :}
@@ -80,7 +81,7 @@ variable REC-GRANT-AT     variable REC-GRANT-U
 
 public
 
-: DB-STATE$ ( usage-state -- ptr u8 n )
+: DB-STATE$ ( usage-state -- ^u8 n )
    MATCH usage-state
       ok OF s" ok" ENDOF
       expired OF s" expired" ENDOF
@@ -94,19 +95,19 @@ public
    ;MATCH ;
 
 \ starts a record: no limits and no reset offer yet
-: DB-USAGE! ( n usage-state ptr u8 n -- ) {: at st a u :}
+: DB-USAGE! ( n usage-state ^u8 n -- ) {: at st a u :}
    at REC-AT ! st REC-STATE !
    REC-CLEAR a u REC-TEXT TEXTS-PUT REC-NOTE-U ! REC-NOTE-AT !
    0 REC-LIM-N ! 0 REC-OFFER ! ;
 
 \ label, percent used, reset instant
-: DB-LIMIT+ ( ptr u8 n n ptr u8 n -- ) {: la lu pct ra ru :}
+: DB-LIMIT+ ( ^u8 n n ^u8 n -- ) {: la lu pct ra ru :}
    la lu REC-TEXT TEXTS-PUT {: lo lu2 :}
    ra ru REC-TEXT TEXTS-PUT {: ro ru2 :}
    lo lu2 pct ro ru2 LIM-ROW+ ;
 
 \ resets available now, program, grant
-: DB-RESETS! ( n ptr u8 n ptr u8 n -- ) {: k pa pu ga gu :}
+: DB-RESETS! ( n ^u8 n ^u8 n -- ) {: k pa pu ga gu :}
    k REC-COUNT !
    pa pu REC-TEXT TEXTS-PUT REC-PROGRAM-U ! REC-PROGRAM-AT !
    ga gu REC-TEXT TEXTS-PUT REC-GRANT-U ! REC-GRANT-AT !
@@ -114,15 +115,15 @@ public
 
 : DB-USAGE-AT ( -- n ) REC-AT @ ;
 : DB-USAGE-STATE ( -- usage-state ) REC-STATE @ ;
-: DB-USAGE-NOTE$ ( -- ptr u8 n ) REC-NOTE-AT @ REC-NOTE-U @ REC-SPAN$ ;
+: DB-USAGE-NOTE$ ( -- ^u8 n ) REC-NOTE-AT @ REC-NOTE-U @ REC-SPAN$ ;
 : DB-LIMIT# ( -- n ) REC-LIM-N @ ;
-: DB-LIMIT-LABEL$ ( n -- ptr u8 n ) {: i :} i LABEL-AT @ i LABEL-U @ REC-SPAN$ ;
+: DB-LIMIT-LABEL$ ( n -- ^u8 n ) {: i :} i LABEL-AT @ i LABEL-U @ REC-SPAN$ ;
 : DB-LIMIT-PERCENT ( n -- n ) PCT-CELL @ ;
-: DB-LIMIT-RESETS$ ( n -- ptr u8 n ) {: i :} i RESET-AT @ i RESET-U @ REC-SPAN$ ;
+: DB-LIMIT-RESETS$ ( n -- ^u8 n ) {: i :} i RESET-AT @ i RESET-U @ REC-SPAN$ ;
 : DB-RESETS? ( -- bool ) REC-OFFER @ 0<> ;
 : DB-RESETS-COUNT ( -- n ) REC-COUNT @ ;
-: DB-RESETS-PROGRAM$ ( -- ptr u8 n ) REC-PROGRAM-AT @ REC-PROGRAM-U @ REC-SPAN$ ;
-: DB-RESETS-GRANT$ ( -- ptr u8 n ) REC-GRANT-AT @ REC-GRANT-U @ REC-SPAN$ ;
+: DB-RESETS-PROGRAM$ ( -- ^u8 n ) REC-PROGRAM-AT @ REC-PROGRAM-U @ REC-SPAN$ ;
+: DB-RESETS-GRANT$ ( -- ^u8 n ) REC-GRANT-AT @ REC-GRANT-U @ REC-SPAN$ ;
 
 \ ---- the encoder ------------------------------------------------------------
 \ The bytes kiba-mac's JSONEncoder writes with .sortedKeys: keys in order, no
@@ -133,9 +134,9 @@ DYNAMIC-BUFFER ENC-TEXT u8
 variable ENC-U
 create ENC-ONE 1 allot
 
-: ENC$ ( -- ptr u8 n ) 0 ENC-TEXT ENC-U @ ;
+: ENC$ ( -- ^u8 n ) 0 ENC-TEXT ENC-U @ ;
 
-: ENC+ ( ptr u8 n -- ) {: a u :}
+: ENC+ ( ^u8 n -- ) {: a u :}
    u 0= if exit then
    ENC-U @ u + ENC-TEXT-RESERVE
    a ENC-U @ ENC-TEXT u BYTE-COPY
@@ -161,12 +162,12 @@ create ENC-ONE 1 allot
    c $20 < if c ENC-CONTROL exit then
    c ENC-C ;
 
-: ENC-STR ( ptr u8 n -- ) {: a u :}
+: ENC-STR ( ^u8 n -- ) {: a u :}
    $22 ENC-C
    u 0 ?do a i + c@ ENC-BYTE loop
    $22 ENC-C ;
 
-: ENC-KEY ( ptr u8 n -- ) $22 ENC-C ENC+ $22 ENC-C $3A ENC-C ;
+: ENC-KEY ( ^u8 n -- ) $22 ENC-C ENC+ $22 ENC-C $3A ENC-C ;
 
 : ENC-LIMIT ( n -- ) {: i :}
    $7B ENC-C
@@ -206,7 +207,7 @@ create ENC-ONE 1 allot
 public
 
 \ the record's stored form, valid until the next encode
-: DB-USAGE-ENCODE ( -- ptr u8 n ) ENC-HEAD ENC-TAIL ENC$ ;
+: DB-USAGE-ENCODE ( -- ^u8 n ) ENC-HEAD ENC-TAIL ENC$ ;
 
 \ ---- the decoder ------------------------------------------------------------
 \ A record that does not decode reads as unreadable, as kiba-mac's does:
@@ -230,9 +231,9 @@ create DEC-WORD 16 allot   variable DEC-WORD-U     \ a longer word is no state
 : DEC-STR ( JSON:reader -- JSON:reader n n )
    JSON:T-STR DEC-NEXT REC-TEXT TEXTS-READ ;
 
-: MEMBER? ( JSON:reader ptr u8 n -- JSON:reader bool ) JSON:READ-STR-EQ? ;
+: MEMBER? ( JSON:reader ^u8 n -- JSON:reader bool ) JSON:READ-STR-EQ? ;
 
-: STATE-IS? ( ptr u8 n -- bool ) DEC-WORD DEC-WORD-U @ STR= ;
+: STATE-IS? ( ^u8 n -- bool ) DEC-WORD DEC-WORD-U @ STR= ;
 
 : NAMED-STATE ( -- usage-state )
    s" ok" STATE-IS? if construct usage-state ok exit then
@@ -332,7 +333,7 @@ variable OFFER-COUNT
 
 public
 
-: DB-USAGE-DECODE ( ptr u8 n -- )
+: DB-USAGE-DECODE ( ^u8 n -- )
    DEC-U ! DEC-A !
    [: DEC-RUN ;] catch 0<> if DEC-UNREADABLE then ;
 
@@ -353,7 +354,7 @@ variable ROW-COLS
 
 : SPAN-AT ( n n -- n ) {: r c :} r ROW-COLS @ * c + ;
 
-: ROW-BYTES+ ( ptr u8 n -- n ) {: a u :}
+: ROW-BYTES+ ( ^u8 n -- n ) {: a u :}
    ROW-BYTES-U @ {: off :}
    off u + 1+ ROW-BYTES-RESERVE
    a off ROW-BYTES u BYTE-COPY
@@ -372,25 +373,25 @@ variable ROW-COLS
    ROW-N @ 1+ ROW-N ! ;
 
 \ a column as stored; length -1 for NULL
-: ROW-SPAN ( n n -- ptr u8 n ) {: r c :}
+: ROW-SPAN ( n n -- ^u8 n ) {: r c :}
    r c SPAN-AT ROW-SPANS COL-OFF @ {: off :}
    r c SPAN-AT ROW-SPANS COL-LEN @ {: u :}
    u 0 < if NULL-PTR BYTE-VIEW -1 exit then
    off ROW-BYTES u ;
 
 \ a NOT NULL column, empty should a hand-written row hold NULL
-: ROW-TEXT$ ( n n -- ptr u8 n ) ROW-SPAN 0 max ;
+: ROW-TEXT$ ( n n -- ^u8 n ) ROW-SPAN 0 max ;
 
 public
 
 : DB-ROW# ( -- n ) ROW-N @ ;
-: DB-ROW-NAME$ ( n -- ptr u8 n ) 0 ROW-TEXT$ ;
-: DB-ROW-ORG$ ( n -- ptr u8 n ) 2 ROW-TEXT$ ;
-: DB-ROW-PLAN$ ( n -- ptr u8 n ) 3 ROW-TEXT$ ;
+: DB-ROW-NAME$ ( n -- ^u8 n ) 0 ROW-TEXT$ ;
+: DB-ROW-ORG$ ( n -- ^u8 n ) 2 ROW-TEXT$ ;
+: DB-ROW-PLAN$ ( n -- ^u8 n ) 3 ROW-TEXT$ ;
 \ Claude: the credentials.json bytes; Codex: the auth.json bytes
-: DB-ROW-LOGIN$ ( n -- ptr u8 n ) 4 ROW-TEXT$ ;
+: DB-ROW-LOGIN$ ( n -- ^u8 n ) 4 ROW-TEXT$ ;
 \ Claude: the oauthAccount object's bytes; Codex: length -1, none
-: DB-ROW-PROFILE$ ( n -- ptr u8 n ) 5 ROW-SPAN ;
+: DB-ROW-PROFILE$ ( n -- ^u8 n ) 5 ROW-SPAN ;
 
 \ decodes the row's usage into the usage record; false before its first probe
 : DB-ROW-USAGE ( n -- bool )
@@ -421,7 +422,7 @@ variable FOUND-AT
 variable STORE-VERSION               \ the user_version the last open read
 
 \ whether sql selects a row
-: ROW-FOUND? ( ptr u8 n -- bool ) {: a u :}
+: ROW-FOUND? ( ^u8 n -- bool ) {: a u :}
    0 FOUND-N !
    a u s" schema" [: ;] [: 1 FOUND-N ! ;] DB-QUERY
    FOUND-N @ 0<> ;
@@ -502,11 +503,11 @@ FSM:DEFINE WRITE-TX ( [ -- ] ) tx-state tx-input
       rolling-back OF false ENDOF
    ;MATCH ;
 
-: TX-CHECK ( ptr u8 n -- ) {: op ou :}
+: TX-CHECK ( ^u8 n -- ) {: op ou :}
    SQL-IN-TX? 0= if op ou s" transaction is closed" DB-THROW then ;
 
 \ one statement of the open transaction
-: TX-RUN ( ptr u8 n ptr u8 n [ -- ] -- ) {: sql su op ou bind :}
+: TX-RUN ( ^u8 n ^u8 n [ -- ] -- ) {: sql su op ou bind :}
    op ou TX-CHECK
    sql su op ou bind DB-RUN ;
 
@@ -599,7 +600,7 @@ public
    SQL$ s" list" [: p PROVIDER$ DB-TEXT+ ;] [: ACCOUNT-ROW ;] DB-QUERY ;
 
 \ the saved login as row 0; false when there is none
-: DB-FETCH ( n ptr u8 n -- bool ) {: p a u :}
+: DB-FETCH ( n ^u8 n -- bool ) {: p a u :}
    7 ROW-RESET
    ACCOUNT-SQL s"  AND name = ?" SQL+
    SQL$ s" fetch" [: p PROVIDER$ DB-TEXT+ a u DB-TEXT+ ;] [: ACCOUNT-ROW ;] DB-QUERY
@@ -617,7 +618,7 @@ create QUERY-NAME NAME-CAP allot   variable QUERY-NAME-U
 
 \ the name sql selects for the provider, read without touching the row table
 \ and lasting until the next such read; false when there is no row
-: NAME-QUERY ( n ptr u8 n ptr u8 n -- ptr u8 n bool )
+: NAME-QUERY ( n ^u8 n ^u8 n -- ^u8 n bool )
    {: p sql su op ou :}
    0 FOUND-N ! 0 QUERY-NAME-U !
    sql su op ou [: p PROVIDER$ DB-TEXT+ ;] [: QUERY-ROW ;] DB-QUERY
@@ -628,7 +629,7 @@ variable HIT-K
 variable FREE-K
 
 \ the bare email for 1, else "email #k"; too long to be a name is empty
-: CANDIDATE ( n ptr u8 n -- ptr u8 n ) {: k e eu :}
+: CANDIDATE ( n ^u8 n -- ^u8 n ) {: k e eu :}
    k 1 = if e eu exit then
    eu 3 + NAME-CAP 1- > if CAND-BUF 0 exit then
    e CAND-BUF eu BYTE-COPY
@@ -639,7 +640,7 @@ variable FREE-K
 9 constant SLOT-TRIES                 \ the bare email, then "email #2" to "email #9"
 
 \ which candidate k the name is; 0 when none
-: CANDIDATE# ( ptr u8 n n -- n ) {: a u id :}
+: CANDIDATE# ( ^u8 n n -- n ) {: a u id :}
    SLOT-TRIES 1+ 1 ?do
       i id EMAIL$ CANDIDATE a u STR= if i unloop exit then
    loop 0 ;
@@ -672,7 +673,7 @@ public
 
 \ the slot the identity's login saves to, read without touching the row
 \ table; E-SW-CAPACITY when every candidate holds another org
-: DB-LIVE-NAME ( n n -- ptr u8 n ) {: p id :}
+: DB-LIVE-NAME ( n n -- ^u8 n ) {: p id :}
    id EMAIL$ CHECK-NAME
    0 TAKEN ! 0 SAME !
    s" SELECT name, org FROM account WHERE provider = ?" s" live name"
@@ -684,11 +685,11 @@ public
    HIT-K @ id EMAIL$ CANDIDATE ;
 
 \ the name installed last; false before the first install
-: DB-INSTALLED ( n -- ptr u8 n bool )
+: DB-INSTALLED ( n -- ^u8 n bool )
    s" SELECT installed FROM live WHERE provider = ?" s" installed" NAME-QUERY ;
 
 \ the name whose install began and has not finished
-: DB-PENDING ( n -- ptr u8 n bool )
+: DB-PENDING ( n -- ^u8 n bool )
    s" SELECT name FROM pending WHERE provider = ?" s" pending" NAME-QUERY ;
 
 \ epoch seconds of the last install; false before one noted a time
@@ -726,7 +727,7 @@ public
 \ inserts or replaces the row: identity id's email, org and plan, the login
 \ and profile (length -1 for none), and the usage record when with is true;
 \ an existing row keeps its usage otherwise
-: DB-PUT ( n ptr u8 n n ptr u8 n ptr u8 n bool -- )
+: DB-PUT ( n ^u8 n n ^u8 n ^u8 n bool -- )
    {: p a u id la lu pa pu with :}
    PUT-SQL SQL$ s" put" [:
       p PROVIDER$ DB-TEXT+ a u DB-TEXT+ id IDENTITY+
@@ -734,14 +735,14 @@ public
    ;] TX-RUN ;
 
 \ E-SW-NO-ACCOUNT when there is no such row
-: DB-SET-LOGIN ( n ptr u8 n ptr u8 n -- ) {: p a u d du :}
+: DB-SET-LOGIN ( n ^u8 n ^u8 n -- ) {: p a u d du :}
    s" UPDATE account SET login = ? WHERE provider = ? AND name = ?" s" set login"
    [: d du DB-BLOB+ p PROVIDER$ DB-TEXT+ a u DB-TEXT+ ;] TX-RUN
    NO-ACCOUNT ;
 
 \ stores the usage record, and the plan unless its length is -1;
 \ E-SW-NO-ACCOUNT when there is no such row
-: DB-SET-USAGE ( n ptr u8 n ptr u8 n -- ) {: p a u pl plu :}
+: DB-SET-USAGE ( n ^u8 n ^u8 n -- ) {: p a u pl plu :}
    SQL-RESET s" UPDATE account SET usage = ?, plan = coalesce(?, plan)" SQL+
    s"  WHERE provider = ? AND name = ?" SQL+
    SQL$ s" set usage" [:
@@ -749,13 +750,13 @@ public
    ;] TX-RUN
    NO-ACCOUNT ;
 
-: DB-REMOVE ( n ptr u8 n -- ) {: p a u :}
+: DB-REMOVE ( n ^u8 n -- ) {: p a u :}
    s" DELETE FROM account WHERE provider = ? AND name = ?" s" remove"
    [: p PROVIDER$ DB-TEXT+ a u DB-TEXT+ ;] TX-RUN ;
 
 \ notes the installed name, installed at epoch seconds; false keeps the time
 \ already noted
-: DB-NOTE-INSTALLED ( n ptr u8 n n bool -- ) {: p a u at has :}
+: DB-NOTE-INSTALLED ( n ^u8 n n bool -- ) {: p a u at has :}
    SQL-RESET s" INSERT INTO live (provider, installed, installed_at)" SQL+
    s"  VALUES (?, ?, ?) ON CONFLICT (provider) DO UPDATE SET" SQL+
    s"  installed = excluded.installed," SQL+
@@ -766,7 +767,7 @@ public
    ;] TX-RUN ;
 
 \ records an install of the name as begun, replacing any earlier marker
-: DB-NOTE-PENDING ( n ptr u8 n -- ) {: p a u :}
+: DB-NOTE-PENDING ( n ^u8 n -- ) {: p a u :}
    SQL-RESET s" INSERT INTO pending (provider, name) VALUES (?, ?)" SQL+
    s"  ON CONFLICT (provider) DO UPDATE SET name = excluded.name" SQL+
    SQL$ s" note pending" [: p PROVIDER$ DB-TEXT+ a u DB-TEXT+ ;] TX-RUN ;

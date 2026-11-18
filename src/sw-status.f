@@ -1,3 +1,4 @@
+split-str
 \ sw-status.f - what `kiba status` shows: one provider's saved accounts and
 \ live login read from the store, and the figures of a usage record.
 require ../src/sw-db.f
@@ -62,7 +63,7 @@ private
 50 constant LEVEL-HALF
 
 \ the first window under the label that has a reading; -1 for none
-: WINDOW ( ptr u8 n -- n ) {: a u :}
+: WINDOW ( ^u8 n -- n ) {: a u :}
    DB-LIMIT# 0 ?do
       i DB-LIMIT-LABEL$ a u STR= i DB-LIMIT-PERCENT 0 >= and if i unloop exit then
    loop -1 ;
@@ -72,13 +73,13 @@ DYNAMIC-BUFFER FIG-LIMS n    \ the window whose label a figure carries
 DYNAMIC-BUFFER FIG-LEFTS n   \ whole percent left
 variable FIG-N
 
-: FIG-LIM ( n -- ptr n ) FIG-LIMS ;
-: FIG-LEFT ( n -- ptr n ) FIG-LEFTS ;
+: FIG-LIM ( n -- ^n ) FIG-LIMS ;
+: FIG-LEFT ( n -- ^n ) FIG-LEFTS ;
 
 create FIG-TEXT BUF:HDR-BYTES allot   \ the figures as text, which grows with the record
-: FIG-TEXT+ ( ptr u8 n -- ) BUF:N>BLEN FIG-TEXT BUF:APPEND-SPAN ;
+: FIG-TEXT+ ( ^u8 n -- ) BUF:N>BLEN FIG-TEXT BUF:APPEND-SPAN ;
 : FIG-TEXT-RESET ( -- ) FIG-TEXT 64 BUF:N>BLEN BUF:RESET ;
-: FIG-TEXT$ ( -- ptr u8 n ) FIG-TEXT BUF:SPAN$ BUF:BLEN>N ;
+: FIG-TEXT$ ( -- ^u8 n ) FIG-TEXT BUF:SPAN$ BUF:BLEN>N ;
 
 \ the separator before every figure but the first
 : FIG-SEP+ ( n -- ) 0 > if s"  · " FIG-TEXT+ then ;
@@ -196,7 +197,7 @@ public
    loop 0 false ;
 
 \ "72% · 40% · 9%", or "limit" while the session or the week is used up
-: FIGURES-TEXT ( n -- ptr u8 n ) {: p :}
+: FIGURES-TEXT ( n -- ^u8 n ) {: p :}
    false ROW-STATE BLOCKED? if s" limit" exit then
    p FIGURES FIG-TEXT-RESET
    FIG-N @ 0 ?do i FIG-SEP+ i FIG-PERCENT+ loop
@@ -204,7 +205,7 @@ public
 
 \ "Session (5-hour) 72% left · Weekly (7-day) 40% left", the figures
 \ FIGURES-TEXT gives, each under its window's label; empty when none
-: LEFT-TEXT ( n -- ptr u8 n ) {: p :}
+: LEFT-TEXT ( n -- ^u8 n ) {: p :}
    p FIGURES FIG-TEXT-RESET
    FIG-N @ 0 ?do
       i FIG-SEP+ i FIG-LABEL+ i FIG-PERCENT+ s"  left" FIG-TEXT+
@@ -212,7 +213,7 @@ public
    FIG-TEXT$ ;
 
 \ row i's plan as the panel shows it; probed when its usage is decoded
-: SHOWN-PLAN$ ( n bool -- ptr u8 n ) {: i probed :}
+: SHOWN-PLAN$ ( n bool -- ^u8 n ) {: i probed :}
    probed 0= if i DB-ROW-PLAN$ exit then
    DB-USAGE-STATE MATCH usage-state
       ok OF i DB-ROW-PLAN$ ENDOF

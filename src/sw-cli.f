@@ -1,3 +1,4 @@
+split-str
 \ sw-cli.f - the kiba commands: status, usage, save, use, add, forget, redeem.
 require ../src/sw-store.f
 require ../src/sw-run.f
@@ -32,28 +33,28 @@ create REDEEM-NAME NAME-CAP allot   variable REDEEM-NAME-U
 create REASON-TEXT BUF:HDR-BYTES allot
 
 : REASON-START ( -- ) REASON-TEXT 64 BUF:N>BLEN BUF:RESET ;
-: REASON+ ( ptr u8 n -- ) BUF:N>BLEN REASON-TEXT BUF:APPEND-SPAN ;
-: REASON-TEXT$ ( -- ptr u8 n ) REASON-TEXT BUF:SPAN$ BUF:BLEN>N ;
+: REASON+ ( ^u8 n -- ) BUF:N>BLEN REASON-TEXT BUF:APPEND-SPAN ;
+: REASON-TEXT$ ( -- ^u8 n ) REASON-TEXT BUF:SPAN$ BUF:BLEN>N ;
 
 public
 
-: UNREPAIRED-REASON$ ( -- ptr u8 n )
+: UNREPAIRED-REASON$ ( -- ^u8 n )
    REASON-START s" kiba: the " REASON+ UNREPAIRED-P @ PROVIDER$ REASON+
    s"  switch to " REASON+ UNREPAIRED-NAME UNREPAIRED-NAME-U @ REASON+
    s"  did not finish; nothing is probed or refreshed until a switch completes" REASON+ REASON-TEXT$ ;
 
-: NO-RESETS-REASON$ ( -- ptr u8 n )
+: NO-RESETS-REASON$ ( -- ^u8 n )
    REASON-START s" kiba: no limit resets are available for " REASON+
    REDEEM-NAME REDEEM-NAME-U @ REASON+ REASON-TEXT$ ;
 
-: REMOTE-REASON$ ( -- ptr u8 n )
+: REMOTE-REASON$ ( -- ^u8 n )
    REASON-START s" kiba: " REASON+ REMOTE-NOTE$ REASON+ REASON-TEXT$ ;
 
-: ORPHAN-REASON$ ( -- ptr u8 n )
+: ORPHAN-REASON$ ( -- ^u8 n )
    REASON-START s" kiba: Claude credentials exist but " REASON+ ORPHAN-CONFIG$ REASON+
    s"  is missing: nothing is probed or switched until it names their account" REASON+ REASON-TEXT$ ;
 
-: REASON$ ( n -- ptr u8 n ) {: rc :}
+: REASON$ ( n -- ^u8 n ) {: rc :}
    rc E-SW-PROVIDER = if s" kiba: provider must be claude or codex" exit then
    rc E-SW-NO-LIVE = if s" kiba: no live login to save" exit then
    rc E-SW-NO-ACCOUNT = if s" kiba: no such saved account" exit then
@@ -92,7 +93,7 @@ private
 \ rc's reason without its "kiba: " prefix: for a line that already starts
 \ with its provider, and for an account's note and a provider's status
 \ error, as kiba-mac records them
-: BARE-REASON$ ( n -- ptr u8 n )
+: BARE-REASON$ ( n -- ^u8 n )
    REASON$ {: a u :}
    s" kiba: " {: k ku :}
    a u k ku STARTS-WITH? 0= if a u exit then
@@ -110,12 +111,12 @@ create STAT-REASON BUF:HDR-BYTES allot
    STATUS-ERROR 0= if exit then
    STATUS-ERROR BARE-REASON$ BUF:N>BLEN STAT-REASON BUF:APPEND-SPAN ;
 
-: STAT-REASON$ ( -- ptr u8 n ) STAT-REASON BUF:SPAN$ BUF:BLEN>N ;
+: STAT-REASON$ ( -- ^u8 n ) STAT-REASON BUF:SPAN$ BUF:BLEN>N ;
 
 \ ---- status: text -----------------------------------------------------------
 \ Each provider is rendered right after its read: the row table, ID-LIVE and
 \ the usage record hold that provider until the next store read.
-: .PLAN ( ptr u8 n -- ) {: a u :}
+: .PLAN ( ^u8 n -- ) {: a u :}
    u 0= if exit then
    s"  (" .TEXT a u .TEXT s" )" .TEXT ;
 
@@ -212,7 +213,7 @@ create STAT-REASON BUF:HDR-BYTES allot
 public
 
 \ the snapshot of every provider, read from the open store
-: STATUS-JSON$ ( -- ptr u8 n )
+: STATUS-JSON$ ( -- ^u8 n )
    0 ENC-U !
    $7B ENC-C s" providers" ENC-KEY $5B ENC-C
    P-COUNT 0 ?do i SNAP-PROVIDER loop
@@ -284,7 +285,7 @@ variable BACK-RC
 create LIVE-A NAME-CAP allot   variable LIVE-A-U    \ -1 when none
 create LIVE-B NAME-CAP allot   variable LIVE-B-U    \ -1 when none
 
-: UNREPAIRED ( n ptr u8 n -- ) {: p a u :}
+: UNREPAIRED ( n ^u8 n -- ) {: p a u :}
    p UNREPAIRED-P !
    a u UNREPAIRED-NAME UNREPAIRED-NAME-U NAME-CAP SPAN!
    E-SW-UNREPAIRED throw ;
@@ -305,7 +306,7 @@ create LIVE-B NAME-CAP allot   variable LIVE-B-U    \ -1 when none
    p REQUIRE-REPAIRED
    mixed if p INSTALLED-LIVE then ;
 
-: LIVE-NAME? ( ptr u8 n -- bool ) {: a u :}
+: LIVE-NAME? ( ^u8 n -- bool ) {: a u :}
    LIVE-A-U @ 0 >= if a u LIVE-A LIVE-A-U @ STR= if true exit then then
    LIVE-B-U @ 0 >= if a u LIVE-B LIVE-B-U @ STR= exit then
    false ;
@@ -332,7 +333,7 @@ create LIVE-B NAME-CAP allot   variable LIVE-B-U    \ -1 when none
 
 \ probes the saved login a u and records the outcome, for an operation that
 \ holds p's turn; E-SW-NO-ACCOUNT when there is no such login
-: PROBE-IN-TURN ( n ptr u8 n bool -- ) {: p a u live :}
+: PROBE-IN-TURN ( n ^u8 n bool -- ) {: p a u live :}
    p a u DB-FETCH 0= if E-SW-NO-ACCOUNT throw then
    p 0 live OUTCOME
    p 0 RECORD ;
@@ -341,7 +342,7 @@ create OLD-NAME NAME-CAP allot   variable OLD-NAME-U
 
 \ after the install the new login is probed as live, then the login saved
 \ back as saved: its usage came from a live probe, which never refreshes
-: USE-RUN ( n ptr u8 n -- ) {: p a u :}
+: USE-RUN ( n ^u8 n -- ) {: p a u :}
    p SAVE-BACK
    LIVE-ROW$ OLD-NAME OLD-NAME-U NAME-CAP SPAN!
    p a u INSTALL
@@ -363,11 +364,11 @@ variable USAGE-RC                   \ what the last failed step threw
 create BACK-ERR BUF:HDR-BYTES allot   \ the save-back error; empty when none
 DYNAMIC-BUFFER FAULTS u8     variable FAULTS-U     \ the provider error; empty when none
 
-: FAULTS$ ( -- ptr u8 n ) 0 FAULTS FAULTS-U @ ;
+: FAULTS$ ( -- ^u8 n ) 0 FAULTS FAULTS-U @ ;
 
 : FAULTS-RESET ( -- ) 0 FAULTS-U ! 1 FAULTS-RESERVE ;
 
-: FAULT+ ( ptr u8 n -- ) {: a u :}
+: FAULT+ ( ^u8 n -- ) {: a u :}
    u 0= if exit then
    FAULTS-U @ u + FAULTS-RESERVE
    a FAULTS-U @ FAULTS u BYTE-COPY
@@ -377,7 +378,7 @@ DYNAMIC-BUFFER FAULTS u8     variable FAULTS-U     \ the provider error; empty w
 
 \ provider p's account: its name, then what is left of its windows, or its
 \ note when no window has a reading
-: .USAGE ( n ptr u8 n -- ) {: p a u :}
+: .USAGE ( n ^u8 n -- ) {: p a u :}
    p PROVIDER$ .TEXT s" : " .TEXT a u .TEXT s"   " .TEXT
    p LEFT-TEXT {: t tu :}
    tu 0= if DB-USAGE-NOTE$ .TEXT .NL exit then
@@ -531,7 +532,7 @@ public
    SAVE-ONE ;
 
 \ saves the live login back, then makes the saved login live
-: CMD-USE ( n ptr u8 n -- ) {: p a u :}
+: CMD-USE ( n ^u8 n -- ) {: p a u :}
    p [: p a u USE-RUN ;] STORE-TURN
    p PROVIDER$ .TEXT s" : now " .TEXT a u .TEXT .NL ;
 
@@ -554,7 +555,7 @@ public
    [: p r live REDEEM ;] [: p r REDEEM-SAVE ;] finally ;
 
 \ the live names are read over the row table, so the row is fetched again
-: REDEEM-RUN ( n ptr u8 n -- ) {: p a u :}
+: REDEEM-RUN ( n ^u8 n -- ) {: p a u :}
    p a u DB-FETCH 0= if E-SW-NO-ACCOUNT throw then
    0 OFFERED? 0= if E-SW-NO-RESETS throw then
    p p LIVE-MIXED? LIVE-NAMES
@@ -569,7 +570,7 @@ public
 \ read, revoked, or replaced while a session is working. The new login is
 \ then saved under its own name and, once the throwaway home is gone, probed
 \ as a saved login; switching to it is a separate `use`.
-: SITE$ ( n -- ptr u8 n )
+: SITE$ ( n -- ^u8 n )
    P-CLAUDE = if s" claude.ai" exit then
    s" chatgpt.com" ;
 
@@ -577,7 +578,7 @@ create LINE-BUF 256 allot
 
 \ the browser decides the account, so the user is told which one to be
 \ signed into, or reminded to pick one, and given the moment to arrange it
-: ADD-PAUSE ( n ptr u8 n -- ) {: p e eu :}
+: ADD-PAUSE ( n ^u8 n -- ) {: p e eu :}
    s" Sign in to " .TEXT
    eu 0 > if e eu NAME-EMAIL .TEXT else s" the account to add" .TEXT then
    s"  at " .TEXT p SITE$ .TEXT
@@ -598,7 +599,7 @@ create LINE-BUF 256 allot
 
 \ ADD-BEGIN's LOGIN-ROOT points the live paths at the throwaway home, so
 \ PUT-LIVE reads the new login there and saves it under its own name
-: ADD-RUN ( n ptr u8 n -- ) {: p e eu :}
+: ADD-RUN ( n ^u8 n -- ) {: p e eu :}
    p ADD-BEGIN
    p e eu ADD-PAUSE
    p e eu NAME-EMAIL LOGIN 0<> if E-SW-LOGIN throw then
@@ -606,24 +607,24 @@ create LINE-BUF 256 allot
    [: p PUT-LIVE ;] DB-WRITE
    LIVE-ROW$ nip 0= if E-SW-NO-LIVE throw then ;
 
-: ADD-TURN ( n ptr u8 n -- ) {: p e eu :}
+: ADD-TURN ( n ^u8 n -- ) {: p e eu :}
    [: p e eu ADD-RUN ;] [: p ADD-END ;] finally ;
 
-: .ADDED ( n ptr u8 n -- ) {: p e eu :}
+: .ADDED ( n ^u8 n -- ) {: p e eu :}
    p PROVIDER$ .TEXT s" : saved " .TEXT LIVE-ROW$ .TEXT
    eu 0 > LIVE-ROW$ e eu STR= 0= and if
       s"  (you signed in to a different account than " .TEXT e eu .TEXT s" )" .TEXT
    then
    .NL ;
 
-: CMD-ADD ( n ptr u8 n -- ) {: p e eu :}
+: CMD-ADD ( n ^u8 n -- ) {: p e eu :}
    p CHECK-LOGIN-CLI
    p [: p e eu ADD-TURN
       p LIVE-ROW$ false PROBE-IN-TURN ;] STORE-TURN
    p e eu .ADDED ;
 
 \ what the last redeem came to, for the account a u
-: REDEEMED$ ( ptr u8 n -- ptr u8 n ) {: a u :}
+: REDEEMED$ ( ^u8 n -- ^u8 n ) {: a u :}
    SB-RESET
    RESET-OUTCOME MATCH reset-outcome
       reset OF s" Limit reset for " SB-APPEND a u SB-APPEND ENDOF
@@ -643,12 +644,12 @@ create LINE-BUF 256 allot
    SB$ ;
 
 \ spends one limit reset of the saved login a u
-: CMD-REDEEM ( n ptr u8 n -- ) {: p a u :}
+: CMD-REDEEM ( n ^u8 n -- ) {: p a u :}
    a u REDEEM-NAME REDEEM-NAME-U NAME-CAP SPAN!
    p [: p a u REDEEM-RUN ;] STORE-TURN
    p PROVIDER$ .TEXT s" : " .TEXT a u REDEEMED$ .TEXT .NL ;
 
-: CMD-FORGET ( n ptr u8 n -- ) {: p a u :}
+: CMD-FORGET ( n ^u8 n -- ) {: p a u :}
    p [: p a u FORGET-ROW ;] STORE-TURN
    p PROVIDER$ .TEXT s" : forgot " .TEXT a u .TEXT .NL ;
 

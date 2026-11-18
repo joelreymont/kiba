@@ -1,3 +1,4 @@
+split-str
 \ sw-run.f - provider login commands, run in the foreground inside a
 \ throwaway home.
 require ../src/sw-base.f
@@ -15,22 +16,22 @@ package SW
 create EXE-BUF PATH-CAP allot
 variable EXE-U
 
-: EXE$ ( -- ptr u8 n ) EXE-BUF EXE-U @ ;
+: EXE$ ( -- ^u8 n ) EXE-BUF EXE-U @ ;
 
-: FOUND? ( ptr u8 n -- bool )
+: FOUND? ( ^u8 n -- bool )
    >LEN EXE-BUF FIND-EXECUTABLE MATCH option
      none OF false ENDOF
      some OF LEN>N EXE-U ! true ENDOF
    ;MATCH ;
 
-: RESOLVE ( ptr u8 n -- )
+: RESOLVE ( ^u8 n -- )
    FOUND? 0= if E-SW-NO-CLI throw then ;
 
-: ARG+ ( ptr u8 n -- )
+: ARG+ ( ^u8 n -- )
    >LEN PROC-ARGV+ ;
 
 \ ---- the child's environment ------------------------------------------------
-: PROVIDER-HOME-VAR$ ( n -- ptr u8 n )
+: PROVIDER-HOME-VAR$ ( n -- ^u8 n )
    P-CLAUDE = if s" CLAUDE_CONFIG_DIR" exit then
    s" CODEX_HOME" ;
 
@@ -45,7 +46,7 @@ variable EXE-U
 \ the child keeps this process's group, terminal, and descriptors: the
 \ spawn primitives give a child its own process group, and a login that
 \ then reads the terminal is stopped by SIGTTIN
-: EXEC-STAGED ( ptr u8 ptr ptr u8 ptr ptr u8 -- ) {: pathz argv envp :}
+: EXEC-STAGED ( ^u8 ^^u8 ^^u8 -- ) {: pathz argv envp :}
    pathz argv envp execve drop
    s" kiba: could not start the provider command" 127 die ;
 
@@ -60,7 +61,7 @@ public
 
 \ the provider login inside the throwaway home; an expected email is passed
 \ on where the login command can prefill it
-: CLAUDE-LOGIN ( ptr u8 n -- n ) {: e eu :}
+: CLAUDE-LOGIN ( ^u8 n -- n ) {: e eu :}
    s" claude" RESOLVE
    PROC-ARGV-RESET s" auth" ARG+ s" login" ARG+
    eu 0 > if s" --email" ARG+ e eu ARG+ then
@@ -73,7 +74,7 @@ public
    P-CODEX LOGIN-ENV
    RUN-STAGED ;
 
-: LOGIN ( n ptr u8 n -- n ) {: p e eu :}
+: LOGIN ( n ^u8 n -- n ) {: p e eu :}
    p case
      P-CLAUDE of e eu CLAUDE-LOGIN endof
      P-CODEX of CODEX-LOGIN endof

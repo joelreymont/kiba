@@ -1,3 +1,4 @@
+split-str
 \ sw-identity.f - the email and plan of a login, live or saved.
 require ../src/sw-json.f
 require ../src/sw-base.f
@@ -34,18 +35,18 @@ create PLAN-BUF ID-COUNT PLAN-CAP * allot
 create ORG-BUF ID-COUNT ORG-CAP * allot       \ organization or account id
 ID-COUNT TYPED-BUFFER ID-LENS lens
 
-: EMAIL-ROW ( n -- ptr u8 ) EMAIL-BUF swap EMAIL-CAP * + ;
-: PLAN-ROW ( n -- ptr u8 ) PLAN-BUF swap PLAN-CAP * + ;
-: ORG-ROW ( n -- ptr u8 ) ORG-BUF swap ORG-CAP * + ;
+: EMAIL-ROW ( n -- ^u8 ) EMAIL-BUF swap EMAIL-CAP * + ;
+: PLAN-ROW ( n -- ^u8 ) PLAN-BUF swap PLAN-CAP * + ;
+: ORG-ROW ( n -- ^u8 ) ORG-BUF swap ORG-CAP * + ;
 
 \ a field DOC-STR1 or DOC-STR2 could not read is empty, not -1 bytes long
-: LEN! ( n ptr n -- ) {: len p :} len 0 max p ! ;
+: LEN! ( n ^n -- ) {: len p :} len 0 max p ! ;
 
 public
 
-: EMAIL$ ( n -- ptr u8 n ) {: id :} id EMAIL-ROW id ID-LENS LENS-EMAIL @ ;
-: PLAN$ ( n -- ptr u8 n ) {: id :} id PLAN-ROW id ID-LENS LENS-PLAN @ ;
-: ORG$ ( n -- ptr u8 n ) {: id :} id ORG-ROW id ID-LENS LENS-ORG @ ;
+: EMAIL$ ( n -- ^u8 n ) {: id :} id EMAIL-ROW id ID-LENS LENS-EMAIL @ ;
+: PLAN$ ( n -- ^u8 n ) {: id :} id PLAN-ROW id ID-LENS LENS-PLAN @ ;
+: ORG$ ( n -- ^u8 n ) {: id :} id ORG-ROW id ID-LENS LENS-ORG @ ;
 
 \ one identity cleared to empty: no login is known yet
 : NO-IDENTITY ( n -- ) {: id :}
@@ -58,7 +59,7 @@ private
 
 \ ---- Claude Code ------------------------------------------------------------
 \ planFromCreds: credentials JSONFields cannot read name no plan; false then
-: PLAN-READ? ( ptr u8 n n -- bool ) {: cr cru id :}
+: PLAN-READ? ( ^u8 n n -- bool ) {: cr cru id :}
    cr cru FIELDS? 0= if false exit then
    cr cru s" claudeAiOauth" s" subscriptionType" id PLAN-ROW PLAN-CAP DOC-STR2
    id ID-LENS LENS-PLAN LEN!
@@ -69,12 +70,12 @@ public
 \ the credentials' plan; empty when they are not a document JSONFields reads
 \ or lack the string, since the account comes from the config alone; a plan
 \ longer than PLAN-CAP is E-SW-CAPACITY
-: CLAUDE-PLAN ( ptr u8 n n -- ) {: cr cru id :}
+: CLAUDE-PLAN ( ^u8 n n -- ) {: cr cru id :}
    cr cru id PLAN-READ? 0= if 0 id ID-LENS LENS-PLAN LEN! then ;
 
 \ fromOAuthAccount: the oauthAccount object on its own, as saved in a slot;
 \ E-SW-JSON unless JSONFields reads it and it names an email
-: CLAUDE-OAUTH-IDENTITY ( ptr u8 n n -- ) {: d du id :}
+: CLAUDE-OAUTH-IDENTITY ( ^u8 n n -- ) {: d du id :}
    id NO-IDENTITY
    d du CHECK-FIELDS
    d du s" emailAddress" id EMAIL-ROW EMAIL-CAP DOC-STR1
@@ -87,7 +88,7 @@ private
 \ ClaudeLive.decode reads them; the config is checked as profile's JSONDoc
 \ checks it; answers the oauthAccount object in cfg, and false with an
 \ empty span when it holds none
-: CLAUDE-ACCOUNT ( ptr u8 n ptr u8 n n -- ptr u8 n bool )
+: CLAUDE-ACCOUNT ( ^u8 n ^u8 n n -- ^u8 n bool )
    {: cfg cu cr cru id :}
    id NO-IDENTITY
    cfg cu CHECK-OBJECT
@@ -103,11 +104,11 @@ public
 
 \ CLAUDE-ACCOUNT's identity alone: false when the config holds no
 \ oauthAccount object
-: CLAUDE-IDENTITY ( ptr u8 n ptr u8 n n -- bool )
+: CLAUDE-IDENTITY ( ^u8 n ^u8 n n -- bool )
    CLAUDE-ACCOUNT nip nip ;
 
 \ ---- Codex ------------------------------------------------------------------
-: JWT-PAYLOAD ( ptr u8 n -- ptr u8 n ) {: t tu :}
+: JWT-PAYLOAD ( ^u8 n -- ^u8 n ) {: t tu :}
    t tu $2E INDEX-OF MATCH option
      none OF E-SW-JSON throw ENDOF
      some OF IDX>N ENDOF
@@ -121,11 +122,11 @@ public
 
 private
 
-: PAD-END? ( ptr u8 n -- bool ) {: a u :}
+: PAD-END? ( ^u8 n -- bool ) {: a u :}
    u 0= if false exit then
    a u + 1- c@ EQUALS = ;
 
-: UNPADDED ( ptr u8 n -- ptr u8 n )
+: UNPADDED ( ^u8 n -- ^u8 n )
    2 0 do 2dup PAD-END? if 1- then loop ;
 
 public
@@ -134,15 +135,15 @@ public
 \ kiba-mac's Base64URL allows them. Unlike kiba-mac's, the decoder refuses
 \ unused low bits that are not zero, which conforming encoders never write
 \ (RFC 4648 section 3.5). Its E-BASE64 codes reach callers
-: DECODE-PAYLOAD ( ptr u8 n -- ) UNPADDED OBJ-BUF BUF-CAP SPAN:MAKE BASE64:DECODE-URL OBJ-U ! ;
+: DECODE-PAYLOAD ( ^u8 n -- ) UNPADDED OBJ-BUF BUF-CAP SPAN:MAKE BASE64:DECODE-URL OBJ-U ! ;
 
 \ isAPIKey: OPENAI_API_KEY is a non-empty string in a document JSONFields reads
-: CODEX-API-KEY? ( ptr u8 n -- bool ) {: d du :}
+: CODEX-API-KEY? ( ^u8 n -- bool ) {: d du :}
    d du FIELDS? 0= if false exit then
    d du s" OPENAI_API_KEY" TOK-BUF BUF-CAP DOC-STR1 0 > ;
 
 \ an API-key login has no claims; it is saved under a fixed slot name
-: CODEX-API-IDENTITY ( ptr u8 n n -- bool ) {: d du id :}
+: CODEX-API-IDENTITY ( ^u8 n n -- bool ) {: d du id :}
    d du CODEX-API-KEY? 0= if false exit then
    s" api-key" id EMAIL-ROW id ID-LENS LENS-EMAIL EMAIL-CAP SPAN!
    s" apikey" id PLAN-ROW id ID-LENS LENS-PLAN PLAN-CAP SPAN!
@@ -151,7 +152,7 @@ public
 \ fromAuth: the auth.json document, its identity from the id_token claims;
 \ E-SW-JSON unless JSONFields reads the document and the claims and they
 \ name an email
-: CODEX-IDENTITY ( ptr u8 n n -- bool ) {: d du id :}
+: CODEX-IDENTITY ( ^u8 n n -- bool ) {: d du id :}
    id NO-IDENTITY
    d du CHECK-FIELDS
    d du s" tokens" s" id_token" TOK-BUF BUF-CAP DOC-STR2

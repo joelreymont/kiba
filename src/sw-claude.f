@@ -1,3 +1,4 @@
+split-str
 \ sw-claude.f - Claude Code's live login: read and written.
 require ../src/sw-identity.f
 require ../src/sw-db.f
@@ -12,11 +13,11 @@ require src/lib/string.f
 
 package SW
 
-: OAUTH-KEY$ ( -- ptr u8 n ) s" oauthAccount" ;
+: OAUTH-KEY$ ( -- ^u8 n ) s" oauthAccount" ;
 
 : OUT-RESET ( -- ) 0 OUT-U ! ;
 
-: OUT+ ( ptr u8 n -- ) {: a u :}
+: OUT+ ( ^u8 n -- ) {: a u :}
    OUT-U @ u + BUF-CAP > if DOC-TOO-BIG then
    a OUT-BUF OUT-U @ + u BYTE-COPY
    OUT-U @ u + OUT-U ! ;
@@ -46,11 +47,11 @@ package SW
    OBJ$ OUT+
    s\" }" OUT+ ;
 
-: CHECK-CREDS ( ptr u8 n -- ) {: d du :}
+: CHECK-CREDS ( ^u8 n -- ) {: d du :}
    d du CHECK-OBJECT
    d du s" claudeAiOauth" DOC-OBJ-SPAN? 0= if E-SW-JSON throw then 2drop ;
 
-: CHECK-SLOT-EMAIL ( ptr u8 n -- ) {: a u :}
+: CHECK-SLOT-EMAIL ( ^u8 n -- ) {: a u :}
    OBJ$ ID-SLOT CLAUDE-OAUTH-IDENTITY
    a u ID-SLOT EMAIL$ NAME-FOR-EMAIL? 0= if E-SW-MISMATCH throw then ;
 
@@ -61,7 +62,7 @@ create ORPHAN-CFG PATH-CAP allot   variable ORPHAN-CFG-U
 public
 
 \ the config CLAUDE-LIVE last found missing beside live credentials
-: ORPHAN-CONFIG$ ( -- ptr u8 n ) ORPHAN-CFG ORPHAN-CFG-U @ ;
+: ORPHAN-CONFIG$ ( -- ^u8 n ) ORPHAN-CFG ORPHAN-CFG-U @ ;
 
 \ ---- the live login over the store ----------------------------------------
 private
@@ -80,19 +81,19 @@ private
 
 \ ID-LIVE from the config in CFG and the credentials in FILE; answers the
 \ oauthAccount object in CFG, and E-SW-JSON when there is none
-: CLAUDE-DECODE ( -- ptr u8 n )
+: CLAUDE-DECODE ( -- ^u8 n )
    CFG$ FILE$ ID-LIVE CLAUDE-ACCOUNT 0= if E-SW-JSON throw then ;
 
 \ the login as one read: the credentials, and the profile the identity came
 \ from; false when there is no live login
-: CLAUDE-LIVE-LOGIN ( -- ptr u8 n ptr u8 n bool )
+: CLAUDE-LIVE-LOGIN ( -- ^u8 n ^u8 n bool )
    CLAUDE-LIVE 0= if FILE-BUF 0 FILE-BUF -1 false exit then
    CLAUDE-DECODE {: pa pu :}
    FILE$ pa pu true ;
 
 create MIXED-NAME NAME-CAP allot   variable MIXED-NAME-U
 
-: MIXED-NAME$ ( -- ptr u8 n ) MIXED-NAME MIXED-NAME-U @ ;
+: MIXED-NAME$ ( -- ^u8 n ) MIXED-NAME MIXED-NAME-U @ ;
 
 \ an org on either side that is unknown matches
 : SAME-ORG? ( -- bool )
@@ -135,14 +136,14 @@ create MIXED-NAME NAME-CAP allot   variable MIXED-NAME-U
 public
 
 \ makes the live config the document; length -1 removes it
-: PUT-CONFIG ( ptr u8 n -- ) {: d du :}
+: PUT-CONFIG ( ^u8 n -- ) {: d du :}
    du 0 < if DROP-CONFIG exit then
    CLAUDE-CONFIG$ DIRNAME ENSURE-PRIVATE
    CLAUDE-CONFIG$ d du WRITE-PRIVATE ;
 
 private
 
-: PUT-CREDS ( ptr u8 n -- ) {: d du :}
+: PUT-CREDS ( ^u8 n -- ) {: d du :}
    CLAUDE-CREDS$ DIRNAME ENSURE-PRIVATE
    CLAUDE-CREDS$ d du WRITE-PRIVATE ;
 

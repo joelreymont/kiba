@@ -1,3 +1,4 @@
+split-str
 \ kiba.f - entry point: argument dispatch and process exit.
 require ../src/sw-cli.f
 require ../src/sw-base.f
@@ -17,7 +18,7 @@ package SW
    s\"        kiba redeem <claude|codex> <email>\n" ERR-PART
    s\"        kiba usage [claude|codex]\n" ERR-PART ;
 
-: ARG$ ( n -- ptr u8 n )
+: ARG$ ( n -- ^u8 n )
    dup SCRIPT-ARGC >= if drop E-SW-USAGE throw then
    SCRIPT-ARGV$ ;
 
@@ -32,7 +33,7 @@ package SW
    E-SW-USAGE throw ;
 
 \ the account name argument n, refused as kiba-mac refuses a bad SlotName
-: NAME-ARG$ ( n -- ptr u8 n )
+: NAME-ARG$ ( n -- ^u8 n )
    ARG$ {: a u :}
    a u NAME-OK? 0= if E-SW-USAGE throw then
    a u ;

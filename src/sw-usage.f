@@ -1,3 +1,4 @@
+split-str
 \ sw-usage.f - per-account rate limits, read from each provider's usage
 \ endpoint through libcurl, as kiba-mac's ClaudeProbe and CodexProbe read
 \ them. A probe takes a saved login's document and whether the CLI is using
@@ -52,19 +53,19 @@ variable MANT-POINT                 \ its decimal point; MANT-END when it has no
 variable MANT-END                   \ the index after its last digit
 variable EXP-VALUE                  \ the exponent, its magnitude held to a cap
 
-: BYTE-IS? ( ptr u8 n n n -- bool ) {: a u at c :}
+: BYTE-IS? ( ^u8 n n n -- bool ) {: a u at c :}
    at u < if at a + c@ c = else false then ;
 
 \ the first index from at whose byte is not a digit
-: DIGIT-RUN ( ptr u8 n n -- n ) {: a u at :}
+: DIGIT-RUN ( ^u8 n n -- n ) {: a u at :}
    at begin dup u < if dup a + c@ DIGIT? else false then while 1+ repeat ;
 
 \ the value digits lo..hi-1 spell, held to cap
-: DIGIT-VALUE ( ptr u8 n n n -- n ) {: a lo hi cap :}
+: DIGIT-VALUE ( ^u8 n n n -- n ) {: a lo hi cap :}
    0 hi lo ?do 10 * a i + c@ DIGIT + cap min loop ;
 
 \ the mantissa from index at; false when a side of its point has no digit
-: MANTISSA? ( ptr u8 n n -- bool ) {: a u at :}
+: MANTISSA? ( ^u8 n n -- bool ) {: a u at :}
    at MANT-START !
    a u at DIGIT-RUN {: q :}
    q MANT-POINT ! q MANT-END !
@@ -77,7 +78,7 @@ variable EXP-VALUE                  \ the exponent, its magnitude held to a cap
 \ the exponent at index at, if any, into EXP-VALUE; the index after it, -1
 \ when malformed. Its magnitude is held to u + 20: past that a nonzero
 \ mantissa is past INT-MAX, or below 0.1, either way.
-: EXPONENT-AT ( ptr u8 n n -- n ) {: a u at :}
+: EXPONENT-AT ( ^u8 n n -- n ) {: a u at :}
    0 EXP-VALUE !
    a u at $65 BYTE-IS? a u at $45 BYTE-IS? or 0= if at exit then
    a u at 1+ $2D BYTE-IS? {: neg :}
@@ -88,7 +89,7 @@ variable EXP-VALUE                  \ the exponent, its magnitude held to a cap
    hi ;
 
 \ mantissa digit k, counting from its first and skipping the point; 0 past its last
-: MANT-DIGIT ( ptr u8 n -- n ) {: a k :}
+: MANT-DIGIT ( ^u8 n -- n ) {: a k :}
    MANT-START @ k + dup MANT-POINT @ >= if 1+ then {: at :}
    at MANT-END @ >= if 0 exit then
    at a + c@ DIGIT ;
@@ -99,11 +100,11 @@ variable EXP-VALUE                  \ the exponent, its magnitude held to a cap
    acc INT-MAX d - 10 / > if -1 exit then
    acc 10 * d + ;
 
-: MANT-ZERO? ( ptr u8 -- bool ) {: a :}
+: MANT-ZERO? ( ^u8 -- bool ) {: a :}
    true MANT-END @ MANT-START @ ?do a i + c@ dup $30 = swap $2E = or and loop ;
 
 \ the mantissa rounded to its first p digits, half up; -1 past INT-MAX
-: MANT-ROUNDED ( ptr u8 n -- n ) {: a p :}
+: MANT-ROUNDED ( ^u8 n -- n ) {: a p :}
    0 p 0 ?do a i MANT-DIGIT SHIFT-DIGIT loop {: w :}
    w 0 < if -1 exit then
    p 0 < if w exit then
@@ -113,7 +114,7 @@ variable EXP-VALUE                  \ the exponent, its magnitude held to a cap
 
 \ the whole percent reading a u spells, as kiba-mac's usedPercent gives it;
 \ -1 when it is malformed, below zero or past INT-MAX
-: USED-PERCENT ( ptr u8 n -- n ) {: a u :}
+: USED-PERCENT ( ^u8 n -- n ) {: a u :}
    a u 0 $2D BYTE-IS? {: neg :}
    a u neg if 1 else 0 then MANTISSA? 0= if -1 exit then
    a u MANT-END @ EXPONENT-AT u <> if -1 exit then
@@ -124,15 +125,15 @@ variable EXP-VALUE                  \ the exponent, its magnitude held to a cap
 variable PROBE-AT                   \ epoch seconds the probe began: its fetchedAt
 variable PROBE-LIVE                 \ bool: the CLI is using this login; it is never refreshed
 \ the login probed: the caller's bytes until a renewal points it at SDOC
-TYPED-VARIABLE PROBE-DOC-A ptr u8   variable PROBE-DOC-U
+TYPED-VARIABLE PROBE-DOC-A ^u8   variable PROBE-DOC-U
 create PLAN-NAMED PLAN-CAP allot    variable PLAN-NAMED-U   \ -1 when the provider named none
 variable HTTP-CODE                  \ the last answer's status, -1 when there was none
 
-: PROBE-DOC! ( ptr u8 n -- ) PROBE-DOC-U ! PROBE-DOC-A ! ;
-: PROBE-DOC$ ( -- ptr u8 n ) PROBE-DOC-A @ PROBE-DOC-U @ ;
+: PROBE-DOC! ( ^u8 n -- ) PROBE-DOC-U ! PROBE-DOC-A ! ;
+: PROBE-DOC$ ( -- ^u8 n ) PROBE-DOC-A @ PROBE-DOC-U @ ;
 
 \ the probe's outcome: a record of state st and note a u, without limits
-: SAY ( usage-state ptr u8 n -- ) {: st a u :}
+: SAY ( usage-state ^u8 n -- ) {: st a u :}
    PROBE-AT @ st a u DB-USAGE! ;
 
 \ ---- requests -------------------------------------------------------------------
@@ -142,14 +143,14 @@ create HDR-TEXT BUF:HDR-BYTES allot
 DYNAMIC-BUFFER HDR-ENDS n
 variable HDR-N
 \ borrowed from the caller until SEND returns; length -1 for a GET
-TYPED-VARIABLE REQ-BODY-A ptr u8   variable REQ-BODY-U
+TYPED-VARIABLE REQ-BODY-A ^u8   variable REQ-BODY-U
 \ tests reach a local server through URL-BASE; length 0 sends each URL as written
 create URL-BASE PATH-CAP allot     variable URL-BASE-U
 create TARGET-TEXT BUF:HDR-BYTES allot
 
-: SCHEME$ ( -- ptr u8 n ) s" https://" ;
+: SCHEME$ ( -- ^u8 n ) s" https://" ;
 
-: HDR+ ( ptr u8 n -- ) BUF:N>BLEN HDR-TEXT BUF:APPEND-SPAN ;
+: HDR+ ( ^u8 n -- ) BUF:N>BLEN HDR-TEXT BUF:APPEND-SPAN ;
 
 : LINE-END ( -- )
    HDR-N @ {: i :}
@@ -157,29 +158,29 @@ create TARGET-TEXT BUF:HDR-BYTES allot
    HDR-TEXT TEXTS-END i HDR-ENDS !
    i 1+ HDR-N ! ;
 
-: HDR ( ptr u8 n ptr u8 n -- ) {: name nu val vu :}
+: HDR ( ^u8 n ^u8 n -- ) {: name nu val vu :}
    name nu HDR+ s" : " HDR+ val vu HDR+ LINE-END ;
 
-: BEARER ( ptr u8 n -- ) {: t tu :}
+: BEARER ( ^u8 n -- ) {: t tu :}
    s" Authorization: Bearer " HDR+ t tu HDR+ LINE-END ;
 
-: HDR-LINE$ ( n -- ptr u8 n ) {: i :}
+: HDR-LINE$ ( n -- ^u8 n ) {: i :}
    i 0= if 0 else i 1- HDR-ENDS @ then {: lo :}
    HDR-TEXT lo i HDR-ENDS @ lo - TEXTS$ ;
 
 \ Anthropic's token endpoint answers 429 to curl's own User-Agent whatever
 \ the grant, so every request names its client
-: KIBA-UA$ ( -- ptr u8 n ) s" kiba" ;
+: KIBA-UA$ ( -- ^u8 n ) s" kiba" ;
 
 \ a request that names its client ua
-: REQUEST ( ptr u8 n -- ) {: ua uu :}
+: REQUEST ( ^u8 n -- ) {: ua uu :}
    HDR-TEXT TEXTS-RESET 0 HDR-N !
    -1 REQ-BODY-U !
    s" Accept" s" application/json" HDR
    s" User-Agent" ua uu HDR ;
 
 \ every URL kiba sends begins with SCHEME$, which URL-BASE replaces
-: TARGET$ ( ptr u8 n -- ptr u8 n ) {: url uu :}
+: TARGET$ ( ^u8 n -- ^u8 n ) {: url uu :}
    URL-BASE-U @ 0= if url uu exit then
    TARGET-TEXT TEXTS-RESET
    URL-BASE URL-BASE-U @ BUF:N>BLEN TARGET-TEXT BUF:APPEND-SPAN
@@ -211,7 +212,7 @@ create TARGET-TEXT BUF:HDR-BYTES allot
       failed OF drop -1 ENDOF
    ;MATCH ;
 
-: SEND-ON ( CURL:handle ptr u8 n -- n ) {: h:CURL:handle url uu :}
+: SEND-ON ( CURL:handle ^u8 n -- n ) {: h:CURL:handle url uu :}
    h HTTP-TIMEOUT-SEC 1000 * >MS CURL:TIMEOUT! SET? 0= if -1 exit then
    h HEADERS-SET? 0= if -1 exit then
    h BODY-SET? 0= if -1 exit then
@@ -221,7 +222,7 @@ create TARGET-TEXT BUF:HDR-BYTES allot
 \ the staged request sent to url: the answer's status, or -1 when there was
 \ none; the handle, which holds copies of the bearer token, is freed on a
 \ throw too
-: SEND ( ptr u8 n -- n ) {: url uu :}
+: SEND ( ^u8 n -- n ) {: url uu :}
    0 OBJ-U !
    CURL:INIT MATCH CURL:init-result
       ready OF {: h:CURL:handle :}
@@ -230,25 +231,25 @@ create TARGET-TEXT BUF:HDR-BYTES allot
    ;MATCH ;
 
 \ the body of the last answer
-: ANSWER$ ( -- ptr u8 n ) OBJ$ ;
+: ANSWER$ ( -- ^u8 n ) OBJ$ ;
 
 \ the body bytes come from a finished JSON-OPEN chain
-: POST-JSON ( ptr u8 n ptr u8 n -- n ) {: b bu url uu :}
+: POST-JSON ( ^u8 n ^u8 n -- n ) {: b bu url uu :}
    b REQ-BODY-A ! bu REQ-BODY-U !
    s" Content-Type" s" application/json" HDR
    url uu SEND ;
 
 \ "<what> answered <code>", or "<what> could not be reached" when code < 0
-: HTTP-NOTE ( ptr u8 n n -- ptr u8 n ) {: what wu code :}
+: HTTP-NOTE ( ^u8 n n -- ^u8 n ) {: what wu code :}
    SB-RESET what wu SB-APPEND
    code 0 < if s"  could not be reached" SB-APPEND SB$ exit then
    s"  answered " SB-APPEND code FMT:SB-U SB$ ;
 
-: UNREADABLE-NOTE ( ptr u8 n -- ptr u8 n ) {: what wu :}
+: UNREADABLE-NOTE ( ^u8 n -- ^u8 n ) {: what wu :}
    SB-RESET what wu SB-APPEND s"  sent an answer that is not a JSON object" SB-APPEND SB$ ;
 
 \ a token request answered; its status is in HTTP-CODE
-: TOKEN-POST ( ptr u8 n ptr u8 n -- n ) {: b bu url uu :}
+: TOKEN-POST ( ^u8 n ^u8 n -- n ) {: b bu url uu :}
    KIBA-UA$ REQUEST
    b bu url uu POST-JSON
    dup HTTP-CODE ! ;
@@ -260,21 +261,21 @@ create TARGET-TEXT BUF:HDR-BYTES allot
 \ A document or answer is read field by field only once it is known to be
 \ one JSON object in which no object, nested ones included, repeats a key,
 \ as JSONFields reads one; a field of another kind reads as absent.
-: KEY-OBJ? ( ptr u8 n ptr u8 n -- bool ) {: d du k ku :}
+: KEY-OBJ? ( ^u8 n ^u8 n -- bool ) {: d du k ku :}
    d du OPEN-DOC ENTER-OBJECT
    k ku KEY-OBJECT swap JSON:READ-CLOSE ;
 
 \ the token kind of the member k2 of the object at k1; JSON:T-END when absent
-: KIND2 ( ptr u8 n ptr u8 n ptr u8 n -- n ) {: d du k1 k1u k2 k2u :}
+: KIND2 ( ^u8 n ^u8 n ^u8 n -- n ) {: d du k1 k1u k2 k2u :}
    d du OPEN-DOC ENTER-OBJECT
    k1 k1u KEY-OBJECT 0= if JSON:READ-CLOSE JSON:T-END exit then
    k2 k2u JSON:READ-FIND-KEY 0= if JSON:READ-CLOSE JSON:T-END exit then
    JSON:READ-TOKEN swap JSON:READ-CLOSE ;
 
-: TRUE2? ( ptr u8 n ptr u8 n ptr u8 n -- bool ) KIND2 JSON:T-TRUE = ;
+: TRUE2? ( ^u8 n ^u8 n ^u8 n -- bool ) KIND2 JSON:T-TRUE = ;
 
 \ the member k2 of the object at k1 is the string w
-: STR2-IS? ( ptr u8 n ptr u8 n ptr u8 n ptr u8 n -- bool ) {: d du k1 k1u k2 k2u w wu :}
+: STR2-IS? ( ^u8 n ^u8 n ^u8 n ^u8 n -- bool ) {: d du k1 k1u k2 k2u w wu :}
    d du OPEN-DOC ENTER-OBJECT
    k1 k1u KEY-OBJECT 0= if JSON:READ-CLOSE false exit then
    k2 k2u JSON:READ-FIND-KEY 0= if JSON:READ-CLOSE false exit then
@@ -297,7 +298,7 @@ variable LINE-GAP                   \ bool: a separator run waits for the next s
    4 ;
 
 \ the code point of the UTF-8 sequence of len bytes at a
-: SCALAR@ ( ptr u8 n -- n ) {: a len :}
+: SCALAR@ ( ^u8 n -- n ) {: a len :}
    a c@ len 1 = if exit then
    $7F len rshift and
    len 1 ?do 6 lshift a i + c@ $3F and or loop ;
@@ -309,21 +310,21 @@ variable LINE-GAP                   \ bool: a separator run waits for the next s
    c $2000 >= c $200A <= and if true exit then
    c $1680 = c $2028 = or c $2029 = or c $202F = or c $205F = or c $3000 = or ;
 
-: LINE-COPY ( ptr u8 n -- ) {: a len :}
+: LINE-COPY ( ^u8 n -- ) {: a len :}
    a LINE-OUT LINE-U @ + len BYTE-COPY
    len LINE-U +! ;
 
-: LINE-SCALAR ( ptr u8 n -- ) {: a len :}
+: LINE-SCALAR ( ^u8 n -- ) {: a len :}
    1 LINE-N +!
    LINE-N @ DETAIL-MAX <= if a len LINE-COPY then
    LINE-N @ DETAIL-MAX 1- = if LINE-U @ LINE-CUT ! then ;
 
-: LINE-STEP ( ptr u8 n -- ) {: a len :}
+: LINE-STEP ( ^u8 n -- ) {: a len :}
    a len SCALAR@ SEPARATOR? if LINE-N @ 0 > LINE-GAP ! exit then
    LINE-GAP @ if false LINE-GAP ! s"  " LINE-SCALAR then
    a len LINE-SCALAR ;
 
-: ONE-LINE ( ptr u8 n -- ptr u8 n ) {: a u :}
+: ONE-LINE ( ^u8 n -- ^u8 n ) {: a u :}
    0 LINE-U ! 0 LINE-N ! 0 LINE-CUT ! false LINE-GAP !
    0 begin dup u < while
       {: i :}
@@ -336,7 +337,7 @@ variable LINE-GAP                   \ bool: a separator run waits for the next s
 
 \ ---- rewriting a login document ----------------------------------------------------------
 \ CFG holds the document; each change splices OUT and copies it back.
-: SPLICE-CFG ( n n ptr u8 n -- ) {: off len v vu :}
+: SPLICE-CFG ( n n ^u8 n -- ) {: off len v vu :}
    0 OUT-U !
    off vu + CFG-U @ off len + - + BUF-CAP > if DOC-TOO-BIG then
    CFG-BUF OUT-BUF off BYTE-COPY
@@ -348,20 +349,20 @@ variable LINE-GAP                   \ bool: a separator run waits for the next s
 
 \ the member "k":v inserted at the closing brace at, after a comma when its
 \ object has members; v is in place before the builder makes the prefix
-: CFG-ADD ( n bool ptr u8 n ptr u8 n -- ) {: at members k ku v vu :}
+: CFG-ADD ( n bool ^u8 n ^u8 n -- ) {: at members k ku v vu :}
    at 0 v vu SPLICE-CFG
    SB-RESET members if $2C SB-APPEND-C then
    $22 SB-APPEND-C k ku SB-APPEND $22 SB-APPEND-C $3A SB-APPEND-C
    at 0 SB$ SPLICE-CFG ;
 
 \ the top-level key's value set to a JSON literal, added at the end when absent
-: CFG-SET ( ptr u8 n ptr u8 n -- ) {: k ku v vu :}
+: CFG-SET ( ^u8 n ^u8 n -- ) {: k ku v vu :}
    CFG$ k ku DOC-VALUE-SPAN? {: off len found :}
    found if off len v vu SPLICE-CFG exit then
    CFG$ DOC-CLOSE k ku v vu CFG-ADD ;
 
 \ the same one level down, inside the object at k1, which must be there
-: CFG-SET2 ( ptr u8 n ptr u8 n ptr u8 n -- ) {: k1 k1u k2 k2u v vu :}
+: CFG-SET2 ( ^u8 n ^u8 n ^u8 n -- ) {: k1 k1u k2 k2u v vu :}
    CFG$ k1 k1u DOC-OBJ-SPAN {: off1 len1 :}
    CFG-BUF off1 + len1 k2 k2u DOC-VALUE-SPAN? {: off2 len2 found :}
    found if off1 off2 + len2 v vu SPLICE-CFG exit then
@@ -369,10 +370,10 @@ variable LINE-GAP                   \ bool: a separator run waits for the next s
    off1 at + members k2 k2u v vu CFG-ADD ;
 
 \ a decoded string as a JSON string literal, in the writer buffer
-: LITERAL$ ( ptr u8 n -- ptr u8 n ) {: a u :}
+: LITERAL$ ( ^u8 n -- ^u8 n ) {: a u :}
    JSON-OPEN a u JSON:WRITE-STRING JSON:WRITTEN$ ;
 
-: NUMBER$ ( n -- ptr u8 n )
+: NUMBER$ ( n -- ^u8 n )
    SB-RESET FMT:SB-INT SB$ ;
 
 \ a refresh splices a copy of the login, which replaces it only when whole
@@ -386,18 +387,18 @@ variable LINE-GAP                   \ bool: a separator run waits for the next s
 \ The usage flags ask for both reset blocks, as Claude Code does. The usage
 \ endpoint offers limit resets only to Claude Code's own User-Agent, so the
 \ usage call carries it, with the CLI version the check was made against.
-: CLAUDE-USAGE-URL$ ( -- ptr u8 n ) s" https://api.anthropic.com/api/oauth/usage?cedar_ember=1&at_wall=1" ;
-: CLAUDE-TOKEN-URL$ ( -- ptr u8 n ) s" https://platform.claude.com/v1/oauth/token" ;
-: CLAUDE-PROFILE-URL$ ( -- ptr u8 n ) s" https://api.anthropic.com/api/oauth/profile" ;
-: CLAUDE-CLIENT-ID$ ( -- ptr u8 n ) s" 9d1c250a-e61b-44d9-88ed-5944d1962f5e" ;
-: CLAUDE-UA$ ( -- ptr u8 n ) s" claude-cli/2.1.282 (external, cli)" ;
-: CREDS-KEY$ ( -- ptr u8 n ) s" claudeAiOauth" ;
+: CLAUDE-USAGE-URL$ ( -- ^u8 n ) s" https://api.anthropic.com/api/oauth/usage?cedar_ember=1&at_wall=1" ;
+: CLAUDE-TOKEN-URL$ ( -- ^u8 n ) s" https://platform.claude.com/v1/oauth/token" ;
+: CLAUDE-PROFILE-URL$ ( -- ^u8 n ) s" https://api.anthropic.com/api/oauth/profile" ;
+: CLAUDE-CLIENT-ID$ ( -- ^u8 n ) s" 9d1c250a-e61b-44d9-88ed-5944d1962f5e" ;
+: CLAUDE-UA$ ( -- ^u8 n ) s" claude-cli/2.1.282 (external, cli)" ;
+: CREDS-KEY$ ( -- ^u8 n ) s" claudeAiOauth" ;
 
 \ the answer's strings; each read resets it once what it held was recorded
 create SCAN-TEXT BUF:HDR-BYTES allot
 
 : SCAN-RESET ( -- ) SCAN-TEXT TEXTS-RESET ;
-: SCAN$ ( n n -- ptr u8 n ) {: off u :} SCAN-TEXT off u TEXTS$ ;
+: SCAN$ ( n n -- ^u8 n ) {: off u :} SCAN-TEXT off u TEXTS$ ;
 : SCAN-C ( n -- ) SCAN-TEXT BUF:APPEND-BYTE ;
 
 : BUCKET-PCT ( JSON:reader -- JSON:reader n )
@@ -410,7 +411,7 @@ create SCAN-TEXT BUF:HDR-BYTES allot
 
 \ one bucket object {utilization, resets_at} at key; whole percent, and the
 \ reset text's offset and length in SCAN-TEXT
-: CLAUDE-BUCKET ( ptr u8 n ptr u8 n -- n n n ) {: d du k ku :}
+: CLAUDE-BUCKET ( ^u8 n ^u8 n -- n n n ) {: d du k ku :}
    d du OPEN-DOC ENTER-OBJECT
    k ku KEY-OBJECT 0= if JSON:READ-CLOSE -1 0 0 exit then
    s" utilization" JSON:READ-FIND-KEY 0= if JSON:READ-CLOSE -1 0 0 exit then
@@ -428,7 +429,7 @@ create SCAN-TEXT BUF:HDR-BYTES allot
 \ weekly allowance: {kind: weekly_scoped, scope: {model: {display_name}}}
 variable SC-NAME-AT    variable SC-NAME-U
 variable SC-RESET-AT   variable SC-RESET-U
-TYPED-VARIABLE SC-WIN-A ptr u8   variable SC-WIN-U   \ the window word the kind names
+TYPED-VARIABLE SC-WIN-A ^u8   variable SC-WIN-U   \ the window word the kind names
 variable SC-PCT
 
 : SC-ENTRY-RESET ( -- )
@@ -436,7 +437,7 @@ variable SC-PCT
    0 SC-NAME-U ! 0 SC-RESET-U ! s" " SC-WIN-U ! SC-WIN-A ! -1 SC-PCT ! ;
 
 \ a string member's value onto SCAN-TEXT, named in atp and up; else skipped
-: SC-STR ( JSON:reader ptr n ptr n -- JSON:reader ) {: atp up :}
+: SC-STR ( JSON:reader ^n ^n -- JSON:reader ) {: atp up :}
    JSON:READ-TOKEN JSON:T-STR <> if JSON:READ-SKIP-VALUE exit then
    SCAN-TEXT TEXTS-READ up ! atp ! ;
 
@@ -463,7 +464,7 @@ variable SC-PCT
    BUCKET-PCT SC-PCT ! JSON:READ-SKIP-VALUE ;
 
 \ the window word a kind names
-: SC-WINDOW$ ( ptr u8 n -- ptr u8 n ) {: a u :}
+: SC-WINDOW$ ( ^u8 n -- ^u8 n ) {: a u :}
    a u s" weekly" STARTS-WITH? if s" Weekly" exit then
    a u s" five_hour" STARTS-WITH? if s" Session" exit then
    a u s" session" STARTS-WITH? if s" Session" exit then
@@ -509,7 +510,7 @@ variable SC-PCT
       JSON:READ-TOKEN JSON:T-OBJ = if SC-OBJECT else JSON:READ-SKIP-VALUE then
    repeat ;
 
-: CLAUDE-SCOPED ( ptr u8 n -- ) {: d du :}
+: CLAUDE-SCOPED ( ^u8 n -- ) {: d du :}
    d du OPEN-DOC ENTER-OBJECT
    s" limits" JSON:READ-FIND-KEY 0= if JSON:READ-CLOSE exit then
    JSON:READ-TOKEN JSON:T-ARR <> if JSON:READ-CLOSE exit then
@@ -518,7 +519,7 @@ variable SC-PCT
 
 \ Session, then Weekly (seven_day_oauth_apps, else seven_day), then every
 \ model-scoped window; a window without a reading is left out
-: CLAUDE-LIMITS ( ptr u8 n -- ) {: d du :}
+: CLAUDE-LIMITS ( ^u8 n -- ) {: d du :}
    SCAN-RESET
    d du s" five_hour" CLAUDE-BUCKET {: sh so su :}
    d du s" seven_day_oauth_apps" CLAUDE-BUCKET {: wh0 r0 r0u :}
@@ -536,10 +537,10 @@ variable GRANT-IS                   \ bool: the grant in hand is the one named n
 variable GRANT-HAS-LEFT             \ bool: the grant in hand says how many resets are left
 variable GRANT-LEFT
 
-: GRANT-NEXT$ ( -- ptr u8 n ) GRANT-NEXT-AT @ GRANT-NEXT-U @ SCAN$ ;
+: GRANT-NEXT$ ( -- ^u8 n ) GRANT-NEXT-AT @ GRANT-NEXT-U @ SCAN$ ;
 
 \ cedar_ember's next_grant_id onto SCAN-TEXT; false when absent, null or not a string
-: GRANT-NEXT-READ ( ptr u8 n -- bool ) {: d du :}
+: GRANT-NEXT-READ ( ^u8 n -- bool ) {: d du :}
    SCAN-RESET
    d du OPEN-DOC ENTER-OBJECT
    s" cedar_ember" KEY-OBJECT 0= if JSON:READ-CLOSE false exit then
@@ -569,7 +570,7 @@ variable GRANT-LEFT
       JSON:READ-TOKEN JSON:T-OBJ = GRANT-SEEN @ 0= and if GRANT-OBJECT else JSON:READ-SKIP-VALUE then
    repeat ;
 
-: GRANTS-SCAN ( ptr u8 n -- ) {: d du :}
+: GRANTS-SCAN ( ^u8 n -- ) {: d du :}
    false GRANT-SEEN ! false GRANT-HAS-LEFT !
    d du OPEN-DOC ENTER-OBJECT
    s" cedar_ember" KEY-OBJECT drop
@@ -578,13 +579,13 @@ variable GRANT-LEFT
    then
    JSON:READ-CLOSE ;
 
-: BANKED? ( ptr u8 n -- bool ) {: d du :}
+: BANKED? ( ^u8 n -- bool ) {: d du :}
    d du s" cedar_ember" s" eligible" TRUE2? 0= if false exit then
    d du GRANT-NEXT-READ 0= if false exit then
    d du GRANTS-SCAN
    GRANT-SEEN @ 0<> GRANT-HAS-LEFT @ 0<> and ;
 
-: CLAUDE-RESETS ( ptr u8 n -- ) {: d du :}
+: CLAUDE-RESETS ( ^u8 n -- ) {: d du :}
    d du BANKED? if GRANT-LEFT @ s" cedar_ember" GRANT-NEXT$ DB-RESETS! exit then
    d du s" juniper_tide" s" eligible" TRUE2? 0= if exit then
    d du s" juniper_tide" s" available" TRUE2? if 1 else 0 then
@@ -597,14 +598,14 @@ create REF-CODE TEXT-CAP allot   variable REF-CODE-U
 create REF-DESC TEXT-CAP allot   variable REF-DESC-U
 create REF-URI TEXT-CAP allot    variable REF-URI-U    \ -1 when the answer names none
 
-: REF-CODE$ ( -- ptr u8 n ) REF-CODE REF-CODE-U @ ;
-: REF-DESC$ ( -- ptr u8 n ) REF-DESC REF-DESC-U @ ;
+: REF-CODE$ ( -- ^u8 n ) REF-CODE REF-CODE-U @ ;
+: REF-DESC$ ( -- ^u8 n ) REF-DESC REF-DESC-U @ ;
 
-: REF-CODE-READ ( ptr u8 n -- ) {: b bu :}
+: REF-CODE-READ ( ^u8 n -- ) {: b bu :}
    b bu s" error" REF-CODE TEXT-CAP DOC-STR1 dup 0 >= if REF-CODE-U ! exit then
    drop b bu s" error" s" type" REF-CODE TEXT-CAP DOC-STR2 0 max REF-CODE-U ! ;
 
-: REFUSAL-READ ( ptr u8 n -- ) {: b bu :}
+: REFUSAL-READ ( ^u8 n -- ) {: b bu :}
    0 REF-CODE-U ! 0 REF-DESC-U ! -1 REF-URI-U !
    b bu FIELDS? 0= if exit then
    b bu REF-CODE-READ
@@ -619,12 +620,12 @@ create REF-URI TEXT-CAP allot    variable REF-URI-U    \ -1 when the answer name
 
 create DETAIL-RAW TEXT-CAP 2 * 32 + allot   variable DETAIL-RAW-U
 
-: RAW+ ( ptr u8 n -- ) {: a u :}
+: RAW+ ( ^u8 n -- ) {: a u :}
    a DETAIL-RAW DETAIL-RAW-U @ + u BYTE-COPY
    u DETAIL-RAW-U +! ;
 
 \ "<status> <code>: <description>" on one line, absent parts left out
-: DETAIL$ ( n -- ptr u8 n ) {: code :}
+: DETAIL$ ( n -- ^u8 n ) {: code :}
    0 DETAIL-RAW-U !
    code FMT:INT$ RAW+
    REF-CODE-U @ 0 > if s"  " RAW+ REF-CODE$ RAW+ then
@@ -636,7 +637,7 @@ create DETAIL-RAW TEXT-CAP 2 * 32 + allot   variable DETAIL-RAW-U
 \ characters; else Claude Code's fallback page.
 create HOST-BUF DETAIL-MAX allot    variable HOST-U
 
-: RESTRICTED$ ( -- ptr u8 n ) s" https://claude.ai/restricted" ;
+: RESTRICTED$ ( -- ^u8 n ) s" https://claude.ai/restricted" ;
 
 : LOWER? ( n -- bool ) dup $61 >= swap $7A <= and ;
 : UPPER? ( n -- bool ) dup $41 >= swap $5A <= and ;
@@ -649,7 +650,7 @@ create HOST-BUF DETAIL-MAX allot    variable HOST-U
 : HOST-CHAR? ( n -- bool ) {: c :}
    c LOWER? c DIGIT? or c $2E = or c $2D = or ;
 
-: ALL? ( ptr u8 n [ n -- bool ] -- bool ) {: a u ok :}
+: ALL? ( ^u8 n [ n -- bool ] -- bool ) {: a u ok :}
    u 0 ?do a i + c@ ok execute 0= if false unloop exit then loop
    true ;
 
@@ -658,7 +659,7 @@ create HOST-BUF DETAIL-MAX allot    variable HOST-U
 : LOWERED ( n -- n ) dup UPPER? if $20 + then ;
 
 \ the host of the URI after its scheme, lowercased into HOST-BUF
-: HOST! ( ptr u8 n -- ) {: a u :}
+: HOST! ( ^u8 n -- ) {: a u :}
    0 HOST-U !
    u 0 ?do
       a i + c@ HOST-END? if unloop exit then
@@ -667,7 +668,7 @@ create HOST-BUF DETAIL-MAX allot    variable HOST-U
    loop ;
 
 \ the host is d or a subdomain of it
-: DOMAIN? ( ptr u8 n ptr u8 n -- bool ) {: h hu d du :}
+: DOMAIN? ( ^u8 n ^u8 n -- bool ) {: h hu d du :}
    h hu d du STR= if true exit then
    hu du 1+ < if false exit then
    h hu du - + du d du STR= 0= if false exit then
@@ -679,7 +680,7 @@ create HOST-BUF DETAIL-MAX allot    variable HOST-U
    HOST-BUF HOST-U @ s" claude.ai" DOMAIN? if true exit then
    HOST-BUF HOST-U @ s" anthropic.com" DOMAIN? ;
 
-: APPEAL-OK? ( ptr u8 n -- bool ) {: a u :}
+: APPEAL-OK? ( ^u8 n -- bool ) {: a u :}
    u DETAIL-MAX > if false exit then
    a u SCHEME$ STARTS-WITH? 0= if false exit then
    a u + 1- c@ dup $2E = swap $3F = or if false exit then
@@ -688,7 +689,7 @@ create HOST-BUF DETAIL-MAX allot    variable HOST-U
    a s + u s - HOST!
    HOST-OURS? ;
 
-: APPEAL$ ( -- ptr u8 n )
+: APPEAL$ ( -- ^u8 n )
    REF-URI-U @ 0 < if RESTRICTED$ exit then
    REF-URI REF-URI-U @ APPEAL-OK? 0= if RESTRICTED$ exit then
    REF-URI REF-URI-U @ ;
@@ -696,7 +697,7 @@ create HOST-BUF DETAIL-MAX allot    variable HOST-U
 \ The usage endpoint's 403 for an organization whose plan does not allow
 \ Claude Code's OAuth: a lapsed subscription answers so, while the token
 \ document still claims the old plan.
-: NO-PLAN? ( ptr u8 n -- bool ) {: b bu :}
+: NO-PLAN? ( ^u8 n -- bool ) {: b bu :}
    b bu FIELDS? 0= if false exit then
    b bu OPEN-DOC ENTER-OBJECT
    s" error" KEY-OBJECT 0= if JSON:READ-CLOSE false exit then
@@ -708,7 +709,7 @@ create HOST-BUF DETAIL-MAX allot    variable HOST-U
 \ an API error answer's error.message on one line; empty when absent
 create MSG-BUF DETAIL-MAX 4 * allot   variable MSG-U
 
-: MESSAGE! ( ptr u8 n -- ) {: b bu :}
+: MESSAGE! ( ^u8 n -- ) {: b bu :}
    0 MSG-U !
    b bu FIELDS? 0= if exit then
    b bu s" error" s" message" DETAIL-RAW TEXT-CAP DOC-STR2 {: mu :}
@@ -718,11 +719,11 @@ create MSG-BUF DETAIL-MAX 4 * allot   variable MSG-U
 \ Anthropic answers a free organization's usage check with the 429 of a
 \ rate limit; its profile tells the two apart: free only when it names the
 \ organization and a type Claude Code maps to no plan
-: PAID? ( ptr u8 n -- bool ) {: a u :}
+: PAID? ( ^u8 n -- bool ) {: a u :}
    a u s" claude_max" STR= a u s" claude_pro" STR= or
    a u s" claude_team" STR= or a u s" claude_enterprise" STR= or ;
 
-: FREE-PLAN? ( ptr u8 n -- bool ) {: b bu :}
+: FREE-PLAN? ( ^u8 n -- bool ) {: b bu :}
    b bu FIELDS? 0= if false exit then
    b bu s" organization" KEY-OBJ? 0= if false exit then
    b bu s" organization" s" organization_type" DETAIL-RAW TEXT-CAP DOC-STR2 0 max
@@ -740,7 +741,7 @@ ENUM profile-input free limited ;ENUM
 
 \ the claudeAiOauth token k in VAL-BUF; its length, -1 when absent or "", as
 \ in a document whose tokens were blanked
-: CLAUDE-TOKEN ( ptr u8 n -- n ) {: k ku :}
+: CLAUDE-TOKEN ( ^u8 n -- n ) {: k ku :}
    PROBE-DOC$ FIELDS? 0= if -1 exit then
    PROBE-DOC$ CREDS-KEY$ k ku VAL-BUF BUF-CAP DOC-STR2 dup 0 > if dup VAL-U ! exit then
    drop -1 ;
@@ -758,7 +759,7 @@ ENUM profile-input free limited ;ENUM
    PROBE-LIVE @ if construct fresh-input stale-live exit then
    construct fresh-input stale-saved ;
 
-: CLAUDE-GRANT-BODY ( -- ptr u8 n )
+: CLAUDE-GRANT-BODY ( -- ^u8 n )
    JSON-OPEN
    JSON:WRITE-OBJECT-START
    s" grant_type" s" refresh_token" JSON:WRITE-FIELD-S JSON:WRITE-COMMA
@@ -768,12 +769,12 @@ ENUM profile-input free limited ;ENUM
 
 \ epoch milliseconds secs after the probe began, at claudeAiOauth.k, when
 \ the answer gave secs
-: EXPIRY-SET ( n bool ptr u8 n -- ) {: secs given k ku :}
+: EXPIRY-SET ( n bool ^u8 n -- ) {: secs given k ku :}
    given 0= secs 0 <= or if exit then
    CREDS-KEY$ k ku PROBE-AT @ secs + 1000 * NUMBER$ CFG-SET2 ;
 
 \ the answer b's tokens spliced in; its access token is in VAL-BUF
-: CLAUDE-SPLICE ( ptr u8 n -- ) {: b bu :}
+: CLAUDE-SPLICE ( ^u8 n -- ) {: b bu :}
    SPLICE-BEGIN
    CREDS-KEY$ s" accessToken" VAL-BUF VAL-U @ LITERAL$ CFG-SET2
    b bu s" refresh_token" VAL-BUF BUF-CAP DOC-STR1 dup 0 >= if
@@ -832,26 +833,26 @@ ENUM profile-input free limited ;ENUM
    ANSWER$ FREE-PLAN? if construct profile-input free exit then
    construct profile-input limited ;
 
-: CLAUDE-LIVE-STALE$ ( -- ptr u8 n )
+: CLAUDE-LIVE-STALE$ ( -- ^u8 n )
    s" access token expired; Claude Code refreshes it on its next run" ;
 
-: CLAUDE-NO-GRANT$ ( -- ptr u8 n )
+: CLAUDE-NO-GRANT$ ( -- ^u8 n )
    s" access token expired and no refresh token is saved; log in again" ;
 
-: CLAUDE-TOKEN-NOTE$ ( -- ptr u8 n )
+: CLAUDE-TOKEN-NOTE$ ( -- ^u8 n )
    s" Anthropic's token endpoint" HTTP-CODE @ HTTP-NOTE ;
 
-: CLAUDE-ON-HOLD$ ( -- ptr u8 n )
+: CLAUDE-ON-HOLD$ ( -- ^u8 n )
    APPEAL$ {: a u :}
    SB-RESET s" account on hold and cannot use Claude Code; view details or appeal at " SB-APPEND
    a u SB-APPEND SB$ ;
 
-: CLAUDE-REFUSED$ ( -- ptr u8 n )
+: CLAUDE-REFUSED$ ( -- ^u8 n )
    HTTP-CODE @ DETAIL$ {: a u :}
    SB-RESET s" access token expired and the refresh was refused (" SB-APPEND
    a u SB-APPEND s" ); log in again" SB-APPEND SB$ ;
 
-: CLAUDE-REJECTED$ ( -- ptr u8 n ) s" login rejected by Anthropic; log in again" ;
+: CLAUDE-REJECTED$ ( -- ^u8 n ) s" login rejected by Anthropic; log in again" ;
 
 : CLAUDE-LIVE-STALE ( n -- ) drop
    construct usage-state expired CLAUDE-LIVE-STALE$ SAY ;
@@ -933,21 +934,21 @@ FSM:DEFINE CLAUDE-EXCHANGE ( n ) claude-step fresh-input
 ;DEFINE
 
 \ ---- OpenAI ------------------------------------------------------------------------------
-: CODEX-USAGE-URL$ ( -- ptr u8 n ) s" https://chatgpt.com/backend-api/wham/usage" ;
-: CODEX-TOKEN-URL$ ( -- ptr u8 n ) s" https://auth.openai.com/oauth/token" ;
-: CODEX-CLIENT-ID$ ( -- ptr u8 n ) s" app_EMoamEEZ73f0CkXaXp7hrann" ;
-: TOKENS-KEY$ ( -- ptr u8 n ) s" tokens" ;
+: CODEX-USAGE-URL$ ( -- ^u8 n ) s" https://chatgpt.com/backend-api/wham/usage" ;
+: CODEX-TOKEN-URL$ ( -- ^u8 n ) s" https://auth.openai.com/oauth/token" ;
+: CODEX-CLIENT-ID$ ( -- ^u8 n ) s" app_EMoamEEZ73f0CkXaXp7hrann" ;
+: TOKENS-KEY$ ( -- ^u8 n ) s" tokens" ;
 
 \ the integer member f of the window at k, which CODEX-WINDOW found; 0 when
 \ absent or not an integer
-: WINDOW-INT ( ptr u8 n ptr u8 n ptr u8 n -- n ) {: d du k ku f fu :}
+: WINDOW-INT ( ^u8 n ^u8 n ^u8 n -- n ) {: d du k ku f fu :}
    d du OPEN-DOC ENTER-OBJECT
    s" rate_limit" KEY-OBJECT drop
    k ku KEY-OBJECT drop
    f fu KEY-WHOLE OR-ZERO swap JSON:READ-CLOSE ;
 
 \ the window at key inside rate_limit: used percent, window seconds, reset epoch
-: CODEX-WINDOW ( ptr u8 n ptr u8 n -- n n n ) {: d du k ku :}
+: CODEX-WINDOW ( ^u8 n ^u8 n -- n n n ) {: d du k ku :}
    d du OPEN-DOC ENTER-OBJECT
    s" rate_limit" KEY-OBJECT 0= if JSON:READ-CLOSE -1 0 0 exit then
    k ku KEY-OBJECT 0= if JSON:READ-CLOSE -1 0 0 exit then
@@ -959,30 +960,30 @@ FSM:DEFINE CLAUDE-EXCHANGE ( n ) claude-step fresh-input
    h secs at ;
 
 \ the longest window, six hours, still called a session
-: WINDOW-LABEL$ ( n -- ptr u8 n )
+: WINDOW-LABEL$ ( n -- ^u8 n )
    21600 <= if SESSION-LABEL$ exit then
    WEEKLY-LABEL$ ;
 
-: EPOCH>RESET$ ( n -- ptr u8 n )
+: EPOCH>RESET$ ( n -- ^u8 n )
    dup 0 <= if drop DATE-BUF 0 exit then
    DATE-BUF DATE:TIME-LEN DATE:FORMAT-EPOCH-UTC ;
 
-: CODEX-WINDOW+ ( ptr u8 n ptr u8 n -- ) {: d du k ku :}
+: CODEX-WINDOW+ ( ^u8 n ^u8 n -- ) {: d du k ku :}
    d du k ku CODEX-WINDOW {: h secs at :}
    h 0 < if exit then
    secs WINDOW-LABEL$ h at EPOCH>RESET$ DB-LIMIT+ ;
 
-: CODEX-LIMITS ( ptr u8 n -- ) {: d du :}
+: CODEX-LIMITS ( ^u8 n -- ) {: d du :}
    d du s" primary_window" CODEX-WINDOW+
    d du s" secondary_window" CODEX-WINDOW+ ;
 
 \ the limit-reset credits the answer reports, when it says anything of them
-: CODEX-RESETS ( ptr u8 n -- ) {: d du :}
+: CODEX-RESETS ( ^u8 n -- ) {: d du :}
    d du s" rate_limit_reset_credits" s" available_count" DOC-INT2 0= if drop exit then
    s" " s" " DB-RESETS! ;
 
 \ the account's current plan, which the login's id_token only knew at sign-in
-: CODEX-PLAN ( ptr u8 n -- ) {: d du :}
+: CODEX-PLAN ( ^u8 n -- ) {: d du :}
    d du s" plan_type" PLAN-NAMED PLAN-CAP DOC-STR1 PLAN-NAMED-U ! ;
 
 \ ---- OpenAI's exchange ------------------------------------------------------------------
@@ -997,7 +998,7 @@ ENUM codex-renew-input renewed no-grant unreachable unusable refused answered ;E
 ENUM retry-input no-token unreachable fine unreadable rejected throttled other ;ENUM
 
 \ the tokens member k in VAL-BUF; its length, -1 when absent
-: CODEX-TOKEN ( ptr u8 n -- n ) {: k ku :}
+: CODEX-TOKEN ( ^u8 n -- n ) {: k ku :}
    PROBE-DOC$ FIELDS? 0= if -1 exit then
    PROBE-DOC$ TOKENS-KEY$ k ku VAL-BUF BUF-CAP DOC-STR2 dup 0 >= if dup VAL-U ! then ;
 
@@ -1038,7 +1039,7 @@ ENUM retry-input no-token unreachable fine unreadable rejected throttled other ;
    code 429 = if construct first-input throttled exit then
    construct first-input other ;
 
-: CODEX-GRANT-BODY ( -- ptr u8 n )
+: CODEX-GRANT-BODY ( -- ^u8 n )
    JSON-OPEN
    JSON:WRITE-OBJECT-START
    s" client_id" CODEX-CLIENT-ID$ JSON:WRITE-FIELD-S JSON:WRITE-COMMA
@@ -1048,7 +1049,7 @@ ENUM retry-input no-token unreachable fine unreadable rejected throttled other ;
 
 \ the answer b's tokens and the refresh time spliced in; its access token is
 \ in VAL-BUF
-: CODEX-SPLICE ( ptr u8 n -- ) {: b bu :}
+: CODEX-SPLICE ( ^u8 n -- ) {: b bu :}
    SPLICE-BEGIN
    TOKENS-KEY$ s" access_token" VAL-BUF VAL-U @ LITERAL$ CFG-SET2
    b bu s" refresh_token" VAL-BUF BUF-CAP DOC-STR1 dup 0 >= if
@@ -1089,18 +1090,18 @@ ENUM retry-input no-token unreachable fine unreadable rejected throttled other ;
    code 429 = if construct retry-input throttled exit then
    construct retry-input other ;
 
-: NO-ACCESS$ ( -- ptr u8 n ) s" no access token saved" ;
-: CODEX-LIVE-REJECTED$ ( -- ptr u8 n ) s" access token rejected; run codex once to refresh it" ;
-: CODEX-REJECTED$ ( -- ptr u8 n ) s" login rejected by OpenAI; log in again" ;
-: CODEX-TOKEN-NOTE$ ( -- ptr u8 n ) s" OpenAI's token endpoint" HTTP-CODE @ HTTP-NOTE ;
+: NO-ACCESS$ ( -- ^u8 n ) s" no access token saved" ;
+: CODEX-LIVE-REJECTED$ ( -- ^u8 n ) s" access token rejected; run codex once to refresh it" ;
+: CODEX-REJECTED$ ( -- ^u8 n ) s" login rejected by OpenAI; log in again" ;
+: CODEX-TOKEN-NOTE$ ( -- ^u8 n ) s" OpenAI's token endpoint" HTTP-CODE @ HTTP-NOTE ;
 
-: CODEX-NO-GRANT$ ( -- ptr u8 n )
+: CODEX-NO-GRANT$ ( -- ^u8 n )
    s" access token rejected and no refresh token is saved; log in again" ;
 
-: CODEX-REFUSED$ ( -- ptr u8 n )
+: CODEX-REFUSED$ ( -- ^u8 n )
    s" access token rejected and the refresh was refused; log in again" ;
 
-: CODEX-REVOKED$ ( -- ptr u8 n )
+: CODEX-REVOKED$ ( -- ^u8 n )
    s" login revoked by a sign-out at chatgpt.com or in codex; log in again" ;
 
 : CODEX-API-KEY-NOTE ( n -- ) drop
@@ -1183,7 +1184,7 @@ FSM:DEFINE CODEX-EXCHANGE ( n ) codex-step key-input
 ;DEFINE
 
 \ ---- one probe -------------------------------------------------------------------
-: PROBE-BEGIN ( ptr u8 n bool -- ) {: d du live :}
+: PROBE-BEGIN ( ^u8 n bool -- ) {: d du live :}
    d du PROBE-DOC!
    epoch-seconds PROBE-AT !
    live PROBE-LIVE !
@@ -1201,9 +1202,9 @@ FSM:DEFINE CODEX-EXCHANGE ( n ) codex-step key-input
 \ A saved login's token is refreshed when it has expired (Claude), or once
 \ when the first send is rejected; the live login's never is. The answer's
 \ word is the outcome; any other answer fails with E-SW-REMOTE and a note.
-: CLAUDE-ORGS-URL$ ( -- ptr u8 n ) s" https://api.anthropic.com/api/organizations/" ;
-: CLAUDE-RESET-PATH$ ( -- ptr u8 n ) s" /reset_rate_limits" ;
-: CODEX-CONSUME-URL$ ( -- ptr u8 n ) s" https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume" ;
+: CLAUDE-ORGS-URL$ ( -- ^u8 n ) s" https://api.anthropic.com/api/organizations/" ;
+: CLAUDE-RESET-PATH$ ( -- ^u8 n ) s" /reset_rate_limits" ;
+: CODEX-CONSUME-URL$ ( -- ^u8 n ) s" https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume" ;
 
 public
 ENUM reset-outcome reset not-limited already-used no-credit cooldown ineligible unavailable ;ENUM
@@ -1221,10 +1222,10 @@ create REMOTE-NOTE TEXT-CAP allot            variable REMOTE-NOTE-U
 create RID-RAW 16 allot
 create RID-BUF 36 allot
 
-: RESET-URL$ ( -- ptr u8 n ) RESET-URL RESET-URL-U @ ;
-: RESET-BODY$ ( -- ptr u8 n ) RESET-BODY BUF:SPAN$ BUF:BLEN>N ;
-: RESET-WORD$ ( -- ptr u8 n ) RESET-WORD RESET-WORD-U @ ;
-: REMOTE! ( ptr u8 n -- ) REMOTE-NOTE REMOTE-NOTE-U TEXT-CAP SPAN! ;
+: RESET-URL$ ( -- ^u8 n ) RESET-URL RESET-URL-U @ ;
+: RESET-BODY$ ( -- ^u8 n ) RESET-BODY BUF:SPAN$ BUF:BLEN>N ;
+: RESET-WORD$ ( -- ^u8 n ) RESET-WORD RESET-WORD-U @ ;
+: REMOTE! ( ^u8 n -- ) REMOTE-NOTE REMOTE-NOTE-U TEXT-CAP SPAN! ;
 
 \ byte i of the id as two uppercase digits, after a dash before bytes 4,
 \ 6, 8 and 10
@@ -1234,7 +1235,7 @@ create RID-BUF 36 allot
 
 \ a random version 4 UUID in uppercase, as UUID().uuidString writes it:
 \ each request is told apart by it
-: REQUEST-ID$ ( -- ptr u8 n )
+: REQUEST-ID$ ( -- ^u8 n )
    RID-RAW 16 ENTROPY:FILL
    RID-RAW 6 + c@ $0F and $40 or RID-RAW 6 + c!
    RID-RAW 8 + c@ $3F and $80 or RID-RAW 8 + c!
@@ -1245,12 +1246,12 @@ create RID-BUF 36 allot
 
 \ the writer's text kept as the request body, which a refresh's own body
 \ would overwrite in the writer
-: BODY! ( ptr JSON:writer -- )
+: BODY! ( ^JSON:writer -- )
    JSON:WRITTEN$ {: a u :}
    RESET-BODY 64 BUF:N>BLEN BUF:RESET
    a u BUF:N>BLEN RESET-BODY BUF:APPEND-SPAN ;
 
-: BANKED-BODY ( ptr u8 n -- ) {: g gu :}
+: BANKED-BODY ( ^u8 n -- ) {: g gu :}
    REQUEST-ID$ {: id idu :}
    JSON-OPEN
    JSON:WRITE-OBJECT-START
@@ -1292,7 +1293,7 @@ create RID-BUF 36 allot
 
 \ the text appended as one URL path segment, as appending(component:)
 \ writes it: every other byte as %XX, so none can end the segment
-: SB-SEGMENT ( ptr u8 n -- ) {: s su :}
+: SB-SEGMENT ( ^u8 n -- ) {: s su :}
    su 0 ?do s i + c@ SB-SEGMENT-C loop ;
 
 \ the reset is asked of row r's organization; E-SW-JSON when it names none
@@ -1314,12 +1315,12 @@ create RID-BUF 36 allot
    CODEX-RESET-PREPARE ;
 
 \ the endpoint as notes name it
-: RESET-WHAT$ ( n -- ptr u8 n )
+: RESET-WHAT$ ( n -- ^u8 n )
    P-CLAUDE = if s" Anthropic's reset endpoint" exit then
    s" OpenAI's reset endpoint" ;
 
 \ the member of a 200 answer that holds the result word
-: RESET-FIELD$ ( n -- ptr u8 n )
+: RESET-FIELD$ ( n -- ^u8 n )
    P-CLAUDE = if s" result" exit then
    s" code" ;
 
@@ -1328,7 +1329,7 @@ create RID-BUF 36 allot
    P-CLAUDE = if s" accessToken" CLAUDE-TOKEN exit then
    s" access_token" CODEX-TOKEN ;
 
-: RESET-POST ( ptr u8 n -- n ) {: url uu :}
+: RESET-POST ( ^u8 n -- n ) {: url uu :}
    RESET-BODY$ url uu POST-JSON
    dup HTTP-CODE ! ;
 
@@ -1350,7 +1351,7 @@ create RID-BUF 36 allot
    CODEX-RESET-SEND ;
 
 : GOT ( reset-outcome -- bool ) RESET-GOT ! true ;
-: WORD-IS? ( ptr u8 n -- bool ) RESET-WORD$ STR= ;
+: WORD-IS? ( ^u8 n -- bool ) RESET-WORD$ STR= ;
 
 : CLAUDE-WORD? ( -- bool )
    s" reset" WORD-IS? if construct reset-outcome reset GOT exit then
@@ -1522,13 +1523,13 @@ EXPORT USED-PERCENT
 \ probes provider p's login document d du, live when the CLI is using it:
 \ the outcome is the usage record, PROBE-DOC$ with the login (renewed
 \ when a token was) and PROBED-PLAN$
-: PROBE ( n ptr u8 n bool -- ) {: p d du live :}
+: PROBE ( n ^u8 n bool -- ) {: p d du live :}
    d du live PROBE-BEGIN
    p PROBE-RUN ;
 
 \ the outcome of a probe that threw: an error with the reason as its note;
 \ a login renewed before the throw is kept
-: PROBE-FAILED ( ptr u8 n -- ) {: a u :}
+: PROBE-FAILED ( ^u8 n -- ) {: a u :}
    -1 PLAN-NAMED-U !
    construct usage-state error a u SAY ;
 
@@ -1537,7 +1538,7 @@ EXPORT USED-PERCENT
 EXPORT PROBE-DOC$
 
 \ the plan the provider named; length -1 when it named none
-: PROBED-PLAN$ ( -- ptr u8 n ) PLAN-NAMED PLAN-NAMED-U @ ;
+: PROBED-PLAN$ ( -- ^u8 n ) PLAN-NAMED PLAN-NAMED-U @ ;
 
 \ spends one limit reset of provider p's saved row r, whose usage holds the
 \ offer, live when the CLI is using it: RESET-OUTCOME is what the provider
@@ -1552,6 +1553,6 @@ EXPORT PROBE-DOC$
 : RESET-OUTCOME ( -- reset-outcome ) RESET-GOT @ ;
 
 \ why the last reset request spent nothing
-: REMOTE-NOTE$ ( -- ptr u8 n ) REMOTE-NOTE REMOTE-NOTE-U @ ;
+: REMOTE-NOTE$ ( -- ^u8 n ) REMOTE-NOTE REMOTE-NOTE-U @ ;
 
 ;package

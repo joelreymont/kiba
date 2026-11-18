@@ -1,3 +1,4 @@
+split-str
 \ sw-turn.f - one provider's turn, shared by every kiba process: an exclusive
 \ flock on <store>/turn-<provider>, polled so a wait is bounded. Each holder
 \ opens the turn file afresh, and a flock lock belongs to the open file
@@ -69,8 +70,8 @@ $80000 constant LINUX-O-CLOEXEC
 
 \ Habu's portable `open` carries neither O_EXCL, O_NOFOLLOW nor O_CLOEXEC.
 PROCESS-SYMBOLS
-FUNCTION: TURN-OPEN-CALL open ( ptr u8 n n -- i32 ) 2 VARIADIC ;FUNCTION
-FUNCTION: TURN-UNLINK-CALL unlink ( ptr u8 -- i32 ) ;FUNCTION
+FUNCTION: TURN-OPEN-CALL open ( ^u8 n n -- i32 ) 2 VARIADIC ;FUNCTION
+FUNCTION: TURN-UNLINK-CALL unlink ( ^u8 -- i32 ) ;FUNCTION
 
 LIST-CAP SCRATCH-BUFFER: LIST-BUF
 create TURN-BUF PATH-CAP allot    variable TURN-U
@@ -92,29 +93,29 @@ variable TURN-RC                 \ what a wait that left throws
 TICKETS-SHUT
 
 \ ---- paths ------------------------------------------------------------------
-: TURN$ ( n -- ptr u8 n ) {: p :}
+: TURN$ ( n -- ^u8 n ) {: p :}
    STORE$ {: s su :}
    SB-RESET s su SB-APPEND s" /turn-" SB-APPEND p PROVIDER$ SB-APPEND
    SB$ TURN-BUF TURN-U PATH!
    TURN-BUF TURN-U @ ;
 
-: QUEUE$ ( n -- ptr u8 n )
+: QUEUE$ ( n -- ^u8 n )
    TURN$ {: t tu :}
    SB-RESET t tu SB-APPEND s" .queue" SB-APPEND
    SB$ QUEUE-BUF QUEUE-U PATH!
    QUEUE-BUF QUEUE-U @ ;
 
 \ the path of the queue entry named by the span
-: QUEUED$ ( n ptr u8 n -- ptr u8 n ) {: p a u :}
+: QUEUED$ ( n ^u8 n -- ^u8 n ) {: p a u :}
    p QUEUE$ {: q qu :}
    SB-RESET q qu SB-APPEND FS:SLASH SB-APPEND-C a u SB-APPEND
    SB$ QPATH-BUF QPATH-U PATH!
    QPATH-BUF QPATH-U @ ;
 
-: ENTRY-NAME$ ( n -- ptr u8 n )
+: ENTRY-NAME$ ( n -- ^u8 n )
    ENTRY-LEN * ENTRY-NAMES + ENTRY-LEN ;
 
-: ENTRY$ ( n -- ptr u8 n )
+: ENTRY$ ( n -- ^u8 n )
    dup ENTRY-NAME$ QUEUED$ ;
 
 \ the value in decimal, zero-padded to the width, so names sort as numbers do
@@ -132,16 +133,16 @@ TICKETS-SHUT
    SB$ drop p ENTRY-NAME$ BYTE-COPY ;
 
 \ ---- descriptors ------------------------------------------------------------
-: OPEN-AT ( ptr u8 n n -- n ) {: a u flags :}
+: OPEN-AT ( ^u8 n n -- n ) {: a u flags :}
    a u FS:>PATHZ flags MODE-PRIVATE-FILE TURN-OPEN-CALL ;
 
-: OPEN-FILE ( ptr u8 n n -- n )
+: OPEN-FILE ( ^u8 n n -- n )
    OPEN-AT {: fd :}
    fd 0 < if E-FS-OPEN throw then
    fd ;
 
 \ -1 when nothing is there
-: OPEN-IF-THERE ( ptr u8 n n -- n )
+: OPEN-IF-THERE ( ^u8 n n -- n )
    OPEN-AT {: fd :}
    fd 0 >= if fd exit then
    FFI:ERRNO TURN-ENOENT = if -1 exit then
@@ -150,23 +151,23 @@ TICKETS-SHUT
 : LINKED? ( n -- bool )
    >FD FS:FD-LINKS 0 > ;
 
-: SHUT ( ptr n -- ) {: cell:ptr :}
+: SHUT ( ^n -- ) {: cell:^ :}
    cell @ 0 >= if cell @ close then
    -1 cell ! ;
 
 \ ---- the queue --------------------------------------------------------------
 \ An entry ahead that nobody holds: its owner is gone. A peer that removed
 \ it first is fine.
-: REMOVE-STALE ( ptr u8 n -- )
+: REMOVE-STALE ( ^u8 n -- )
    FS:>PATHZ TURN-UNLINK-CALL 0= if exit then
    FFI:ERRNO TURN-ENOENT <> if E-FS-IO throw then ;
 
-: HELD? ( n ptr u8 n -- bool ) {: fd a u :}
+: HELD? ( n ^u8 n -- bool ) {: fd a u :}
    fd >FD FS-LOCK:TRY 0= if true exit then
    a u REMOVE-STALE false ;
 
 \ true while the entry's owner holds its lock; one nobody holds is removed
-: LIVE? ( n ptr u8 n -- bool ) {: p a u :}
+: LIVE? ( n ^u8 n -- bool ) {: p a u :}
    p a u QUEUED$ PEEK-FLAGS OPEN-IF-THERE {: fd :}
    fd 0 < if false exit then
    [: fd p a u QUEUED$ HELD? ;] [: fd close ;] finally ;

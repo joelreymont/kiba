@@ -1,3 +1,4 @@
+split-str
 \ sw-sqlite.f - libsqlite3 bindings: one connection per process and one
 \ statement at a time, finalized before the word that prepared it returns.
 \ A failed call throws E-SW-DB; DB-ERROR$ then holds its operation and
@@ -15,26 +16,22 @@ package SW
 
 VERSIONED-LIBRARY sqlite3 0
 \ Handles are addresses kept as numbers; 0 is no handle.
-FUNCTION: SQL-OPEN-CALL sqlite3_open_v2 ( ptr u8 ptr u8 n n -- i32 )
-   1 8 WRITES-BYTES
-;FUNCTION
+FUNCTION: SQL-OPEN-CALL sqlite3_open_v2 ( ^u8 ^u8 n n -- i32 ) ;FUNCTION
 FUNCTION: SQL-CLOSE-CALL sqlite3_close_v2 ( n -- i32 ) ;FUNCTION
-FUNCTION: SQL-ERRMSG-CALL sqlite3_errmsg ( n -- ptr u8 ) ;FUNCTION
-FUNCTION: SQL-ERRSTR-CALL sqlite3_errstr ( n -- ptr u8 ) ;FUNCTION
+FUNCTION: SQL-ERRMSG-CALL sqlite3_errmsg ( n -- ^u8 ) ;FUNCTION
+FUNCTION: SQL-ERRSTR-CALL sqlite3_errstr ( n -- ^u8 ) ;FUNCTION
 FUNCTION: SQL-BUSY-CALL sqlite3_busy_timeout ( n n -- i32 ) ;FUNCTION
-FUNCTION: SQL-EXEC-CALL sqlite3_exec ( n ptr u8 n n n -- i32 ) ;FUNCTION
-FUNCTION: SQL-PREPARE-CALL sqlite3_prepare_v2 ( n ptr u8 n ptr u8 n -- i32 )
-   3 8 WRITES-BYTES
-;FUNCTION
+FUNCTION: SQL-EXEC-CALL sqlite3_exec ( n ^u8 n n n -- i32 ) ;FUNCTION
+FUNCTION: SQL-PREPARE-CALL sqlite3_prepare_v2 ( n ^u8 n ^u8 n -- i32 ) ;FUNCTION
 FUNCTION: SQL-FINALIZE-CALL sqlite3_finalize ( n -- i32 ) ;FUNCTION
 FUNCTION: SQL-STEP-CALL sqlite3_step ( n -- i32 ) ;FUNCTION
-FUNCTION: SQL-TEXT-CALL sqlite3_bind_text ( n n ptr u8 n n -- i32 ) ;FUNCTION
-FUNCTION: SQL-BLOB-CALL sqlite3_bind_blob ( n n ptr u8 n n -- i32 ) ;FUNCTION
+FUNCTION: SQL-TEXT-CALL sqlite3_bind_text ( n n ^u8 n n -- i32 ) ;FUNCTION
+FUNCTION: SQL-BLOB-CALL sqlite3_bind_blob ( n n ^u8 n n -- i32 ) ;FUNCTION
 FUNCTION: SQL-ZEROBLOB-CALL sqlite3_bind_zeroblob ( n n n -- i32 ) ;FUNCTION
 FUNCTION: SQL-INT-CALL sqlite3_bind_int64 ( n n n -- i32 ) ;FUNCTION
 FUNCTION: SQL-NULL-CALL sqlite3_bind_null ( n n -- i32 ) ;FUNCTION
 FUNCTION: SQL-TYPE-CALL sqlite3_column_type ( n n -- i32 ) ;FUNCTION
-FUNCTION: SQL-COLBLOB-CALL sqlite3_column_blob ( n n -- ptr u8 ) ;FUNCTION
+FUNCTION: SQL-COLBLOB-CALL sqlite3_column_blob ( n n -- ^u8 ) ;FUNCTION
 FUNCTION: SQL-BYTES-CALL sqlite3_column_bytes ( n n -- i32 ) ;FUNCTION
 FUNCTION: SQL-COLINT-CALL sqlite3_column_int64 ( n n -- n ) ;FUNCTION
 FUNCTION: SQL-CHANGES-CALL sqlite3_changes ( n -- i32 ) ;FUNCTION
@@ -62,23 +59,23 @@ PTR-VARIABLE SQL-OP-A   variable SQL-OP-U   \ what the open statement reports as
 
 : SQL-ERR-START ( -- ) SQL-ERR-BUF 64 BUF:N>BLEN BUF:RESET ;
 
-: SQL-ERR+ ( ptr u8 n -- ) BUF:N>BLEN SQL-ERR-BUF BUF:APPEND-SPAN ;
+: SQL-ERR+ ( ^u8 n -- ) BUF:N>BLEN SQL-ERR-BUF BUF:APPEND-SPAN ;
 
-: SQL-CSTR$ ( ptr u8 -- ptr u8 n ) dup ZLEN ;
+: SQL-CSTR$ ( ^u8 -- ^u8 n ) dup ZLEN ;
 
 public
 
 \ the operation and SQLite's message behind the last E-SW-DB
-: DB-ERROR$ ( -- ptr u8 n ) SQL-ERR-BUF BUF:SPAN$ BUF:BLEN>N ;
+: DB-ERROR$ ( -- ^u8 n ) SQL-ERR-BUF BUF:SPAN$ BUF:BLEN>N ;
 
-: DB-THROW ( ptr u8 n ptr u8 n -- ) {: op ou msg mu :}
+: DB-THROW ( ^u8 n ^u8 n -- ) {: op ou msg mu :}
    SQL-ERR-START
    op ou SQL-ERR+ s" : " SQL-ERR+ msg mu SQL-ERR+
    E-SW-DB throw ;
 
 private
 
-: SQL-FAIL ( ptr u8 n -- )
+: SQL-FAIL ( ^u8 n -- )
    SQL-H @ SQL-ERRMSG-CALL SQL-CSTR$ DB-THROW ;
 
 : SQL-CONN ( -- n )
@@ -86,12 +83,12 @@ private
    h 0= if s" store" s" the store is not open" DB-THROW then
    h ;
 
-: SQL-OP$ ( -- ptr u8 n ) SQL-OP-A @ SQL-OP-U @ ;
+: SQL-OP$ ( -- ^u8 n ) SQL-OP-A @ SQL-OP-U @ ;
 
 : SQL-CHECK ( n -- )
    SQL-OK <> if SQL-OP$ SQL-FAIL then ;
 
-: SQL-Z ( ptr u8 n -- ptr u8 ) {: a u :}
+: SQL-Z ( ^u8 n -- ^u8 ) {: a u :}
    u SQL-Z-CAP >= if
       s" bytes in an SQL script" SQL-Z-CAP 1- LIMIT$ TOO-MANY
    then
@@ -101,7 +98,7 @@ private
 
 public
 
-: DB-EXEC ( ptr u8 n ptr u8 n -- ) {: sql su op ou :}
+: DB-EXEC ( ^u8 n ^u8 n -- ) {: sql su op ou :}
    SQL-CONN sql su SQL-Z 0 0 0 SQL-EXEC-CALL
    SQL-OK <> if op ou SQL-FAIL then ;
 
@@ -110,7 +107,7 @@ private
 \ ---- the connection ---------------------------------------------------------
 \ A handle that failed to open holds only its message, which closing it
 \ frees, so the message is copied first; errstr when there is no handle.
-: SQL-OPEN-FAIL ( ptr u8 n n n -- ) {: a u rc h :}
+: SQL-OPEN-FAIL ( ^u8 n n n -- ) {: a u rc h :}
    SQL-ERR-START
    s" open " SQL-ERR+ a u SQL-ERR+ s" : " SQL-ERR+
    h 0= if rc SQL-ERRSTR-CALL else h SQL-ERRMSG-CALL then
@@ -120,13 +117,13 @@ private
 
 \ the fresh file goes 0600 before WAL mode makes -wal and -shm, which copy
 \ the database's mode
-: SQL-SETUP ( ptr u8 n bool -- ) {: a u fresh :}
+: SQL-SETUP ( ^u8 n bool -- ) {: a u fresh :}
    fresh if a u MODE-PRIVATE-FILE FS:CHMOD-MODE then
    SQL-H @ SQL-BUSY-MS SQL-BUSY-CALL SQL-OK <> if s" busy timeout" SQL-FAIL then
    s" PRAGMA journal_mode = WAL" s" journal mode" DB-EXEC ;
 
 \ opens the database at the path, creating it 0600 when missing, in WAL mode
-: SQL-CONNECT ( ptr u8 n -- ) {: a u :}
+: SQL-CONNECT ( ^u8 n -- ) {: a u :}
    a u FS:FILE? 0= {: fresh :}
    0 SQL-OUT !
    a u FS:>PATHZ SQL-OUT BYTE-VIEW SQL-FLAGS 0 SQL-OPEN-CALL {: rc :}
@@ -154,7 +151,7 @@ private
    SQL-STMT @ SQL-ARG @ dup 1+ SQL-ARG ! ;
 
 \ SQLite binds NULL for a null address, so an empty value gets a real one
-: SQL-SOME ( ptr u8 n -- ptr u8 n ) {: a u :}
+: SQL-SOME ( ^u8 n -- ^u8 n ) {: a u :}
    u 0= if SQL-Z-BUF 0 exit then
    a u ;
 
@@ -164,12 +161,12 @@ public
 
 : DB-INT+ ( n -- ) {: v :} SQL-NEXT-ARG v SQL-INT-CALL SQL-CHECK ;
 
-: DB-TEXT+ ( ptr u8 n -- ) {: a u :}
+: DB-TEXT+ ( ^u8 n -- ) {: a u :}
    u 0 < if DB-NULL+ exit then
    SQL-NEXT-ARG {: s i :}
    s i a u SQL-SOME SQL-TRANSIENT SQL-TEXT-CALL SQL-CHECK ;
 
-: DB-BLOB+ ( ptr u8 n -- ) {: a u :}
+: DB-BLOB+ ( ^u8 n -- ) {: a u :}
    u 0 < if DB-NULL+ exit then
    SQL-NEXT-ARG {: s i :}
    u 0= if s i 0 SQL-ZEROBLOB-CALL SQL-CHECK exit then
@@ -180,7 +177,7 @@ public
    SQL-STMT @ c SQL-TYPE-CALL SQL-NULL-TYPE = ;
 
 \ a value's bytes, text or blob alike; length -1 for NULL
-: DB-COL-BYTES ( n -- ptr u8 n ) {: c :}
+: DB-COL-BYTES ( n -- ^u8 n ) {: c :}
    c DB-COL-NULL? if NULL-PTR BYTE-VIEW -1 exit then
    SQL-STMT @ c SQL-COLBLOB-CALL
    SQL-STMT @ c SQL-BYTES-CALL ;
@@ -201,7 +198,7 @@ private
    SQL-STMT @ SQL-FINALIZE-CALL drop
    0 SQL-STMT ! ;
 
-: SQL-PREPARE ( ptr u8 n -- ) {: sql su :}
+: SQL-PREPARE ( ^u8 n -- ) {: sql su :}
    0 SQL-OUT !
    SQL-CONN sql su SQL-OUT BYTE-VIEW 0 SQL-PREPARE-CALL SQL-CHECK
    SQL-OUT @ SQL-STMT !
@@ -211,7 +208,7 @@ public
 
 \ prepares sql, runs the binder, then the row quotation once per result row;
 \ op names the statement in an error
-: DB-QUERY ( ptr u8 n ptr u8 n [ -- ] [ -- ] -- ) {: sql su op ou bind each :}
+: DB-QUERY ( ^u8 n ^u8 n [ -- ] [ -- ] -- ) {: sql su op ou bind each :}
    SQL-STMT @ 0<> if op ou s" a statement is open" DB-THROW then
    op SQL-OP-A ! ou SQL-OP-U !
    sql su SQL-PREPARE
@@ -219,7 +216,7 @@ public
    [: SQL-FINALIZE ;] finally ;
 
 \ a statement that returns no rows
-: DB-RUN ( ptr u8 n ptr u8 n [ -- ] -- ) {: sql su op ou bind :}
+: DB-RUN ( ^u8 n ^u8 n [ -- ] -- ) {: sql su op ou bind :}
    sql su op ou bind [: ;] DB-QUERY ;
 
 ;package
