@@ -6,25 +6,23 @@ checked Habu program; a thin Omarchy bar widget runs it.
 
 ## Goal
 
-- kiba does on Linux everything kiba-mac does (`~/Work/kiba-mac`, whose
-  `DESIGN.md` is its contract), suited to Linux rather than copied from the
-  Mac: where kiba-mac's behaviour comes from macOS, the widget follows the
-  Omarchy shell (the user, 2026-11-14).
-- Unlike kiba-mac, the widget holds no click for later: while a command
-  runs, a usage probe included, every control that would start another,
-  account rows and their badges included, is disabled and looks it (the
-  user, 2026-11-15).
-- Unlike kiba-mac, opening the panel probes no usage: it reads the status
-  alone, and usage is probed only when asked, per provider from the
-  refresh arrow before its "+" or for every provider from "Refresh usage"
-  and a right click on the bar icon (the user, 2026-11-15).
+- kiba is its own product, built for Linux: README.md and this file are
+  its contract, no other project's design binds it, and the widget follows
+  the Omarchy shell (the user, 2026-11-14 and 2026-11-19).
+- The widget holds no click for later: while a command runs, a usage
+  probe included, every control that would start another, account rows and
+  their badges included, is disabled and looks it (the user, 2026-11-15).
+- Opening the panel probes no usage: it reads the status alone, and usage
+  is probed only when asked, per provider from the refresh arrow before its
+  "+" or for every provider from "Refresh usage" and a right click on the
+  bar icon (the user, 2026-11-15).
 - Since usage is probed only when asked, a reading more than an hour old
   is marked as old: its row dims the reading and shows its age, and the bar
   icon shows that provider's usage as unknown (the user, 2026-11-18).
-- Unlike kiba-mac, a row's hover says when the earliest of its counted
-  limit resets expires, so none is lost: Claude's next grant's `ends_at`,
-  Codex's earliest available credit's `expires_at` from its credit list,
-  asked only while the count is above 0 (the user, 2026-11-18).
+- A row's hover says when the earliest of its counted limit resets
+  expires, so none is lost: Claude's next grant's `ends_at`, Codex's
+  earliest available credit's `expires_at` from its credit list, asked only
+  while the count is above 0 (the user, 2026-11-18).
 - Out of scope: a `usage --json` report, finding the login shell's `PATH`
   (a CLI run from a shell already has it), and any daemon or background
   switcher; the auto-switch mod schedules and picks.

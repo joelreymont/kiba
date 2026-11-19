@@ -135,8 +135,8 @@ public
 : DB-RESETS-EXPIRY$ ( -- ^u8 n ) REC-EXPIRY-AT @ REC-EXPIRY-U @ REC-SPAN$ ;
 
 \ ---- the encoder ------------------------------------------------------------
-\ The bytes kiba-mac's JSONEncoder writes with .sortedKeys: keys in order, no
-\ spaces, `/` escaped as `\/`, other control bytes as lowercase \u00xx.
+\ The bytes the encoder writes: keys sorted, no spaces, `/` escaped as `\/`,
+\ other control bytes as lowercase \u00xx.
 private
 
 DYNAMIC-BUFFER ENC-TEXT u8
@@ -226,8 +226,8 @@ public
 : DB-USAGE-ENCODE ( -- ^u8 n ) ENC-HEAD ENC-TAIL ENC$ ;
 
 \ ---- the decoder ------------------------------------------------------------
-\ A record that does not decode reads as unreadable, as kiba-mac's does:
-\ every required key present with its type, unknown keys skipped.
+\ A record that does not decode reads as unreadable. One decodes when every
+\ required key is present with its type; unknown keys are skipped.
 private
 
 TYPED-VARIABLE DEC-RD JSON:cursor
@@ -451,7 +451,7 @@ variable STORE-VERSION               \ the user_version the last open read
    FOUND-N @ DB-VERSION > if E-SW-DB-VERSION throw then ;
 
 \ a store a newer build wrote is refused untouched; one below version 7
-\ loses kiba-mac's history, add record and install claim
+\ loses its history, add record and install claim
 : SCHEMA ( -- )
    CHECK-VERSION
    ACCOUNT-TABLE MARKER-TABLES

@@ -92,7 +92,7 @@ private
 
 \ rc's reason without its "kiba: " prefix: for a line that already starts
 \ with its provider, and for an account's note and a provider's status
-\ error, as kiba-mac records them
+\ error
 : BARE-REASON$ ( n -- ^u8 n )
    REASON$ {: a u :}
    s" kiba: " {: k ku :}
@@ -147,10 +147,10 @@ create STAT-REASON BUF:HDR-BYTES allot
    P-COUNT 0 ?do i .PROVIDER loop ;
 
 \ ---- status: json -----------------------------------------------------------
-\ kiba-mac's snapshot as its JSONEncoder writes it, keys sorted, members
-\ that are nil left out, and each limit given the percent left its figure
-\ shows. It is written with the usage record's encoder words into their
-\ buffer, which no store read touches.
+\ The status snapshot: keys sorted, no spaces, members that are nil left
+\ out, and each limit given the percent left its figure shows. It is written
+\ with the usage record's encoder words into their buffer, which no store
+\ read touches.
 : ENC-BOOL ( bool -- )
    if s" true" else s" false" then ENC+ ;
 

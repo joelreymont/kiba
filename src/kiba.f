@@ -25,14 +25,14 @@ package SW
 : ARG-COUNT ( n -- )
    SCRIPT-ARGC <> if E-SW-USAGE throw then ;
 
-\ the provider argument n; kiba-mac's command line refuses any other
+\ the provider argument n: claude or codex, any other refused
 : PROVIDER# ( n -- n )
    ARG$ {: a u :}
    a u s" claude" STR= if P-CLAUDE exit then
    a u s" codex" STR= if P-CODEX exit then
    E-SW-USAGE throw ;
 
-\ the account name argument n, refused as kiba-mac refuses a bad SlotName
+\ the account name argument n, refused unless NAME-OK? takes it
 : NAME-ARG$ ( n -- ^u8 n )
    ARG$ {: a u :}
    a u NAME-OK? 0= if E-SW-USAGE throw then

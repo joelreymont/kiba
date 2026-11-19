@@ -1,6 +1,6 @@
 import QtQuick
 
-// The bar icon, kiba-mac's GaugeIcon: one thin vertical cell per provider,
+// The bar icon: one thin vertical cell per provider,
 // each with its own geometry so no state rests on color. A cell is
 // {kind, left}: "level" fills from the bottom to `left` percent, "unknown" is
 // the outline only, "spent" a slash, "fault" an exclamation mark.

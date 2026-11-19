@@ -39,7 +39,7 @@ create DEST-BUF PATH-CAP allot  variable DEST-U
 : VAL-BUF ( -- ^u8 ) VAL-A @ ;
 : ACCT-ID-BUF ( -- ^u8 ) ACCT-ID-A @ ;
 
-\ E-SW-CAPACITY for a document over BUF-CAP, in kiba-mac's words
+\ E-SW-CAPACITY for a document over BUF-CAP, naming its limit in MiB
 : DOC-TOO-BIG ( -- )
    SB-RESET s" bytes in a JSON document (limit " SB-APPEND
    BUF-CAP $100000 / FMT:SB-INT s"  MiB)" SB-APPEND SB$ TOO-MANY ;

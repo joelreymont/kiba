@@ -1,7 +1,6 @@
 split-str
 \ sw-json.f - checked field access over in-memory JSON documents: login
-\ documents and provider answers alike, as kiba-mac's JSONDoc and JSONFields
-\ read them.
+\ documents and provider answers alike.
 require ../src/sw-io.f
 require ../src/sw-base.f
 require src/lib/float.f
@@ -52,8 +51,8 @@ TYPED-VARIABLE TEXT-HDR ^VEC:vector<u8>
 
 : NUMBER-TOKEN? ( n -- bool ) dup JSON:T-INT = swap JSON:T-FLOAT = or ;
 
-\ the number at the reader as JSONFields.int reads it: any spelling of an
-\ integer a cell holds (5, 5.0, 5e0); 0 false for any other value
+\ the number at the reader as an integer: any spelling of an integer a
+\ cell holds (5, 5.0, 5e0); 0 false for any other value
 : WHOLE ( JSON:reader -- JSON:reader n bool )
    JSON:READ-TOKEN NUMBER-TOKEN? 0= if 0 false exit then
    JSON:READ-SPAN$ DECIMAL:EXACT MATCH option
@@ -68,13 +67,14 @@ TYPED-VARIABLE TEXT-HDR ^VEC:vector<u8>
    WHOLE ;
 
 \ ---- repeated keys ---------------------------------------------------------
-\ JSONDoc refuses a document whose root object, or an object directly under
-\ it, repeats a key; JSONFields one in which any object does. REPEATS? reads
-\ the document once and keeps each open object's decoded keys: HM:PROBE finds
-\ the slot of a hash of the object and the key, and the keys listed under that
-\ slot are compared byte for byte. A member takes at least five source bytes
-\ ("":0,), so u bytes hold at most u/5 + 1 keys, which decode to at most u
-\ bytes, and at most u/2 + 1 containers are open at once.
+\ CHECK-OBJECT refuses a document whose root object, or an object directly
+\ under it, repeats a key; CHECK-FIELDS one in which any object does.
+\ REPEATS? reads the document once and keeps each open object's decoded
+\ keys: HM:PROBE finds the slot of a hash of the object and the key, and the
+\ keys listed under that slot are compared byte for byte. A member takes at
+\ least five source bytes ("":0,), so u bytes hold at most u/5 + 1 keys,
+\ which decode to at most u bytes, and at most u/2 + 1 containers are open
+\ at once.
 DYNAMIC-BUFFER KEY-HASHES n   \ HM:PROBE's keys: each slot's hash
 DYNAMIC-BUFFER KEY-SLOTS n    \ HM:PROBE's used: the slot's latest key + 1
 \ a member's key: link is the slot's earlier key + 1, or 0; off and len place
@@ -249,19 +249,19 @@ public
    a d - u + 1- empty 0= ;
 
 
-\ the whole document is exactly one object, as JSONDoc takes one: neither it
-\ nor an object directly under it repeats a key
+\ the whole document is exactly one object: neither it nor an object
+\ directly under it repeats a key
 : CHECK-OBJECT ( ^u8 n -- ) {: d du :}
    d du ONE-OBJECT
    d du 1 REPEATS? if E-SW-JSON throw then ;
 
-\ the document is one object as JSONFields takes one: CHECK-OBJECT's, and no
-\ object at any depth repeats a key
+\ the document is one object: CHECK-OBJECT's check, and no object at any
+\ depth repeats a key
 : CHECK-FIELDS ( ^u8 n -- ) {: d du :}
    d du ONE-OBJECT
    d du UNIQUE-KEYS ;
 
-\ the document is one JSONFields reads: CHECK-FIELDS as try? runs it
+\ whether CHECK-FIELDS takes the document: false where it throws
 : FIELDS? ( ^u8 n -- bool )
    [: 2dup CHECK-FIELDS ;] catch {: rc :} 2drop rc 0= ;
 

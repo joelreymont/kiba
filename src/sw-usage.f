@@ -1,12 +1,12 @@
 split-str
 \ sw-usage.f - per-account rate limits, read from each provider's usage
-\ endpoint through libcurl, as kiba-mac's ClaudeProbe and CodexProbe read
-\ them. A probe takes a saved login's document and whether the CLI is using
-\ it, and leaves the usage record (sw-db.f), the document in PROBE-DOC$,
-\ renewed when a token was, and the plan the provider named. It reads and
-\ writes no slot and takes no lock: the caller holds the provider's turn and
-\ records the outcome. A reset request (REDEEM) spends one limit reset under
-\ the same terms and leaves its outcome and the document.
+\ endpoint through libcurl. A probe takes a saved login's document and
+\ whether the CLI is using it, and leaves the usage record (sw-db.f), the
+\ document in PROBE-DOC$, renewed when a token was, and the plan the provider
+\ named. It reads and writes no slot and takes no lock: the caller holds the
+\ provider's turn and records the outcome. A reset request (REDEEM) spends
+\ one limit reset under the same terms and leaves its outcome and the
+\ document.
 require ../src/sw-store.f
 require ../src/sw-db.f
 require ../src/sw-base.f
@@ -114,7 +114,7 @@ variable EXP-VALUE                  \ the exponent, its magnitude held to a cap
    w INT-MAX = if -1 exit then
    w 1+ ;
 
-\ the whole percent reading a u spells, as kiba-mac's usedPercent gives it;
+\ the whole percent reading a u spells, rounded half up;
 \ -1 when it is malformed, below zero or past INT-MAX
 : USED-PERCENT ( ^u8 n -- n ) {: a u :}
    a u 0 $2D BYTE-IS? {: neg :}
@@ -265,8 +265,8 @@ TYPED-VARIABLE TARGET-TEXT ^VEC:vector<u8>
 
 \ ---- reading answers -------------------------------------------------------------
 \ A document or answer is read field by field only once it is known to be
-\ one JSON object in which no object, nested ones included, repeats a key,
-\ as JSONFields reads one; a field of another kind reads as absent.
+\ one JSON object in which no object, nested ones included, repeats a key
+\ (FIELDS?); a field of another kind reads as absent.
 : KEY-OBJ? ( ^u8 n ^u8 n -- bool ) {: d du k ku :}
    d du OPEN-DOC ENTER-OBJECT
    k ku KEY-OBJECT swap JSON:READ-CLOSE ;
@@ -1383,7 +1383,7 @@ FSM:DEFINE CODEX-EXCHANGE ( n ) codex-step key-input
    endcase ;
 
 \ ---- limit resets ---------------------------------------------------------------
-\ One reset of a saved login's offer is spent, as kiba-mac's redeem spends it.
+\ One reset of a saved login's offer is spent.
 \ A saved login's token is refreshed when it has expired (Claude), or once
 \ when the first send is rejected; the live login's never is. The answer's
 \ word is the outcome; any other answer fails with E-SW-REMOTE and a note.
@@ -1418,7 +1418,7 @@ create RID-BUF 36 allot
    i 4 = i 6 = or i 8 = or i 10 = or if $2D SB-APPEND-C then
    RID-RAW i + c@ 2 FMT:SB-HEX-WIDTH ;
 
-\ a random version 4 UUID in uppercase, as UUID().uuidString writes it:
+\ a random version 4 UUID, uppercase 8-4-4-4-12 hex:
 \ each request is told apart by it
 : REQUEST-ID$ ( -- ^u8 n )
    RID-RAW 16 ENTROPY:FILL

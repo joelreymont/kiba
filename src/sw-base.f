@@ -64,7 +64,7 @@ create TOO-MANY-BUF TOO-MANY-CAP allot   variable TOO-MANY-U
 public
 
 \ E-SW-CAPACITY, keeping what overflowed, cut to TOO-MANY-CAP, for its
-\ reason; kiba-mac's form is "<what> (limit <n>)"
+\ reason, in the form "<what> (limit <n>)"
 : TOO-MANY ( ^u8 n -- ) {: a u :}
    u TOO-MANY-CAP min {: k :}
    a TOO-MANY-BUF k BYTE-COPY

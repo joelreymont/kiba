@@ -4,7 +4,8 @@ import qs.Commons
 import qs.Ui
 
 // Bar widget: which saved account has room, and how much; one click
-// switches to it through the kiba CLI. The row reading is kiba-mac's Rows.
+// switches to it through the kiba CLI. Each row reads its account's state
+// from its usage record (rowState) and is ranked by it (rank).
 Panel {
   id: root
   moduleName: "kiba"
@@ -19,7 +20,7 @@ Panel {
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
   readonly property color dim: Qt.darker(foreground, 1.55)
-  // kiba-mac's green and amber, each in its light or dark theme shade
+  // green and amber, each in its light or dark theme shade
   readonly property bool lightTheme: Color.background.hslLightness > 0.5
   readonly property color good: lightTheme ? "#1f7f52" : "#4fc08a"
   readonly property color caution: lightTheme ? "#9e6a0e" : "#e2a93b"

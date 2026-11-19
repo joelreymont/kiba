@@ -2,8 +2,8 @@ import QtQuick
 import Quickshell.Io
 
 // Model: runs the kiba CLI, holds its parsed status, and runs one action at
-// a time. The row reading it needs (dead, relogin, refused) is kiba-mac's
-// Rows; everything else about an account comes from the CLI.
+// a time. It reads what a row needs from a usage record (dead, relogin,
+// refused); everything else about an account comes from the CLI.
 Item {
   id: root
   visible: false
@@ -192,7 +192,7 @@ Item {
   }
 
   // ------------------------------------------------------------- status JSON
-  // kiba-mac's snapshot: {providers: [{provider, accounts, error?,
+  // The status snapshot: {providers: [{provider, accounts, error?,
   // installedAt?, live?}]}; an account is {active, name, plan, usage?}; a
   // usage record is {fetchedAt, limits, note, resets?, state}; a limit is
   // {label, left?, percent, resetsAt}, `left` the percent left its figure

@@ -53,12 +53,13 @@ public
    0 0 0 LENS-MAKE id ID-LENS ! ;
 
 \ ---- reading a login ---------------------------------------------------------
-\ Identity.swift builds JSONFields with try where a login must be read, so a
-\ document CHECK-FIELDS refuses throws; with try? where it may be unreadable.
+\ A login that must be read is checked with CHECK-FIELDS, so a document it
+\ refuses throws; one that may be unreadable is checked with FIELDS?, which
+\ answers false instead.
 private
 
 \ ---- Claude Code ------------------------------------------------------------
-\ planFromCreds: credentials JSONFields cannot read name no plan; false then
+\ credentials FIELDS? refuses name no plan; false then
 : PLAN-READ? ( ^u8 n n -- bool ) {: cr cru id :}
    cr cru FIELDS? 0= if false exit then
    cr cru s" claudeAiOauth" s" subscriptionType" id PLAN-ROW PLAN-CAP DOC-STR2
@@ -67,14 +68,14 @@ private
 
 public
 
-\ the credentials' plan; empty when they are not a document JSONFields reads
-\ or lack the string, since the account comes from the config alone; a plan
-\ longer than PLAN-CAP is E-SW-CAPACITY
+\ the credentials' plan; empty when FIELDS? refuses them or they lack the
+\ string, since the account comes from the config alone; a plan longer than
+\ PLAN-CAP is E-SW-CAPACITY
 : CLAUDE-PLAN ( ^u8 n n -- ) {: cr cru id :}
    cr cru id PLAN-READ? 0= if 0 id ID-LENS LENS-PLAN LEN! then ;
 
-\ fromOAuthAccount: the oauthAccount object on its own, as saved in a slot;
-\ E-SW-JSON unless JSONFields reads it and it names an email
+\ the oauthAccount object on its own, as saved in a slot; E-SW-JSON unless
+\ CHECK-FIELDS takes it and it names an email
 : CLAUDE-OAUTH-IDENTITY ( ^u8 n n -- ) {: d du id :}
    id NO-IDENTITY
    d du CHECK-FIELDS
@@ -84,10 +85,9 @@ public
 
 private
 
-\ config document (.claude.json) plus credentials document, as
-\ ClaudeLive.decode reads them; the config is checked as profile's JSONDoc
-\ checks it; answers the oauthAccount object in cfg, and false with an
-\ empty span when it holds none
+\ config document (.claude.json) plus credentials document; the config is
+\ checked with CHECK-OBJECT; answers the oauthAccount object in cfg, and
+\ false with an empty span when it holds none
 : CLAUDE-ACCOUNT ( ^u8 n ^u8 n n -- ^u8 n bool )
    {: cfg cu cr cru id :}
    id NO-IDENTITY
@@ -131,13 +131,13 @@ private
 
 public
 
-\ OBJ = the decoded JWT payload; up to two trailing `=` are dropped first, as
-\ kiba-mac's Base64URL allows them. Unlike kiba-mac's, the decoder refuses
-\ unused low bits that are not zero, which conforming encoders never write
-\ (RFC 4648 section 3.5). Its E-BASE64 codes reach callers
+\ OBJ = the decoded JWT payload; up to two trailing `=` are dropped first.
+\ The decoder refuses unused low bits that are not zero, which conforming
+\ encoders never write (RFC 4648 section 3.5). Its E-BASE64 codes reach
+\ callers
 : DECODE-PAYLOAD ( ^u8 n -- ) UNPADDED OBJ-BUF BUF-CAP SPAN:MAKE BASE64:DECODE-URL OBJ-U ! ;
 
-\ isAPIKey: OPENAI_API_KEY is a non-empty string in a document JSONFields reads
+\ OPENAI_API_KEY is a non-empty string in a document FIELDS? takes
 : CODEX-API-KEY? ( ^u8 n -- bool ) {: d du :}
    d du FIELDS? 0= if false exit then
    d du s" OPENAI_API_KEY" TOK-BUF BUF-CAP DOC-STR1 0 > ;
@@ -149,9 +149,9 @@ public
    s" apikey" id PLAN-ROW id ID-LENS LENS-PLAN PLAN-CAP SPAN!
    true ;
 
-\ fromAuth: the auth.json document, its identity from the id_token claims;
-\ E-SW-JSON unless JSONFields reads the document and the claims and they
-\ name an email
+\ the auth.json document, its identity from the id_token claims; E-SW-JSON
+\ unless CHECK-FIELDS takes the document and the claims and they name an
+\ email
 : CODEX-IDENTITY ( ^u8 n n -- bool ) {: d du id :}
    id NO-IDENTITY
    d du CHECK-FIELDS

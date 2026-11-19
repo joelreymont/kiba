@@ -183,16 +183,16 @@ create UT-BUF 256 allot
 : AUTH-R$ ( -- ^u8 n )
    s\" {\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InJAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicGx1cyIsInNlYXRzIjp7Im4iOjEsIm4iOjJ9fX0.c2ln\"}}" ;
 
-\ claims that repeat a key deeper than JSONDoc looks are no login, as
-\ fromAuth's JSONFields refuses them
+\ claims that repeat a key deeper than CHECK-OBJECT looks are no login:
+\ CODEX-IDENTITY's CHECK-FIELDS refuses them
 : UT-CLAIMS-REPEAT ( -- )
    AUTH-R$ CHECK-OBJECT
    CLAIMS-R$ CHECK-OBJECT
    [: AUTH-R$ ID-SLOT CODEX-IDENTITY drop ;] E-SW-JSON TTHROWSQ ;
 
-\ a key repeated four objects deep, once escaped: JSONFields refuses it, and
-\ JSONDoc, which looks only at the root and the objects directly under it,
-\ takes it
+\ a key repeated four objects deep, once escaped: FIELDS? refuses it, and
+\ CHECK-OBJECT, which looks only at the root and the objects directly under
+\ it, takes it
 : UT-DEEP-REPEAT ( -- )
    s\" {\"a\":{\"b\":{\"c\":{\"d\":{\"x\":1,\"\\u0078\":2}}}}}" {: d du :}
    d du FIELDS? TFALSE
@@ -599,8 +599,8 @@ create UT-INNER-BUF 256 allot
 : CREDS-Q$ ( -- ^u8 n )
    s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-q\",\"subscriptionType\":\"max\",\"subscriptionType\":\"pro\"}}" ;
 
-\ a claudeAiOauth that repeats a key saves with no plan (planFromCreds) and
-\ is refused before the install is noted (ClaudeLive.prepare's JSONDoc)
+\ a claudeAiOauth that repeats a key saves with no plan (PLAN-READ?) and
+\ is refused before the install is noted (CHECK-CREDS's CHECK-OBJECT)
 : UT-REPEATED-CREDS ( -- )
    CLAUDE-CONFIG$ CFG-Q$ WRITE-PRIVATE
    CLAUDE-CREDS$ CREDS-Q$ WRITE-PRIVATE
@@ -1618,7 +1618,7 @@ create UT-AT-BUF 1024 allot
    DB-RESETS-EXPIRY$ s" " T$=
    DB-USAGE-NOTE$ s" " T$= ;
 
-\ provider answers read as kiba-mac's JSONFields reads them
+\ provider answers as a Codex usage probe reads them, its credit list included
 : UT-ANSWER-READS ( -- )
    s" dup@x.test" s" dup" UT-PUT-AT
    s" whole@x.test" s" whole" UT-PUT-AT
@@ -1762,8 +1762,8 @@ create UT-AT-BUF 1024 allot
    s" error" s" Anthropic's usage endpoint sent an answer that is not a JSON object" UT-OUTCOME=
    UT-OUTCOME-GONE ;
 
-\ every outcome of a saved Claude login's probe, as kiba-mac's ClaudeProbe
-\ records it; the shared answers are back afterwards
+\ every outcome of a saved Claude login's probe, as its usage record shows
+\ it; the shared answers are back afterwards
 : UT-CLAUDE-OUTCOMES ( -- )
    UT-CLAUDE-OUTCOME-ROWS
    UT-CLAUDE-NO-PLAN
@@ -2154,8 +2154,8 @@ create UT-AUTH-BUF 256 allot
      some OF IDX>N 14 + ENDOF
    ;MATCH ;
 
-\ the first request id in the log is 36 bytes as UUID().uuidString writes
-\ them, then the closing quote
+\ the first request id in the log is 36 bytes, uppercase 8-4-4-4-12 hex,
+\ then the closing quote
 : UT-RID ( ^u8 n -- ) {: l lu :}
    l lu UT-RID-AT {: at :}
    at 0 >= TTRUE
@@ -2501,7 +2501,7 @@ create UT-REASON 512 allot
 create UT-NUL 3 allot                 \ a login blob holding a NUL byte
 variable UT-V
 
-\ kiba-mac's JSONEncoder (.sortedKeys) bytes for one usage record
+\ the encoder's bytes (keys sorted, no spaces) for one usage record
 : USAGE-LIT$ ( -- ^u8 n )
    s\" {\"fetchedAt\":1700000000,\"limits\":[{\"label\":\"Session (5-hour)\",\"percent\":30,\"resetsAt\":\"2026-11-13T10:00:00Z\"},{\"label\":\"Weekly \\/ Opus\",\"percent\":-1,\"resetsAt\":\"\"}],\"note\":\"a\\/b \\\"q\\\"\\n\",\"resets\":{\"count\":2,\"grant\":\"g-1\",\"program\":\"cedar_ember\"},\"state\":\"throttled\"}" ;
 
@@ -2594,7 +2594,7 @@ variable UT-V
    [: P-CLAUDE s" n@x.test" DB-REMOVE ;] DB-WRITE
    P-CLAUDE s" n@x.test" DB-FETCH TFALSE ;
 
-\ kiba-mac's snapshot bytes: two saved Claude logins under one email, the
+\ the status snapshot's bytes: two saved Claude logins under one email, the
 \ live one in the second organization, and a live Codex login never saved
 : SNAP-LIT$ ( -- ^u8 n )
    s\" {\"providers\":[{\"accounts\":[{\"active\":false,\"name\":\"a@x.test\",\"plan\":\"max\",\"usage\":{\"fetchedAt\":1700000000,\"limits\":[{\"label\":\"Session (5-hour)\",\"left\":70,\"percent\":30,\"resetsAt\":\"2026-11-13T10:00:00Z\"},{\"label\":\"Weekly \\/ Opus\",\"percent\":-1,\"resetsAt\":\"\"}],\"note\":\"a\\/b \\\"q\\\"\\n\",\"resets\":{\"count\":2,\"grant\":\"g-1\",\"program\":\"cedar_ember\"},\"state\":\"throttled\"}},{\"active\":true,\"name\":\"a@x.test #2\",\"plan\":\"team\"}],\"installedAt\":1700000500,\"live\":{\"email\":\"a@x.test\",\"plan\":\"team\"},\"provider\":\"claude\"},{\"accounts\":[],\"live\":{\"email\":\"c@x.test\",\"plan\":\"plus\"},\"provider\":\"codex\"}]}" ;
@@ -2953,9 +2953,8 @@ create UT-LIST UT-LIST-CAP allot
    UT-LOG-NEW$ s" rt-t" CONTAINS? TFALSE
    P-CODEX s" t@x.test" CMD-FORGET ;
 
-\ each outcome of a Codex probe that the shared answers never give,
-\ read as kiba-mac's CodexProbe records it; the live c@x.test answers 401
-\ throughout
+\ each outcome of a Codex probe that the shared answers never give, as its
+\ usage record shows it; the live c@x.test answers 401 throughout
 : UT-CODEX-OUTCOMES ( -- )
    UT-CODEX-OUTCOME-ROWS
    UT-CODEX-API-KEY
