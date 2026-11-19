@@ -6,12 +6,13 @@ require ../src/sw-io.f
 require ../src/sw-base.f
 require src/lib/float.f
 require src/lib/json.f
-require src/lib/byte-buffer.f
 require src/lib/decimal.f
 require src/lib/hashmap.f
 require src/lib/string.f
 require src/lib/adt/option.f
 require src/lib/prelude.f
+require src/lib/span.f
+require src/lib/vector.f
 
 package SW
 
@@ -32,14 +33,14 @@ TYPED-VARIABLE RD-STATE JSON:cursor
    JSON:READ-TOKEN JSON:T-OBJ = ;
 
 \ a string decoded whole, so TEXT-INTO can tell one its buffer cannot hold
-create TEXT-HDR BUF:HDR-BYTES allot
+TYPED-VARIABLE TEXT-HDR ^VEC:vector<u8>
 
 \ the string at the reader decoded into dst; E-SW-CAPACITY when it decodes
 \ to more than cap bytes
 : TEXT-INTO ( JSON:reader ^u8 n -- JSON:reader n ) {: dst cap :}
-   TEXT-HDR TEXT-CAP BUF:N>BLEN BUF:RESET
-   TEXT-HDR JSON:READ-STR-APPEND
-   TEXT-HDR BUF:SPAN$ BUF:BLEN>N {: a u :}
+   TEXT-HDR TEXTS-RESET
+   TEXT-HDR @ JSON:READ-STR-APPEND
+   TEXT-HDR @ VEC:SPAN SPAN:$ {: a u :}
    u cap > if s" bytes in a JSON string" cap LIMIT$ TOO-MANY then
    a dst u BYTE-COPY u ;
 

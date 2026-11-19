@@ -30,6 +30,8 @@ require src/lib/process-argv.f
 require src/lib/process-fork.f
 require src/lib/process.f
 require src/lib/string.f
+require src/lib/span.f
+require src/lib/vector.f
 
 package SW
 
@@ -139,23 +141,23 @@ variable HTTP-CODE                  \ the last answer's status, -1 when there wa
 \ ---- requests -------------------------------------------------------------------
 \ A request is its header lines, its body and its URL, sent on one libcurl
 \ handle that TRANSFER alone holds. Line i of HDR-TEXT ends at HDR-ENDS i.
-create HDR-TEXT BUF:HDR-BYTES allot
+TYPED-VARIABLE HDR-TEXT ^VEC:vector<u8>
 DYNAMIC-BUFFER HDR-ENDS n
 variable HDR-N
 \ borrowed from the caller until TRANSFER returns; length -1 for a GET
 TYPED-VARIABLE REQ-BODY-A ^u8   variable REQ-BODY-U
 \ tests reach a local server through URL-BASE; length 0 sends each URL as written
 create URL-BASE PATH-CAP allot     variable URL-BASE-U
-create TARGET-TEXT BUF:HDR-BYTES allot
+TYPED-VARIABLE TARGET-TEXT ^VEC:vector<u8>
 
 : SCHEME$ ( -- ^u8 n ) s" https://" ;
 
-: HDR+ ( ^u8 n -- ) BUF:N>BLEN HDR-TEXT BUF:APPEND-SPAN ;
+: HDR+ ( ^u8 n -- ) HDR-TEXT @ VEC:APPEND ;
 
 : LINE-END ( -- )
    HDR-N @ {: i :}
    i 1+ HDR-ENDS-RESERVE
-   HDR-TEXT TEXTS-END i HDR-ENDS !
+   HDR-TEXT @ TEXTS-END i HDR-ENDS !
    i 1+ HDR-N ! ;
 
 : HDR ( ^u8 n ^u8 n -- ) {: name nu val vu :}
@@ -166,7 +168,7 @@ create TARGET-TEXT BUF:HDR-BYTES allot
 
 : HDR-LINE$ ( n -- ^u8 n ) {: i :}
    i 0= if 0 else i 1- HDR-ENDS @ then {: lo :}
-   HDR-TEXT lo i HDR-ENDS @ lo - TEXTS$ ;
+   HDR-TEXT @ lo i HDR-ENDS @ lo - TEXTS$ ;
 
 \ Anthropic's token endpoint answers 429 to curl's own User-Agent whatever
 \ the grant, so every request names its client
@@ -183,10 +185,10 @@ create TARGET-TEXT BUF:HDR-BYTES allot
 : TARGET$ ( ^u8 n -- ^u8 n ) {: url uu :}
    URL-BASE-U @ 0= if url uu exit then
    TARGET-TEXT TEXTS-RESET
-   URL-BASE URL-BASE-U @ BUF:N>BLEN TARGET-TEXT BUF:APPEND-SPAN
+   URL-BASE URL-BASE-U @ TARGET-TEXT @ VEC:APPEND
    SCHEME$ nip {: s :}
-   url s + uu s - BUF:N>BLEN TARGET-TEXT BUF:APPEND-SPAN
-   TARGET-TEXT BUF:SPAN$ BUF:BLEN>N ;
+   url s + uu s - TARGET-TEXT @ VEC:APPEND
+   TARGET-TEXT @ VEC:SPAN SPAN:$ ;
 
 : SET? ( CURL:status -- bool )
    MATCH CURL:status
@@ -399,11 +401,11 @@ variable LINE-GAP                   \ bool: a separator run waits for the next s
 : CREDS-KEY$ ( -- ^u8 n ) s" claudeAiOauth" ;
 
 \ the answer's strings; each read resets it once what it held was recorded
-create SCAN-TEXT BUF:HDR-BYTES allot
+TYPED-VARIABLE SCAN-TEXT ^VEC:vector<u8>
 
 : SCAN-RESET ( -- ) SCAN-TEXT TEXTS-RESET ;
-: SCAN$ ( n n -- ^u8 n ) {: off u :} SCAN-TEXT off u TEXTS$ ;
-: SCAN-C ( n -- ) SCAN-TEXT BUF:APPEND-BYTE ;
+: SCAN$ ( n n -- ^u8 n ) {: off u :} SCAN-TEXT @ off u TEXTS$ ;
+: SCAN-C ( n -- ) SCAN-TEXT @ VEC:PUSH c! ;
 
 : BUCKET-PCT ( JSON:reader -- JSON:reader n )
    JSON:READ-TOKEN NUMBER-TOKEN? 0= if -1 exit then
@@ -411,7 +413,7 @@ create SCAN-TEXT BUF:HDR-BYTES allot
 
 : BUCKET-RESET ( JSON:reader -- JSON:reader n n )
    JSON:READ-TOKEN JSON:T-STR <> if 0 0 exit then
-   SCAN-TEXT TEXTS-READ ;
+   SCAN-TEXT @ TEXTS-READ ;
 
 \ one bucket object {utilization, resets_at} at key; whole percent, and the
 \ reset text's offset and length in SCAN-TEXT
@@ -443,7 +445,7 @@ variable SC-PCT
 \ a string member's value onto SCAN-TEXT, named in atp and up; else skipped
 : SC-STR ( JSON:reader ^n ^n -- JSON:reader ) {: atp up :}
    JSON:READ-TOKEN JSON:T-STR <> if JSON:READ-SKIP-VALUE exit then
-   SCAN-TEXT TEXTS-READ up ! atp ! ;
+   SCAN-TEXT @ TEXTS-READ up ! atp ! ;
 
 \ on the model object's opening brace: its display name
 : SC-MODEL ( JSON:reader -- JSON:reader )
@@ -477,7 +479,7 @@ variable SC-PCT
 \ on the kind's value: the window word it names; else skipped
 : SC-WINDOW-READ ( JSON:reader -- JSON:reader )
    JSON:READ-TOKEN JSON:T-STR <> if JSON:READ-SKIP-VALUE exit then
-   SCAN-TEXT TEXTS-READ SCAN$ SC-WINDOW$ SC-WIN-U ! SC-WIN-A ! ;
+   SCAN-TEXT @ TEXTS-READ SCAN$ SC-WINDOW$ SC-WIN-U ! SC-WIN-A ! ;
 
 \ on a limits entry's key: the member it names, read
 : SC-MEMBER ( JSON:reader -- JSON:reader )
@@ -497,9 +499,9 @@ variable SC-PCT
 : SC-ENTRY+ ( -- )
    SC-NAME-U @ 0= if exit then
    SC-PCT @ 0 < if exit then
-   SC-NAME-AT @ SC-NAME-U @ SCAN$ SCAN-TEXT TEXTS-PUT drop {: lo :}
-   SC-WIN-A @ SC-WIN-U @ dup 0 > if $20 SCAN-C SCAN-TEXT TEXTS-PUT 2drop else 2drop then
-   lo SCAN-TEXT TEXTS-END lo - SCAN$ SC-PCT @ SC-RESET-AT @ SC-RESET-U @ SCAN$ DB-LIMIT+ ;
+   SC-NAME-AT @ SC-NAME-U @ SCAN$ SCAN-TEXT @ TEXTS-PUT drop {: lo :}
+   SC-WIN-A @ SC-WIN-U @ dup 0 > if $20 SCAN-C SCAN-TEXT @ TEXTS-PUT 2drop else 2drop then
+   lo SCAN-TEXT @ TEXTS-END lo - SCAN$ SC-PCT @ SC-RESET-AT @ SC-RESET-U @ SCAN$ DB-LIMIT+ ;
 
 : SC-OBJECT ( JSON:reader -- JSON:reader )
    SC-ENTRY-RESET
@@ -665,7 +667,7 @@ variable GRANT-ENDS-AT   variable GRANT-ENDS-U
    s" cedar_ember" KEY-OBJECT 0= if JSON:READ-CLOSE false exit then
    s" next_grant_id" JSON:READ-FIND-KEY 0= if JSON:READ-CLOSE false exit then
    JSON:READ-TOKEN JSON:T-STR <> if JSON:READ-CLOSE false exit then
-   SCAN-TEXT TEXTS-READ GRANT-NEXT-U ! GRANT-NEXT-AT !
+   SCAN-TEXT @ TEXTS-READ GRANT-NEXT-U ! GRANT-NEXT-AT !
    JSON:READ-CLOSE true ;
 
 : GRANT-MEMBER ( JSON:reader -- JSON:reader )
@@ -1117,7 +1119,7 @@ variable CREDITS-FIRST   \ the earliest counted end so far; -1 for none
 \ expires_at's instant in epoch seconds; -1 when it is not one
 : CREDIT-END ( JSON:reader -- JSON:reader n )
    JSON:READ-TOKEN JSON:T-STR <> if JSON:READ-SKIP-VALUE -1 exit then
-   SCAN-TEXT TEXTS-READ SCAN$ RFC3339>EPOCH ;
+   SCAN-TEXT @ TEXTS-READ SCAN$ RFC3339>EPOCH ;
 
 : CREDIT-MEMBER ( JSON:reader -- JSON:reader )
    JSON:READ-TOKEN JSON:T-KEY <> if E-SW-JSON throw then

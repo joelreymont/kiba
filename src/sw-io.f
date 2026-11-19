@@ -12,6 +12,8 @@ require src/lib/error.f
 require src/lib/fs.f
 require src/lib/string.f
 require src/lib/fd.f
+require src/lib/heap.f
+require src/lib/vector.f
 
 package SW
 
@@ -130,18 +132,22 @@ TYPED-VARIABLE JSON-W JSON:writer
 : JSON-OPEN ( -- ^JSON:writer )
    JSON-W JSON-BUF BUF-CAP JSON:WRITE-OPEN ;
 
-\ strings named by offset and length, kept by appends that may move the
-\ bytes; TEXTS-RESET first, as an append to a fresh header never returns
-: TEXTS-RESET ( ^a -- ) 64 BUF:N>BLEN BUF:RESET ;
-: TEXTS-END ( ^a -- n ) BUF:LEN@ BUF:BLEN>N ;
-: TEXTS$ ( ^a n n -- ^u8 n ) {: t off u :} t BUF:SPAN$ drop off + u ;
+\ strings named by offset and length in a byte vector, kept by appends that
+\ may move the bytes; a store's first TEXTS-RESET makes its vector and each
+\ later one empties it, so every store is reset before its first use
+: TEXTS-RESET ( ^^VEC:vector<u8> -- ) {: p :}
+   p @ NULL-PTR = if HEAP:ALLOCATOR 0 [type] u8 VEC:NEW p ! then
+   p @ 0 VEC:RESIZE ;
+: TEXTS-END ( ^VEC:vector<u8> -- n ) VEC:COUNT ;
+: TEXTS$ ( ^VEC:vector<u8> n n -- ^u8 n ) {: t off u :}
+   t VEC:SPAN SPAN:$ drop off + u ;
 
-: TEXTS-PUT ( ^u8 n ^a -- n n ) {: s u t :}
+: TEXTS-PUT ( ^u8 n ^VEC:vector<u8> -- n n ) {: s u t :}
    t TEXTS-END {: off :}
-   s u BUF:N>BLEN t BUF:APPEND-SPAN
+   s u t VEC:APPEND
    off u ;
 
-: TEXTS-READ ( JSON:reader ^a -- JSON:reader n n ) {: t :}
+: TEXTS-READ ( JSON:reader ^VEC:vector<u8> -- JSON:reader n n ) {: t :}
    t TEXTS-END {: off :}
    t JSON:READ-STR-APPEND
    off t TEXTS-END off - ;

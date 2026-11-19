@@ -12,9 +12,9 @@ require ../src/sw-json.f
 require src/lib/fsm.f
 require src/lib/fmt.f
 require src/lib/json.f
-require src/lib/byte-buffer.f
 require src/lib/prelude.f
 require src/lib/string.f
+require src/lib/vector.f
 
 package SW
 
@@ -47,7 +47,7 @@ STRUCTURE lim DERIVE addr
    FIELD label-off n FIELD label-len n FIELD pct n
    FIELD reset-off n FIELD reset-len n
 ;STRUCTURE
-create REC-TEXT BUF:HDR-BYTES allot
+TYPED-VARIABLE REC-TEXT ^VEC:vector<u8>
 DYNAMIC-BUFFER REC-LIMS lim
 
 variable REC-AT                            \ epoch seconds; 0 when never fetched
@@ -63,7 +63,7 @@ variable REC-GRANT-AT     variable REC-GRANT-U
 variable REC-EXPIRY-AT    variable REC-EXPIRY-U
 
 : REC-CLEAR ( -- ) REC-TEXT TEXTS-RESET ;
-: REC-SPAN$ ( n n -- ^u8 n ) {: off u :} REC-TEXT off u TEXTS$ ;
+: REC-SPAN$ ( n n -- ^u8 n ) {: off u :} REC-TEXT @ off u TEXTS$ ;
 
 : LABEL-AT ( n -- ^n ) REC-LIMS LIM-LABEL-OFF ;
 : LABEL-U ( n -- ^n ) REC-LIMS LIM-LABEL-LEN ;
@@ -100,26 +100,26 @@ public
 \ starts a record: no limits and no reset offer yet
 : DB-USAGE! ( n usage-state ^u8 n -- ) {: at st a u :}
    at REC-AT ! st REC-STATE !
-   REC-CLEAR a u REC-TEXT TEXTS-PUT REC-NOTE-U ! REC-NOTE-AT !
+   REC-CLEAR a u REC-TEXT @ TEXTS-PUT REC-NOTE-U ! REC-NOTE-AT !
    0 REC-LIM-N ! 0 REC-OFFER ! ;
 
 \ label, percent used, reset instant
 : DB-LIMIT+ ( ^u8 n n ^u8 n -- ) {: la lu pct ra ru :}
-   la lu REC-TEXT TEXTS-PUT {: lo lu2 :}
-   ra ru REC-TEXT TEXTS-PUT {: ro ru2 :}
+   la lu REC-TEXT @ TEXTS-PUT {: lo lu2 :}
+   ra ru REC-TEXT @ TEXTS-PUT {: ro ru2 :}
    lo lu2 pct ro ru2 LIM-ROW+ ;
 
 \ resets available now, program, grant; no expiry yet
 : DB-RESETS! ( n ^u8 n ^u8 n -- ) {: k pa pu ga gu :}
    k REC-COUNT !
-   pa pu REC-TEXT TEXTS-PUT REC-PROGRAM-U ! REC-PROGRAM-AT !
-   ga gu REC-TEXT TEXTS-PUT REC-GRANT-U ! REC-GRANT-AT !
+   pa pu REC-TEXT @ TEXTS-PUT REC-PROGRAM-U ! REC-PROGRAM-AT !
+   ga gu REC-TEXT @ TEXTS-PUT REC-GRANT-U ! REC-GRANT-AT !
    0 REC-EXPIRY-AT ! 0 REC-EXPIRY-U !
    1 REC-OFFER ! ;
 
 \ when the earliest counted reset expires; called after DB-RESETS!
 : DB-RESETS-EXPIRY! ( ^u8 n -- )
-   REC-TEXT TEXTS-PUT REC-EXPIRY-U ! REC-EXPIRY-AT ! ;
+   REC-TEXT @ TEXTS-PUT REC-EXPIRY-U ! REC-EXPIRY-AT ! ;
 
 : DB-USAGE-AT ( -- n ) REC-AT @ ;
 : DB-USAGE-STATE ( -- usage-state ) REC-STATE @ ;
@@ -245,7 +245,7 @@ create DEC-WORD 16 allot   variable DEC-WORD-U     \ a longer word is no state
 
 \ the string decoded onto REC-TEXT; its offset and length
 : DEC-STR ( JSON:reader -- JSON:reader n n )
-   JSON:T-STR DEC-NEXT REC-TEXT TEXTS-READ ;
+   JSON:T-STR DEC-NEXT REC-TEXT @ TEXTS-READ ;
 
 : MEMBER? ( JSON:reader ^u8 n -- JSON:reader bool ) JSON:READ-STR-EQ? ;
 
