@@ -808,10 +808,14 @@ create UT-WANT 16384 allot   variable UT-WANT-U
 : AUTH-Y$ ( -- ^u8 n )
    s\" {\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-y\",\"refresh_token\":\"rt-y\",\"account_id\":\"acct\"}}" ;
 
+\ the login AUTH-AT$ or CREDS-TOKEN$ built last, kept past the next use of SB
+create UT-AT-BUF 1024 allot
+
 \ a saved Codex login whose access token is at-<t>
 : AUTH-AT$ ( ^u8 n -- ^u8 n ) {: t tu :}
    SB-RESET s\" {\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-" SB-APPEND
-   t tu SB-APPEND s\" \",\"refresh_token\":\"rt-n\",\"account_id\":\"acct\"}}" SB-APPEND SB$ ;
+   t tu SB-APPEND s\" \",\"refresh_token\":\"rt-n\",\"account_id\":\"acct\"}}" SB-APPEND
+   SB$ UT-AT-BUF 1024 SPAN-COPY ;
 
 : AUTH-Z$ ( -- ^u8 n )
    s\" {\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRAeC50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfcGxhbl90eXBlIjoicHJvIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdCJ9LCJleHAiOjF9.c2ln\",\"access_token\":\"at-z\",\"refresh_token\":\"rt-z\",\"account_id\":\"acct\"}}" ;
@@ -1608,12 +1612,9 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    l lu s\" \"refresh_token\":\"rt-z\"" CONTAINS? TTRUE
    P-CODEX s" z@x.test" CMD-FORGET ;
 
-create UT-AT-BUF 1024 allot
-
 \ row a u holding the Codex login whose access token is at-<t>
 : UT-PUT-AT ( ^u8 n ^u8 n -- ) {: a u t tu :}
-   t tu AUTH-AT$ UT-AT-BUF 1024 SPAN-COPY {: l lu :}
-   P-CODEX a u l lu UT-PUT ;
+   P-CODEX a u t tu AUTH-AT$ UT-PUT ;
 
 \ an answer that repeats a key in a nested object is not a JSON object
 : UT-ANSWER-REPEATS ( -- )
