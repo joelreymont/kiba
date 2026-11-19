@@ -13,6 +13,7 @@ package SW
    s\" usage: kiba status [--json]\n" ERR-PART
    s\"        kiba save [claude|codex]\n" ERR-PART
    s\"        kiba use <claude|codex> <email>\n" ERR-PART
+   s\"        kiba next <claude|codex>\n" ERR-PART
    s\"        kiba add <claude|codex> [name]\n" ERR-PART
    s\"        kiba forget <claude|codex> <email>\n" ERR-PART
    s\"        kiba redeem <claude|codex> <email>\n" ERR-PART
@@ -62,6 +63,7 @@ package SW
    c cu s" save" STR= if [: CMD-SAVE ;] DISPATCH-PROVIDERS exit then
    c cu s" usage" STR= if [: CMD-USAGE ;] DISPATCH-PROVIDERS exit then
    c cu s" use" STR= if 3 ARG-COUNT 1 PROVIDER# 2 NAME-ARG$ CMD-USE exit then
+   c cu s" next" STR= if 2 ARG-COUNT 1 PROVIDER# CMD-NEXT exit then
    c cu s" add" STR= if DISPATCH-ADD exit then
    c cu s" forget" STR= if 3 ARG-COUNT 1 PROVIDER# 2 NAME-ARG$ CMD-FORGET exit then
    c cu s" redeem" STR= if 3 ARG-COUNT 1 PROVIDER# 2 NAME-ARG$ CMD-REDEEM exit then

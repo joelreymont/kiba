@@ -33,6 +33,7 @@ public
 -100024 constant E-SW-NO-RESETS   \ the saved login's last probe offered no limit reset
 -100025 constant E-SW-REMOTE      \ a provider did not spend a limit reset; its note says why
 -100026 constant E-SW-OUTPUT      \ stdout refused a write
+-100027 constant E-SW-NO-ROOM     \ no other saved account has room
 
 0 constant P-CLAUDE
 1 constant P-CODEX

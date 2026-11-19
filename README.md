@@ -44,6 +44,7 @@ saved copy dies with them.
 kiba status [--json]           live account, saved accounts, and their usage
 kiba save [claude|codex]       save the live login(s) under their account names
 kiba use <provider> <name>     save back the live login, install <name>
+kiba next <provider>           save back the live login, install another account with room
 kiba add <provider> [name]     log in to a new (or the named) account, save it
 kiba forget <provider> <name>
 kiba usage [claude|codex]      probe the rate limits of every saved account
@@ -54,8 +55,16 @@ kiba redeem <provider> <name>  spend one of <name>'s limit resets
 logins under the same email. Exit codes: 0 ok, 64 usage, 1 any other failure
 with a one-line reason on stderr; `usage` exits 1 once every provider has
 run when any of them reported an error. `use` probes the account it
-installed and the one it saved back, `add` the account it saved, and
-`redeem` the account it reset, so the widget shows their figures at once.
+installed and the one it saved back, `next` every account it tried and the
+one it saved back, `add` the account it saved, and `redeem` the account it
+reset, so the widget shows their figures at once.
+
+`next` tries every saved account but the live one and those whose login is
+gone, grouped by their last reading: those with room first, then those with
+little room, then the rest, in name order within each group. It probes each
+in turn and installs the first whose fresh reading has room, probing each
+account at most once. When none has room it exits 1 and the live login is
+left as it was.
 
 `status --json` is the snapshot the Claude Code auto-switch mod reads:
 

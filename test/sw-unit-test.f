@@ -886,12 +886,15 @@ $7F000001 constant UT-LOOPBACK
 64 constant UT-ROW-MAX
 $500000 constant UT-ARENA-CAP   \ the rows' bytes: one body past BUF-CAP and the rest
 
-\ a row's cells: its route, key and body as arena offset and length, and its status
+\ a row's cells: its route, key, body, file and file bytes as arena offset
+\ and length, and its status
 0 constant UT-F-ROUTE
 2 constant UT-F-KEY
 4 constant UT-F-STATUS
 5 constant UT-F-BODY
-7 constant UT-ROW-CELLS
+7 constant UT-F-FILE
+9 constant UT-F-BYTES
+11 constant UT-ROW-CELLS
 UT-ROW-MAX UT-ROW-CELLS * constant UT-CELL-MAX
 
 UT-CELL-MAX TYPED-BUFFER UT-ROWS n
@@ -934,6 +937,8 @@ create UT-CODEX-TURN PATH-CAP allot   variable UT-CODEX-TURN-U
    r ru i UT-F-ROUTE UT-FIELD!
    k ku i UT-F-KEY UT-FIELD!
    st i UT-F-STATUS UT-ROW-CELL !
+   UT-ARENA 0 i UT-F-FILE UT-FIELD!
+   UT-ARENA 0 i UT-F-BYTES UT-FIELD!
    UT-ARENA 0 i UT-F-BODY UT-FIELD! ;
 
 : UT-BODY+ ( ^u8 n -- ) {: a u :}
@@ -948,6 +953,12 @@ create UT-CODEX-TURN PATH-CAP allot   variable UT-CODEX-TURN-U
    n UT-NEXT-ROW UT-F-BODY 1+ UT-ROW-CELL +! ;
 
 : UT-ANSWER-CLOSE ( -- ) UT-NEXT-ROW 1+ UT-ROW-N atomic! ;
+
+\ closes the row being written, which replaces file f fu with b bu before it answers
+: UT-ANSWER-CLOSE-WRITING ( ^u8 n ^u8 n -- ) {: f fu b bu :}
+   f fu UT-NEXT-ROW UT-F-FILE UT-FIELD!
+   b bu UT-NEXT-ROW UT-F-BYTES UT-FIELD!
+   UT-ANSWER-CLOSE ;
 
 \ route r ru answers a request keyed k ku with status st and body b bu
 : UT-ANSWER ( ^u8 n ^u8 n n ^u8 n -- ) {: r ru k ku st b bu :}
@@ -1067,11 +1078,19 @@ create UT-CODEX-TURN PATH-CAP allot   variable UT-CODEX-TURN-U
    a s" Content-Type" s" application/json" HTTP:HEADER!
    a i UT-F-BODY UT-ROW$ HTTP:BODY! ;
 
+\ row i's file, when it names one, replaced before the answer
+: UT-ROW-WRITE ( n -- ) {: i :}
+   i 0 < if exit then
+   i UT-F-FILE UT-ROW$ {: f fu :}
+   fu 0= if exit then
+   f fu i UT-F-BYTES UT-ROW$ FS:WRITE-ALL ;
+
 \ a request to route r ru of provider p: logged, then answered from the rows
 : UT-SERVE ( HTTP:request HTTP:response ^u8 n n -- )
    {: q:HTTP:request a:HTTP:response r ru p :}
    q p UT-SEEN
    r ru q UT-BEARER$ q HTTP:BODY$ UT-REFRESH$ UT-FIND {: i :}
+   i UT-ROW-WRITE
    q a i UT-REPLY ;
 
 : UT-CLAUDE-USAGE$ ( -- ^u8 n ) s" /api.anthropic.com/api/oauth/usage" ;
@@ -1328,6 +1347,29 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
 
 \ whether a probe recorded row p a u's outcome since UT-AGE
 : UT-PROBED? ( n ^u8 n -- bool ) UT-RECORD DB-USAGE-AT UT-OLD-AT > ;
+
+\ a limit under label l lu, k percent used, with no reset instant
+: UT-WINDOW+ ( ^u8 n n -- ) {: l lu k :}
+   s\" {\"label\":\"" SB-APPEND l lu SB-APPEND
+   s\" \",\"percent\":" SB-APPEND k FMT:SB-U
+   s\" ,\"resetsAt\":\"\"}" SB-APPEND ;
+
+\ row p a u's record replaced by one in state s su fetched at UT-OLD-AT,
+\ its session se and its week we percent used
+: UT-SET-USED ( n ^u8 n ^u8 n n n -- ) {: p a u s su se we :}
+   SB-RESET s\" {\"fetchedAt\":" SB-APPEND UT-OLD-AT FMT:SB-U
+   s\" ,\"limits\":[" SB-APPEND s" Session (5-hour)" se UT-WINDOW+
+   [char] , SB-APPEND-C s" Weekly (7-day)" we UT-WINDOW+
+   s\" ],\"note\":\"\",\"state\":\"" SB-APPEND s su SB-APPEND
+   s\" \"}" SB-APPEND SB$ DB-USAGE-DECODE
+   s su UT-STATE= DB-LIMIT# 2 T=
+   [: [: p a u UT-BUF -1 DB-SET-USAGE ;] DB-WRITE ;] UT-STORE ;
+
+\ row p a u's last reading had room, little room, none, or its login was gone
+: UT-SET-FINE ( n ^u8 n -- ) s" ok" 10 20 UT-SET-USED ;
+: UT-SET-TIGHT ( n ^u8 n -- ) s" ok" 60 20 UT-SET-USED ;
+: UT-SET-BLOCKED ( n ^u8 n -- ) s" ok" 100 20 UT-SET-USED ;
+: UT-SET-DEAD ( n ^u8 n -- ) s" revoked" 0 0 UT-SET-USED ;
 
 \ a@x.test is Claude's one saved login
 : UT-CLAUDE-ONLY-A ( -- )
@@ -2093,6 +2135,148 @@ create UT-REAL 256 allot
    P-CLAUDE s" a@x.test" CMD-USE
    CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
    CLAUDE-CONFIG$ READ-FILE$ CFG-BA$ T$=
+   P-CLAUDE s" n@x.test" CMD-FORGET ;
+
+\ ---- next --------------------------------------------------------------------
+\ where x first occurs in l; -1 when it does not
+: UT-OFFSET ( ^u8 n ^u8 n -- n )
+   FIND-SUB MATCH option
+      none OF -1 ENDOF
+      some OF IDX>N ENDOF
+   ;MATCH ;
+
+\ since the mark, both x and y were logged, x first
+: UT-SENT-FIRST? ( ^u8 n ^u8 n -- bool ) {: x xu y yu :}
+   UT-LOG-NEW$ {: l lu :}
+   l lu x xu UT-OFFSET {: i :}
+   l lu y yu UT-OFFSET {: j :}
+   i 0 >= j 0 >= and i j < and ;
+
+\ next skips the live row whatever its last reading, tries n although its
+\ last reading was blocked, installs it once its fresh probe as a saved login
+\ has room, then probes the login it saved back as saved: both expired
+\ tokens are refreshed, n's first
+: UT-NEXT-PICKS ( -- )
+   UT-PUT-N
+   CLAUDE-CREDS$ CREDS-A-OLD$ WRITE-PRIVATE
+   P-CLAUDE s" a@x.test" UT-SET-FINE
+   P-CLAUDE s" n@x.test" UT-SET-BLOCKED
+   UT-LOG-MARK
+   [: P-CLAUDE CMD-NEXT ;] UT-CAPTURE$ s\" claude: now n@x.test\n" T$=
+   P-CLAUDE UT-LIVE-NAME s" n@x.test" T$=
+   CLAUDE-CREDS$ READ-FILE$ s" sk-b-new" CONTAINS? TTRUE
+   P-CLAUDE s" n@x.test" UT-PROBED? TTRUE
+   P-CLAUDE s" a@x.test" UT-PROBED? TTRUE
+   s\" \"refresh_token\":\"r-n\"" s\" \"refresh_token\":\"r-a\""
+   UT-SENT-FIRST? TTRUE
+   P-CLAUDE s" a@x.test" CREDS-A$ UT-SET-LOGIN
+   P-CLAUDE s" a@x.test" CMD-USE
+   CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
+   CLAUDE-CONFIG$ READ-FILE$ CFG-BA$ T$=
+   P-CLAUDE s" n@x.test" CMD-FORGET ;
+
+\ a's login as the running CLI rewrites it: a new refresh token
+: CREDS-A-ROT$ ( -- ^u8 n )
+   s\" {\"claudeAiOauth\":{\"accessToken\":\"sk-a\",\"refreshToken\":\"r-a-rot\",\"expiresAt\":4102444800000,\"subscriptionType\":\"max\"}}" ;
+
+\ n's refresh answers once the live Claude login is rewritten to a's rotated one
+: UT-ROTATE-ON-N ( -- )
+   UT-CLAUDE-TOKEN$ s" r-n" 200 UT-ANSWER-OPEN
+   s\" {\"access_token\":\"sk-b-new\",\"refresh_token\":\"r-b-new\",\"expires_in\":3600}" UT-BODY+
+   CLAUDE-CREDS$ CREDS-A-ROT$ UT-ANSWER-CLOSE-WRITING ;
+
+\ a login the running CLI rewrites while next probes is the one saved back
+: UT-NEXT-ROTATED ( -- )
+   UT-PUT-N
+   P-CLAUDE s" n@x.test" UT-AGE
+   UT-ROTATE-ON-N
+   P-CLAUDE CMD-NEXT
+   P-CLAUDE UT-LIVE-NAME s" n@x.test" T$=
+   P-CLAUDE s" a@x.test" CREDS-A-ROT$ UT-LOGIN=
+   P-CLAUDE s" a@x.test" CREDS-A$ UT-SET-LOGIN
+   P-CLAUDE s" a@x.test" CMD-USE
+   CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
+   CLAUDE-CONFIG$ READ-FILE$ CFG-BA$ T$=
+   P-CLAUDE s" n@x.test" CMD-FORGET
+   UT-ANSWERS-DEFAULT ;
+
+\ live Claude files mixed over the installed row's expired token: next
+\ never tries that row, so the token the CLI holds is not refreshed
+: UT-NEXT-MIXED ( -- )
+   UT-PUT-N
+   CLAUDE-CREDS$ CREDS-A-OLD$ WRITE-PRIVATE
+   P-CLAUDE CMD-SAVE
+   CLAUDE-CONFIG$ CFG-B$ WRITE-PRIVATE
+   P-CLAUDE s" a@x.test" UT-SET-FINE
+   P-CLAUDE s" n@x.test" UT-AGE
+   P-CLAUDE CMD-NEXT
+   P-CLAUDE UT-LIVE-NAME s" n@x.test" T$=
+   P-CLAUDE s" a@x.test" UT-PROBED? TFALSE
+   P-CLAUDE s" a@x.test" CREDS-A$ UT-SET-LOGIN
+   P-CLAUDE s" a@x.test" CMD-USE
+   CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
+   CLAUDE-CONFIG$ READ-FILE$ CFG-BA$ T$=
+   P-CLAUDE s" n@x.test" CMD-FORGET ;
+
+\ token t's Codex usage call answers that its week is used up
+: UT-USED-UP ( ^u8 n -- ) {: t tu :}
+   UT-CODEX-USAGE$ t tu 200 s\" {\"rate_limit\":{\"primary_window\":{\"used_percent\":100,\"limit_window_seconds\":604800,\"reset_at\":1789904220}}}" UT-ANSWER ;
+
+\ next tries the row whose last reading had room before the one with
+\ little room, passes it over when its fresh reading has none, and installs
+\ the second before reaching the row whose last reading was blocked
+: UT-NEXT-ORDER ( -- )
+   s" at-full" UT-USED-UP
+   s" e@x.test" s" idle" UT-PUT-AT
+   s" f@x.test" s" full" UT-PUT-AT
+   P-CODEX s" d@x.test" UT-SET-TIGHT
+   P-CODEX s" e@x.test" UT-SET-BLOCKED
+   P-CODEX s" f@x.test" UT-SET-FINE
+   UT-LOG-MARK
+   P-CODEX CMD-NEXT
+   CODEX-AUTH$ READ-FILE$ AUTH-D2$ T$=
+   s\" Bearer at-full\n" s\" Bearer at-d2\n" UT-SENT-FIRST? TTRUE
+   P-CODEX s" f@x.test" UT-PROBED? TTRUE
+   P-CODEX s" e@x.test" UT-PROBED? TFALSE
+   P-CODEX s" c@x.test" CMD-USE
+   P-CODEX s" e@x.test" CMD-FORGET
+   P-CODEX s" f@x.test" CMD-FORGET
+   UT-ANSWERS-DEFAULT ;
+
+\ with no other row's fresh reading having room, and the rows whose login
+\ is gone never tried, next installs nothing and probes nothing more
+: UT-NEXT-NO-ROOM ( -- )
+   s" at-d2" UT-USED-UP
+   P-CODEX s" z@x.test" AUTH-Z$ UT-PUT
+   P-CODEX s" y@x.test" AUTH-Y$ UT-PUT
+   P-CODEX s" c@x.test" UT-AGE
+   P-CODEX s" d@x.test" UT-SET-FINE
+   P-CODEX s" y@x.test" UT-SET-DEAD
+   P-CODEX s" z@x.test" s" missing" 0 0 UT-SET-USED
+   UT-LOG-MARK
+   [: P-CODEX CMD-NEXT ;] E-SW-NO-ROOM TTHROWSQ
+   CODEX-AUTH$ READ-FILE$ AUTH-C$ T$=
+   P-CODEX s" d@x.test" UT-PROBED? TTRUE
+   P-CODEX s" c@x.test" UT-PROBED? TFALSE
+   P-CODEX s" y@x.test" UT-PROBED? TFALSE
+   P-CODEX s" z@x.test" UT-PROBED? TFALSE
+   P-CODEX s" y@x.test" CMD-FORGET
+   P-CODEX s" z@x.test" CMD-FORGET
+   UT-ANSWERS-DEFAULT ;
+
+\ a pending install stops next before anything is probed or switched
+: UT-NEXT-UNREPAIRED ( -- )
+   UT-PUT-N
+   P-CLAUDE s" n@x.test" UT-AGE
+   P-CLAUDE s" a@x.test" UT-AGE
+   [: [: P-CLAUDE s" b@x.test" DB-NOTE-PENDING ;] DB-WRITE ;] UT-STORE
+   UT-LOG-MARK
+   [: P-CLAUDE CMD-NEXT ;] E-SW-UNREPAIRED TTHROWSQ
+   UT-LOG-NEW$ s" https://" CONTAINS? TFALSE
+   P-CLAUDE s" n@x.test" UT-PROBED? TFALSE
+   P-CLAUDE s" a@x.test" UT-PROBED? TFALSE
+   CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
+   [: [: P-CLAUDE DB-CLEAR-PENDING ;] DB-WRITE ;] UT-STORE
    P-CLAUDE s" n@x.test" CMD-FORGET ;
 
 \ ---- redeem ------------------------------------------------------------------
@@ -3094,6 +3278,14 @@ create UT-WRAP-BUF 1024 allot
    P-CODEX s" c@x.test" CMD-USE
    s" request" UT-RAN-HELD ;
 
+\ next probes the logins it tries and the one it saved back in its turn
+: UT-NEXT-HELD ( -- )
+   P-CODEX s" d@x.test" UT-AGE
+   UT-LOG-MARK
+   P-CODEX CMD-NEXT
+   s" request" UT-RAN-HELD
+   P-CODEX s" c@x.test" CMD-USE ;
+
 \ redeem asks for the reset and probes again in its turn
 : UT-REDEEM-HELD ( -- )
    UT-LOG-MARK
@@ -3115,6 +3307,7 @@ create UT-WRAP-BUF 1024 allot
 : UT-COMMANDS-HELD ( -- )
    UT-USAGE-HELD
    UT-USE-HELD
+   UT-NEXT-HELD
    UT-REDEEM-HELD
    UT-ADD-HELD
    UT-ANSWERS-DEFAULT ;
@@ -3218,7 +3411,7 @@ $1A4 constant UT-MODE-OUT                              \ 0644
    rc c T= ;
 
 : USAGE-TEXT$ ( -- ^u8 n )
-   s\" usage: kiba status [--json]\n       kiba save [claude|codex]\n       kiba use <claude|codex> <email>\n       kiba add <claude|codex> [name]\n       kiba forget <claude|codex> <email>\n       kiba redeem <claude|codex> <email>\n       kiba usage [claude|codex]\n" ;
+   s\" usage: kiba status [--json]\n       kiba save [claude|codex]\n       kiba use <claude|codex> <email>\n       kiba next <claude|codex>\n       kiba add <claude|codex> [name]\n       kiba forget <claude|codex> <email>\n       kiba redeem <claude|codex> <email>\n       kiba usage [claude|codex]\n" ;
 
 \ MAIN exits 0 after a run, 1 with the reason when a command fails, and 64
 \ with the usage when it refuses the command line
@@ -3231,6 +3424,10 @@ $1A4 constant UT-MODE-OUT                              \ 0644
    s" " s\" kiba: no such saved account\n" 1 UT-KIBA=
    UT-KIBA-NEW s" use" PROCESS:ARG s" bogus" PROCESS:ARG s" x" PROCESS:ARG
    s" " USAGE-TEXT$ 64 UT-KIBA=
+   UT-KIBA-NEW s" next" PROCESS:ARG s" bogus" PROCESS:ARG
+   s" " USAGE-TEXT$ 64 UT-KIBA=
+   UT-KIBA-NEW s" next" PROCESS:ARG s" claude" PROCESS:ARG
+   s" " s\" kiba: no other saved account was found with room\n" 1 UT-KIBA=
    UT-KIBA-NEW s" " USAGE-TEXT$ 64 UT-KIBA= ;
 
 \ UT-KIBA-NEW with the live files placed in UT-CC$ and UT-CX$
@@ -3349,6 +3546,12 @@ $1A4 constant UT-MODE-OUT                              \ 0644
    UT-USAGE-CHECKED
    UT-USE-PROBES
    UT-USE-PROBES-CLAUDE
+   UT-NEXT-PICKS
+   UT-NEXT-ROTATED
+   UT-NEXT-MIXED
+   UT-NEXT-ORDER
+   UT-NEXT-NO-ROOM
+   UT-NEXT-UNREPAIRED
    UT-COMMANDS-HELD
    UT-USAGE-BUSY
    UT-REDEEM-CLAUDE

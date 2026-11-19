@@ -23,9 +23,14 @@ checked Habu program; a thin Omarchy bar widget runs it.
   expires, so none is lost: Claude's next grant's `ends_at`, Codex's
   earliest available credit's `expires_at` from its credit list, asked only
   while the count is above 0 (the user, 2026-11-18).
+- `kiba next <provider>` switches to another saved account with room:
+  those whose login is gone are skipped, the rest are tried by their last
+  reading, room first, then little room, then the rest, and the first whose
+  fresh reading has room is installed (the user, 2026-11-19).
 - Out of scope: a `usage --json` report, finding the login shell's `PATH`
   (a CLI run from a shell already has it), and any daemon or background
-  switcher; the auto-switch mod schedules and picks.
+  switcher; the auto-switch mod schedules its own switches, and `kiba next`
+  picks only when run.
 
 ## Habu code
 

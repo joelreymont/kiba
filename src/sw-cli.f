@@ -1,5 +1,6 @@
 split-str
-\ sw-cli.f - the kiba commands: status, usage, save, use, add, forget, redeem.
+\ sw-cli.f - the kiba commands: status, usage, save, use, next, add, forget,
+\ redeem.
 require ../src/sw-store.f
 require ../src/sw-run.f
 require ../src/sw-usage.f
@@ -75,6 +76,7 @@ public
    rc E-SW-NO-RESETS = if NO-RESETS-REASON$ exit then
    rc E-SW-REMOTE = if REMOTE-REASON$ exit then
    rc E-SW-OUTPUT = if s" kiba: could not write the output" exit then
+   rc E-SW-NO-ROOM = if s" kiba: no other saved account was found with room" exit then
    rc E-STR-CAPACITY = if s" kiba: a path or name is too long" exit then
    rc E-FS-OPEN = if s" kiba: cannot open a login file" exit then
    rc E-FS-IO = if s" kiba: a file read, write, or rename failed" exit then
@@ -338,19 +340,104 @@ create LIVE-B NAME-CAP allot   variable LIVE-B-U    \ -1 when none
    p 0 live OUTCOME
    p 0 RECORD ;
 
+\ the name the live login was saved back under; empty when none was
 create OLD-NAME NAME-CAP allot   variable OLD-NAME-U
 
-\ after the install the new login is probed as live, then the login saved
-\ back as saved: its usage came from a live probe, which never refreshes
-: USE-RUN ( n ^u8 n -- ) {: p a u :}
+: SAVE-OLD ( n -- ) {: p :}
    p SAVE-BACK
-   LIVE-ROW$ OLD-NAME OLD-NAME-U NAME-CAP SPAN!
-   p a u INSTALL
-   p a u true PROBE-IN-TURN
+   LIVE-ROW$ OLD-NAME OLD-NAME-U NAME-CAP SPAN! ;
+
+\ the login saved back, if any, is probed as saved unless it is a u, just
+\ installed
+: PROBE-OLD ( n ^u8 n -- ) {: p a u :}
    OLD-NAME OLD-NAME-U @ {: o ou :}
    ou 0= if exit then
    o ou a u STR= if exit then
    p o ou false PROBE-IN-TURN ;
+
+\ after the install the new login is probed as live, then the login saved
+\ back as saved: its usage came from a live probe, which never refreshes
+: USE-RUN ( n ^u8 n -- ) {: p a u :}
+   p SAVE-OLD
+   p a u INSTALL
+   p a u true PROBE-IN-TURN
+   p a u PROBE-OLD ;
+
+\ ---- next ---------------------------------------------------------------------
+\ A row's group comes from the reading the list holds, which recording a
+\ probe leaves as it was, so each row is probed at most once.
+create NEXT-NAME NAME-CAP allot   variable NEXT-NAME-U
+
+: NEXT-NAME$ ( -- ^u8 n ) NEXT-NAME NEXT-NAME-U @ ;
+
+\ row i's group, PICK's order; a blocked row is still tried, last, as its
+\ limits may have reset since that reading
+: NEXT-GROUP ( n -- n ) {: i :}
+   i DB-ROW-NAME$ LIVE-NAME? if -1 exit then
+   i DB-ROW-USAGE 0= if 2 exit then
+   false ROW-STATE MATCH row-state
+      fine OF 0 ENDOF
+      tight OF 1 ENDOF
+      blocked OF 2 ENDOF
+      dead OF -1 ENDOF
+      unplanned OF 2 ENDOF
+      unprobed OF 2 ENDOF
+   ;MATCH ;
+
+: ROOM? ( row-state -- bool )
+   MATCH row-state
+      fine OF true ENDOF
+      tight OF true ENDOF
+      blocked OF false ENDOF
+      dead OF false ENDOF
+      unplanned OF false ENDOF
+      unprobed OF false ENDOF
+   ;MATCH ;
+
+\ row r probed as a saved login and recorded; true when its fresh reading,
+\ still in the usage record, has room
+: PROBE-ROOM ( n n -- bool ) {: p r :}
+   p r false OUTCOME
+   p r RECORD
+   false ROW-STATE ROOM? ;
+
+: TRY-ROW ( n n n -- bool ) {: p g r :}
+   r NEXT-GROUP g <> if false exit then
+   p r PROBE-ROOM ;
+
+\ the first row of group g with room, its name in NEXT-NAME; false when none
+: PICK-IN ( n n -- bool ) {: p g :}
+   DB-ROW# 0 ?do
+      p g i TRY-ROW if
+         i DB-ROW-NAME$ NEXT-NAME NEXT-NAME-U NAME-CAP SPAN!
+         true unloop exit
+      then
+   loop false ;
+
+\ the row to install, its name in NEXT-NAME; E-SW-NO-ROOM when none has room
+: PICK ( n -- ) {: p :}
+   3 0 ?do p i PICK-IN if unloop exit then loop
+   E-SW-NO-ROOM throw ;
+
+\ the live login is saved back right before the install, so a token the CLI
+\ rotated during the probes is saved; the pick recorded the install's reading
+: NEXT-RUN ( n -- ) {: p :}
+   p p LIVE-MIXED? LIVE-NAMES
+   p DB-LIST
+   p PICK
+   p SAVE-OLD
+   p NEXT-NAME$ INSTALL
+   p NEXT-NAME$ PROBE-OLD ;
+
+public
+
+\ saves the live login back, then makes live the first other saved login
+\ whose fresh reading has room
+: CMD-NEXT ( n -- ) {: p :}
+   p [: p NEXT-RUN ;] STORE-TURN
+   p PROVIDER$ .TEXT s" : now " .TEXT NEXT-NAME$ .TEXT .NL ;
+
+private
 
 \ ---- usage --------------------------------------------------------------------
 ENUM usage-step checking saving listing listing-mixed probing reported failed ;ENUM
