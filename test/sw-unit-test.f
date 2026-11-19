@@ -1882,47 +1882,24 @@ create UT-OFF-PATH 256 allot
    P-CLAUDE LIVE-IDENTITY TTRUE ID-LIVE EMAIL$ s" a@x.test" T$=
    P-CLAUDE CMD-SAVE ;
 
-\ ---- a variable in kiba's own environment ------------------------------------
-\ GETENV and PROC-ENV-INHERIT-MISSING read the startup envp cell, which libc's
-\ setenv never changes: a test points that cell at a copy with one row added
-DYNAMIC-BUFFER UT-ENVP ^u8
-create UT-ENV-ROW 512 allot
-
-: UT-ENVP! ( ^^u8 -- ) ENV-DATA ENVP-CELL CELL / ptr-field ! ;
-
-: UT-ENV-ROWS ( -- n ) 0 begin dup ENVP 0= 0= while 1+ repeat ;
-
-: UT-ENV-ROW! ( ^u8 n ^u8 n -- ) {: name nu val vu :}
-   SB-RESET name nu SB-APPEND s" =" SB-APPEND val vu SB-APPEND
-   0 SB-APPEND-C SB$ UT-ENV-ROW 512 SPAN-COPY 2drop ;
-
-\ body runs with name=val in this process's environment, and the startup
-\ environment is back afterwards
-: UT-WITH-ENV ( ^u8 n ^u8 n [ -- ] -- ) {: name nu val vu body :}
-   ENVP-BASE {: old :}
-   name nu val vu UT-ENV-ROW!
-   UT-ENV-ROWS {: n :}
-   n 2 + UT-ENVP-RESERVE
-   n 0 ?do i ENVP i UT-ENVP ! loop
-   UT-ENV-ROW n UT-ENVP !
-   NULL-PTR n 1+ UT-ENVP !
-   0 UT-ENVP UT-ENVP!
-   [: body execute ;] [: old UT-ENVP! ;] finally ;
-
 create UT-REAL 256 allot
 
 : UT-DIR-TAIL$ ( n -- ^u8 n )
    P-CLAUDE = if s" /.claude" exit then
    s" /.codex" ;
 
+\ the provider's real home, where test.sh's second run points its variable
+: UT-REAL-HOME$ ( n -- ^u8 n ) {: p :}
+   SB-RESET HOME$ SB-APPEND s" /real-home" SB-APPEND
+   p UT-DIR-TAIL$ SB-APPEND SB$ UT-REAL 256 SPAN-COPY ;
+
 \ a provider's home variable set in kiba's own environment never reaches
 \ the login, which gets exactly the throwaway login dir under that name
 : UT-LOGIN-ENV ( n ^u8 n -- ) {: p var vu :}
-   s" /real-home" UT-HOME-FILE$ UT-REAL 256 SPAN-COPY {: r ru :}
+   p UT-REAL-HOME$ {: r ru :}
+   var vu GETENV r ru T$=
    UT-LOG-MARK
-   var vu r ru [: var vu GETENV r ru T$= p s" " CMD-ADD ;] UT-WITH-ENV
-   s" CLAUDE_CONFIG_DIR" GETENV nip 0 T=
-   s" CODEX_HOME" GETENV nip 0 T=
+   p s" " CMD-ADD
    UT-LOG-NEW$ r ru CONTAINS? TFALSE
    p LOGIN-HOME$ UT-BUF 256 SPAN-COPY {: h hu :}
    SB-RESET s" env " SB-APPEND var vu SB-APPEND s" =" SB-APPEND
@@ -3348,7 +3325,6 @@ $1A4 constant UT-MODE-OUT                              \ 0644
    UT-ADD-EMPTY
    UT-ADD-CLAUDE
    UT-ADD-FAILED
-   UT-LOGIN-ENVS
    UT-PCT
    UT-RFC3339
    UT-PCT-CALLERS
@@ -3396,11 +3372,25 @@ $1A4 constant UT-MODE-OUT                              \ 0644
    UT-EXIT-CODES
    UT-CONFIG-PLACES ;
 
+\ test.sh's second run starts kiba with CLAUDE_CONFIG_DIR and CODEX_HOME
+\ set, which only the login environment case expects
+: UT-HOMES-SET? ( -- bool )
+   s" CLAUDE_CONFIG_DIR" GETENV nip 0 > ;
+
+\ UT-LOG-MARK reads the log, which exists only once a fake has written it
+: UT-HOMES ( -- )
+   LOG$ s" " FS:WRITE-ALL
+   UT-LOGIN-ENVS ;
+
+: UT-CASES ( -- )
+   UT-HOMES-SET? if UT-HOMES exit then
+   UT-ALL ;
+
 : UT-MAIN ( -- )
    T-RESET
    ALLOC-BUFFERS
    UT-SERVE-START
-   [: UT-ALL ;] [: UT-SERVE-STOP ;] finally
+   [: UT-CASES ;] [: UT-SERVE-STOP ;] finally
    T-REPORT ;
 
 UT-MAIN
