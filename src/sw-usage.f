@@ -42,14 +42,9 @@ package SW
 create DATE-BUF DATE:TIME-LEN allot   \ the UTC format fixes its length
 
 \ ---- decimal parsing -----------------------------------------------------------
-: DIGIT ( n -- n ) $30 - ;
-
-: DIGIT? ( n -- bool ) dup $30 >= swap $39 <= and ;
-
 \ A reading is a JSON number's spelling, -?d+(.d+)?([eE][+-]?d+)?, in percent
 \ (12.495 means 12.495%). Its whole percent is rounded once from those decimal
 \ digits, half away from zero, never through a binary float.
-$7FFFFFFFFFFFFFFF constant INT-MAX
 
 variable MANT-START                 \ the mantissa's first digit
 variable MANT-POINT                 \ its decimal point; MANT-END when it has none
@@ -61,7 +56,7 @@ variable EXP-VALUE                  \ the exponent, its magnitude held to a cap
 
 \ the value digits lo..hi-1 spell, held to cap
 : DIGIT-VALUE ( ^u8 n n n -- n ) {: a lo hi cap :}
-   0 hi lo ?do 10 * a i + c@ DIGIT + cap min loop ;
+   0 hi lo ?do 10 * a i + c@ STR-DIGIT-VALUE + cap min loop ;
 
 \ the mantissa from index at; false when a side of its point has no digit
 : MANTISSA? ( ^u8 n n -- bool ) {: a u at :}
@@ -76,7 +71,7 @@ variable EXP-VALUE                  \ the exponent, its magnitude held to a cap
 
 \ the exponent at index at, if any, into EXP-VALUE; the index after it, -1
 \ when malformed. Its magnitude is held to u + 20: past that a nonzero
-\ mantissa is past INT-MAX, or below 0.1, either way.
+\ mantissa is past STR-MAX-I64, or below 0.1, either way.
 : EXPONENT-AT ( ^u8 n n -- n ) {: a u at :}
    0 EXP-VALUE !
    a u at $65 BYTE-IS? a u at $45 BYTE-IS? or 0= if at exit then
@@ -91,28 +86,28 @@ variable EXP-VALUE                  \ the exponent, its magnitude held to a cap
 : MANT-DIGIT ( ^u8 n -- n ) {: a k :}
    MANT-START @ k + dup MANT-POINT @ >= if 1+ then {: at :}
    at MANT-END @ >= if 0 exit then
-   at a + c@ DIGIT ;
+   at a + c@ STR-DIGIT-VALUE ;
 
-\ acc * 10 + d; -1 once past INT-MAX
+\ acc * 10 + d; -1 once past STR-MAX-I64
 : SHIFT-DIGIT ( n n -- n ) {: acc d :}
    acc 0 < if -1 exit then
-   acc INT-MAX d - 10 / > if -1 exit then
+   acc STR-MAX-I64 d - 10 / > if -1 exit then
    acc 10 * d + ;
 
 : MANT-ZERO? ( ^u8 -- bool ) {: a :}
    true MANT-END @ MANT-START @ ?do a i + c@ dup $30 = swap $2E = or and loop ;
 
-\ the mantissa rounded to its first p digits, half up; -1 past INT-MAX
+\ the mantissa rounded to its first p digits, half up; -1 past STR-MAX-I64
 : MANT-ROUNDED ( ^u8 n -- n ) {: a p :}
    0 p 0 ?do a i MANT-DIGIT SHIFT-DIGIT loop {: w :}
    w 0 < if -1 exit then
    p 0 < if w exit then
    a p MANT-DIGIT 5 < if w exit then
-   w INT-MAX = if -1 exit then
+   w STR-MAX-I64 = if -1 exit then
    w 1+ ;
 
 \ the whole percent reading a u spells, rounded half up;
-\ -1 when it is malformed, below zero or past INT-MAX
+\ -1 when it is malformed, below zero or past STR-MAX-I64
 : USED-PERCENT ( ^u8 n -- n ) {: a u :}
    a u 0 $2D BYTE-IS? {: neg :}
    a u neg if 1 else 0 then MANTISSA? 0= if -1 exit then
@@ -667,12 +662,12 @@ create HOST-BUF DETAIL-MAX allot    variable HOST-U
 : UPPER? ( n -- bool ) dup $41 >= swap $5A <= and ;
 
 : URI-CHAR? ( n -- bool ) {: c :}
-   c LOWER? c UPPER? or c DIGIT? or if true exit then
+   c LOWER? c UPPER? or c STR-DIGIT? or if true exit then
    c $2F = c $2E = or c $5F = or c $7E = or c $25 = or
    c $2D = or c $3F = or c $3D = or c $26 = or ;
 
 : HOST-CHAR? ( n -- bool ) {: c :}
-   c LOWER? c DIGIT? or c $2E = or c $2D = or ;
+   c LOWER? c STR-DIGIT? or c $2E = or c $2D = or ;
 
 : ALL? ( ^u8 n [ n -- bool ] -- bool ) {: a u ok :}
    u 0 ?do a i + c@ ok execute 0= if false unloop exit then loop
