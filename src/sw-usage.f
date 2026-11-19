@@ -149,6 +149,8 @@ TYPED-VARIABLE REQ-BODY-A ^u8   variable REQ-BODY-U
 \ tests reach a local server through URL-BASE; length 0 sends each URL as written
 create URL-BASE PATH-CAP allot     variable URL-BASE-U
 TYPED-VARIABLE TARGET-TEXT ^VEC:vector<u8>
+\ the last answer's body, at most BUF-CAP bytes
+TYPED-VARIABLE ANSWER-BODY ^VEC:vector<u8>
 
 : SCHEME$ ( -- ^u8 n ) s" https://" ;
 
@@ -205,12 +207,11 @@ TYPED-VARIABLE TARGET-TEXT ^VEC:vector<u8>
    REQ-BODY-U @ 0 < if true exit then
    h REQ-BODY-A @ REQ-BODY-U @ CURL:BODY! SET? ;
 
-\ the answer's status, its body in OBJ-BUF; -1 when the transfer failed,
-\ -2 when the body overran OBJ-BUF
+\ the answer's status, its body in ANSWER-BODY; -1 when the transfer failed,
+\ -2 when the body overran BUF-CAP
 : ANSWER ( CURL:fetch-result -- n )
    MATCH CURL:fetch-result
-      response OF {: st:CURL:http-status got:len :}
-         got LEN>N OBJ-U ! st CURL:HTTP-STATUS>N ENDOF
+      response OF drop CURL:HTTP-STATUS>N ENDOF
       truncated OF 2drop -2 ENDOF
       failed OF drop -1 ENDOF
    ;MATCH ;
@@ -220,24 +221,24 @@ TYPED-VARIABLE TARGET-TEXT ^VEC:vector<u8>
    h HEADERS-SET? 0= if -1 exit then
    h BODY-SET? 0= if -1 exit then
    h url uu TARGET$ CURL:URL! SET? 0= if -1 exit then
-   h OBJ-BUF BUF-CAP >LEN CURL:PERFORM ANSWER ;
+   h BUF-CAP >LEN ANSWER-BODY @ CURL:PERFORM ANSWER ;
 
 \ the staged request sent to url: ANSWER's status, or -1 when it was not sent;
 \ the handle, which holds copies of the bearer token, is freed on a throw too
 : TRANSFER ( ^u8 n -- n ) {: url uu :}
-   0 OBJ-U !
+   ANSWER-BODY TEXTS-RESET
    CURL:INIT MATCH CURL:init-result
       ready OF {: h:CURL:handle :}
          [: h url uu SEND-ON ;] [: h CURL:CLEANUP ;] finally ENDOF
       failed OF drop -1 ENDOF
    ;MATCH ;
 
-\ TRANSFER, where a body that overran OBJ-BUF throws
+\ TRANSFER, where a body that overran BUF-CAP throws
 : SEND ( ^u8 n -- n )
    TRANSFER dup -2 = if DOC-TOO-BIG then ;
 
 \ the body of the last answer
-: ANSWER$ ( -- ^u8 n ) OBJ$ ;
+: ANSWER$ ( -- ^u8 n ) ANSWER-BODY @ VEC:SPAN SPAN:$ ;
 
 \ the body bytes come from a finished JSON-OPEN chain
 : POST-JSON ( ^u8 n ^u8 n -- n ) {: b bu url uu :}

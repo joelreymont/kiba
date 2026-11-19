@@ -25,7 +25,7 @@ $A000 constant S-IFLNK           \ the symlink file type in st_mode
 TYPED-VARIABLE CFG-A ^u8    variable CFG-U     \ the live .claude.json document
 TYPED-VARIABLE OUT-A ^u8    variable OUT-U     \ the spliced .claude.json
 TYPED-VARIABLE FILE-A ^u8   variable FILE-U    \ the live credentials or auth document
-TYPED-VARIABLE OBJ-A ^u8    variable OBJ-U     \ an oauthAccount object, a JWT payload or a provider's answer
+TYPED-VARIABLE OBJ-A ^u8    variable OBJ-U     \ an oauthAccount object or a JWT payload
 TYPED-VARIABLE TOK-A ^u8    variable TOK-U     \ a raw id_token string
 TYPED-VARIABLE VAL-A ^u8    variable VAL-U     \ a decoded token
 TYPED-VARIABLE ACCT-ID-A ^u8  variable ACCT-ID-U  \ a ChatGPT account id
