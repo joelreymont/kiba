@@ -2,8 +2,7 @@ import QtQuick
 import Quickshell.Io
 
 // Model: runs the kiba CLI, holds its parsed status, and runs one action at
-// a time. It reads what a row needs from a usage record (dead, relogin,
-// refused); everything else about an account comes from the CLI.
+// a time. Everything about an account comes from the CLI.
 Item {
   id: root
   visible: false
@@ -173,30 +172,21 @@ Item {
 
   function recordKey(provider, name) { return provider + "\n" + name }
 
-  // The saved login no longer works. An expired live token is its CLI's to
-  // refresh; a revoked or missing one is dead either way.
-  function dead(usage, active) {
-    if (!usage) return false
-    return usage.state === "revoked" || usage.state === "missing" || (usage.state === "expired" && !active)
-  }
-
-  // A click logs in again instead of switching: the saved login is dead, or
-  // its usage checks are rate limited and a fresh login replaces the token.
-  function relogin(usage, active) {
-    return !active && (dead(usage, active) || (!!usage && usage.state === "throttled"))
-  }
-
-  // a saved Claude login Anthropic turned away: a probe counts it as answered
-  function refused(provider, usage, active) {
-    return provider === "claude" && !!usage && usage.state === "expired" && !active
-  }
-
   // ------------------------------------------------------------- status JSON
   // The status snapshot: {providers: [{provider, accounts, error?,
-  // installedAt?, live?}]}; an account is {active, name, plan, usage?}; a
-  // usage record is {fetchedAt, limits, note, resets?, state}; a limit is
-  // {label, left?, percent, resetsAt}, `left` the percent left its figure
-  // shows; resets is {count, expiresAt?, grant, program}, expiresAt when the
+  // installedAt?, live?}]}; an account is {active, name, plan, rank,
+  // standing, shownPlan, relogin, reopensAt?, usage?, figures?, outcome?,
+  // oldAt?}: rank its place in the provider's room order, 0 first; standing
+  // fine, tight, blocked, dead, unplanned or unprobed; shownPlan the plan to
+  // show; relogin whether a click logs in again; reopensAt, while blocked,
+  // when it can take work again. With a usage record come figures, the
+  // session, the week, then each model window as {label, left, low}, left
+  // the percent left and low below half; outcome, what the last probe came
+  // to (answered, waiting or failed); and oldAt, the epoch second the
+  // reading counts as old, absent for a record with no limits. A usage
+  // record is {fetchedAt, limits, note, resets?, state}; a limit is {label,
+  // left?, percent, resetsAt}, `left` the percent left its figure shows;
+  // resets is {count, expiresAt?, grant, program}, expiresAt when the
   // earliest counted reset expires. Members that are nil are left out.
   function normalizeLive(live) {
     if (live === undefined || live === null) return null
@@ -221,6 +211,19 @@ Item {
       limits: limits, resets: resets, resetsExpireAt: resetsExpireAt }
   }
 
+  // an account's figures; [] when absent, undefined when malformed
+  function normalizeFigures(figures) {
+    if (figures === undefined || figures === null) return []
+    if (!Array.isArray(figures)) return undefined
+    var out = []
+    for (var i = 0; i < figures.length; i += 1) {
+      var f = figures[i]
+      if (!f || typeof f.label !== "string" || typeof f.left !== "number" || typeof f.low !== "boolean") return undefined
+      out.push({ label: f.label, left: f.left, low: f.low })
+    }
+    return out
+  }
+
   function normalize(content) {
     var value
     try { value = JSON.parse(String(content || "")) }
@@ -236,10 +239,16 @@ Item {
       var accounts = []
       for (var j = 0; j < p.accounts.length; j += 1) {
         var a = p.accounts[j]
-        if (!a || typeof a.name !== "string") return null
+        if (!a || typeof a.name !== "string" || typeof a.standing !== "string" || typeof a.rank !== "number"
+          || typeof a.shownPlan !== "string" || typeof a.relogin !== "boolean") return null
         var usage = normalizeUsage(a.usage)
         if (usage === undefined) return null
-        accounts.push({ name: a.name, plan: String(a.plan || ""), active: a.active === true, usage: usage })
+        var figures = normalizeFigures(a.figures)
+        if (figures === undefined) return null
+        accounts.push({ name: a.name, plan: String(a.plan || ""), active: a.active === true, usage: usage,
+          standing: a.standing, rank: a.rank, shownPlan: a.shownPlan, relogin: a.relogin,
+          reopensAt: String(a.reopensAt || ""), figures: figures,
+          oldAt: typeof a.oldAt === "number" ? a.oldAt : 0, outcome: String(a.outcome || "") })
       }
       out.push({ id: p.provider, title: providerTitle(p.provider), live: live, accounts: accounts,
         error: String(p.error || ""), installedAt: typeof p.installedAt === "number" ? p.installedAt : 0 })
@@ -337,7 +346,7 @@ Item {
     if (busy) return
     var a = account(r.provider, r.name)
     if (!a || a.active) return
-    if (r.kind === "relogin" || relogin(a.usage, a.active)) { add(r.provider, r.name); return }
+    if (r.kind === "relogin" || a.relogin) { add(r.provider, r.name); return }
     run("Switching " + providerTitle(r.provider) + " to " + r.name + "…",
       ["kiba", "use", r.provider, r.name], "action",
       plain(providerTitle(r.provider) + ": now " + r.name))
@@ -426,9 +435,10 @@ Item {
   }
 
   // What the probe of the providers `ids` came to, counted per row the
-  // reread shows: refreshed (the provider answered, or Anthropic turned a
-  // saved Claude login away), waiting (an expired live login, its CLI's to
-  // refresh), failed (no fresh usage), not probed (no record from this run).
+  // reread shows, by the outcome the CLI gives its record: refreshed
+  // (answered), waiting (an expired live login, its CLI's to refresh),
+  // failed (any other, with its note as a failure line), not probed (no
+  // record from this run).
   // `errors` are the CLI's save-back and provider failures. Each provider
   // whose rows the run reached gets it as its latest probe; one with no
   // rows loses its probe; any other keeps the one it had.
@@ -444,9 +454,8 @@ Item {
         var a = p.accounts[j], u = a.usage
         if (!u || u.fetchedAt < start) { skip += 1; continue }
         records[recordKey(p.id, a.name)] = JSON.stringify(u)
-        if (["ok", "unknown", "unsubscribed", "free"].indexOf(u.state) >= 0) done += 1
-        else if (u.state === "expired" && a.active) wait += 1
-        else if (refused(p.id, u, a.active)) done += 1
+        if (a.outcome === "answered") done += 1
+        else if (a.outcome === "waiting") wait += 1
         else { bad += 1; failures.push(p.title + ": " + a.name + ": " + u.note) }
       }
       var unprobed = errors.some(function(e) {

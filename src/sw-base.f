@@ -148,4 +148,10 @@ public
    i 0= if a 1 exit then
    a i ;
 
+\ the first index from at whose byte is not a digit
+: DIGIT-RUN ( ^u8 n n -- n ) {: a u at :}
+   at begin
+      dup u < if dup a + c@ STR-DIGIT? else false then
+   while 1+ repeat ;
+
 ;package

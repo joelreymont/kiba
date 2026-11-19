@@ -177,13 +177,55 @@ create STAT-REASON BUF:HDR-BYTES allot
    $5D ENC-C ENC-COMMA
    ENC-TAIL ;
 
+\ when row i reopens, while its session or week is used up
+: SNAP-REOPENS ( n bool -- ) {: i active :}
+   i active ROW-STANDING BLOCKED? 0= if exit then
+   s" reopensAt" ENC-KEY REOPENS-AT$ ENC-STR ENC-COMMA ;
+
+: SNAP-FIGURE ( n -- ) {: j :}
+   j FIGURE {: a u left low :}
+   $7B ENC-C
+   s" label" ENC-KEY a u ENC-STR ENC-COMMA
+   s" left" ENC-KEY left ENC-INT ENC-COMMA
+   s" low" ENC-KEY low ENC-BOOL
+   $7D ENC-C ;
+
+: SNAP-FIGURES ( n -- ) {: p :}
+   p FIGURES
+   s" figures" ENC-KEY $5B ENC-C
+   FIGURE# 0 ?do
+      i 0 > if ENC-COMMA then
+      i SNAP-FIGURE
+   loop
+   $5D ENC-C ENC-COMMA ;
+
+\ oldAt and outcome, from the decoded record
+: SNAP-PROBE ( bool -- ) {: active :}
+   OLD-AT if s" oldAt" ENC-KEY ENC-INT ENC-COMMA else drop then
+   s" outcome" ENC-KEY active PROBE-OUTCOME$ ENC-STR ENC-COMMA ;
+
+: SNAP-RELOGIN ( bool bool -- ) {: active probed :}
+   s" relogin" ENC-KEY
+   probed if active RELOGIN? else false then ENC-BOOL ENC-COMMA ;
+
+: SNAP-STANDING ( n bool bool -- ) {: i active probed :}
+   s" shownPlan" ENC-KEY i probed SHOWN-PLAN$ ENC-STR ENC-COMMA
+   s" standing" ENC-KEY i active ROW-STANDING ROW-STATE$ ENC-STR ;
+
 : SNAP-ACCOUNT ( n n -- ) {: p i :}
+   i STATUS-ACTIVE? i DB-ROW-USAGE {: active probed :}
    i 0 > if ENC-COMMA then
    $7B ENC-C
-   s" active" ENC-KEY i STATUS-ACTIVE? ENC-BOOL ENC-COMMA
+   s" active" ENC-KEY active ENC-BOOL ENC-COMMA
+   probed if p SNAP-FIGURES then
    s" name" ENC-KEY i DB-ROW-NAME$ ENC-STR ENC-COMMA
-   s" plan" ENC-KEY i DB-ROW-PLAN$ ENC-STR
-   i DB-ROW-USAGE if ENC-COMMA p SNAP-USAGE then
+   probed if active SNAP-PROBE then
+   s" plan" ENC-KEY i DB-ROW-PLAN$ ENC-STR ENC-COMMA
+   s" rank" ENC-KEY i ROOM-PLACE ENC-INT ENC-COMMA
+   active probed SNAP-RELOGIN
+   i active SNAP-REOPENS
+   i active probed SNAP-STANDING
+   probed if ENC-COMMA p SNAP-USAGE then
    $7D ENC-C ;
 
 : SNAP-ERROR ( -- )
@@ -201,8 +243,12 @@ create STAT-REASON BUF:HDR-BYTES allot
    s" plan" ENC-KEY ID-LIVE PLAN$ ENC-STR
    $7D ENC-C ;
 
+\ the row STATUS-ACTIVE? names; -1 for none
+: ACTIVE-ROW ( -- n )
+   STATUS-ROWS 0 ?do i STATUS-ACTIVE? if i unloop exit then loop -1 ;
+
 : SNAP-PROVIDER ( n -- ) {: p :}
-   p READ-PROVIDER
+   p READ-PROVIDER ACTIVE-ROW ROOM-SORT
    p 0 > if ENC-COMMA then
    $7B ENC-C
    s" accounts" ENC-KEY $5B ENC-C
@@ -364,25 +410,11 @@ create OLD-NAME NAME-CAP allot   variable OLD-NAME-U
    p a u PROBE-OLD ;
 
 \ ---- next ---------------------------------------------------------------------
-\ A row's group comes from the reading the list holds, which recording a
-\ probe leaves as it was, so each row is probed at most once.
+\ The room order is fixed before the first probe; recording a probe leaves
+\ the list's rows and readings as they were.
 create NEXT-NAME NAME-CAP allot   variable NEXT-NAME-U
 
 : NEXT-NAME$ ( -- ^u8 n ) NEXT-NAME NEXT-NAME-U @ ;
-
-\ row i's group, PICK's order; a blocked row is still tried, last, as its
-\ limits may have reset since that reading
-: NEXT-GROUP ( n -- n ) {: i :}
-   i DB-ROW-NAME$ LIVE-NAME? if -1 exit then
-   i DB-ROW-USAGE 0= if 2 exit then
-   false ROW-STATE MATCH row-state
-      fine OF 0 ENDOF
-      tight OF 1 ENDOF
-      blocked OF 2 ENDOF
-      dead OF -1 ENDOF
-      unplanned OF 2 ENDOF
-      unprobed OF 2 ENDOF
-   ;MATCH ;
 
 : ROOM? ( row-state -- bool )
    MATCH row-state
@@ -401,22 +433,24 @@ create NEXT-NAME NAME-CAP allot   variable NEXT-NAME-U
    p r RECORD
    false ROW-STATE ROOM? ;
 
-: TRY-ROW ( n n n -- bool ) {: p g r :}
-   r NEXT-GROUP g <> if false exit then
-   p r PROBE-ROOM ;
+\ row r is live, or its last reading says its saved login is gone
+: PASSED-OVER? ( n -- bool ) {: r :}
+   r DB-ROW-NAME$ LIVE-NAME? if true exit then
+   r DB-ROW-USAGE 0= if false exit then
+   false DEAD? ;
 
-\ the first row of group g with room, its name in NEXT-NAME; false when none
-: PICK-IN ( n n -- bool ) {: p g :}
-   DB-ROW# 0 ?do
-      p g i TRY-ROW if
-         i DB-ROW-NAME$ NEXT-NAME NEXT-NAME-U NAME-CAP SPAN!
-         true unloop exit
-      then
-   loop false ;
+\ row r installs when it is not passed over and its fresh reading has room;
+\ true when it does, its name in NEXT-NAME
+: TRY-ROOM ( n n -- bool ) {: p r :}
+   r PASSED-OVER? if false exit then
+   p r PROBE-ROOM 0= if false exit then
+   r DB-ROW-NAME$ NEXT-NAME NEXT-NAME-U NAME-CAP SPAN! true ;
 
-\ the row to install, its name in NEXT-NAME; E-SW-NO-ROOM when none has room
+\ the first row in room order to install, its name in NEXT-NAME;
+\ E-SW-NO-ROOM when none has room
 : PICK ( n -- ) {: p :}
-   3 0 ?do p i PICK-IN if unloop exit then loop
+   -1 ROOM-SORT
+   DB-ROW# 0 ?do p i ROOM-AT TRY-ROOM if unloop exit then loop
    E-SW-NO-ROOM throw ;
 
 \ the live login is saved back right before the install, so a token the CLI

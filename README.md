@@ -59,18 +59,18 @@ installed and the one it saved back, `next` every account it tried and the
 one it saved back, `add` the account it saved, and `redeem` the account it
 reset, so the widget shows their figures at once.
 
-`next` tries every saved account but the live one and those whose login is
-gone, grouped by their last reading: those with room first, then those with
-little room, then the rest, in name order within each group. It probes each
-in turn and installs the first whose fresh reading has room, probing each
-account at most once. When none has room it exits 1 and the live login is
-left as it was.
+`next` tries the saved accounts in room order (below), skipping the live
+one and those whose login is gone. It probes each in turn and installs the
+first whose fresh reading has room, probing each account at most once. When
+none has room it exits 1 and the live login is left as it was.
 
 `status --json` is the snapshot the Claude Code auto-switch mod reads:
 
 ```json
 {"providers":[{"provider":"claude","live":{"email":"a@x","plan":"max"},"installedAt":1789480000,
-  "accounts":[{"name":"a@x","plan":"max","active":true,
+  "accounts":[{"name":"a@x","plan":"max","active":true,"rank":0,
+    "standing":"tight","shownPlan":"max","relogin":false,"outcome":"answered","oldAt":1789483600,
+    "figures":[{"label":"Session (5-hour)","left":44,"low":true}],
     "usage":{"fetchedAt":1789480000,"state":"ok","note":"",
       "limits":[{"label":"Session (5-hour)","percent":56,"left":44,"resetsAt":"2026-09-15T14:00:00Z"}],
       "resets":{"count":2,"expiresAt":"2026-11-24T14:00:00Z","grant":"g-1","program":"cedar_ember"}}}]}, ...]}
@@ -95,6 +95,32 @@ the provider names no date. `state` is one of:
 | `throttled` | the provider is rate limiting this login's usage checks |
 | `missing` | the saved login holds no token to check or renew with |
 | `free` | the organization is on the free plan: no usage to read |
+
+Each account also carries what the bar widget shows, so the widget holds no
+account logic: `standing` is `fine` (room to spare), `tight` (a window below
+half), `blocked` (the session or the week used up), `dead` (the saved login
+no longer works; an expired live token is its CLI's to refresh),
+`unplanned` (no plan the CLI may use) or `unprobed` (no reading);
+`shownPlan` is the plan to show, `no plan` or `free` when the provider said
+so; `relogin` is true when a click should log in again rather than switch: a
+saved login that is dead or whose usage checks are rate limited. With a
+usage record come `figures`, what is left of the session, the week and each
+model window in that order, each `{label, left, low}`, `low` below half
+(Claude's session reads 0 while its week is used up); `outcome`, what the
+last probe came to: `answered` when it learned the account's state,
+`waiting` for the live login's expired token, `failed` otherwise; and
+`oldAt`, when the reading counts as old, an hour after `fetchedAt`, absent
+for a record with no limits.
+
+`rank` is the account's place in its provider's room order, 0 first:
+accounts with room to spare, then those running low, then those running low
+with a model window used up, then those whose session is used up, then those
+whose week is, then dead logins and accounts without a plan, then those with
+no reading. Accounts whose session or week is used up come in the order they
+reopen, soonest first, those with no reset time last; other ties keep name
+order. `reopensAt` is present while the session or the week is used up: the
+`resetsAt` of the used-up one that reopens last, when the account can take
+work again.
 
 ## How switching works
 
@@ -207,10 +233,7 @@ the probe ends. While any command runs, a probe included, the account rows,
 their badges and every button that would start another command are dimmed
 and ignore clicks and keys; Dismiss and a confirmation's Keep stay live.
 
-Rows come with room to spare first, then running low, then a model window
-used up, then the session used up, then the week, then dead logins and
-accounts without a plan, then rows with no data. Limited rows come in the
-order their limits reset, soonest first; other ties keep the CLI's order.
+Rows come in room order (`rank` under `status --json`).
 Each row carries a dot and what is left of the session, the week, and each
 model window, as percentages in that order (the hover text names them),
 amber below half. The dot is green while the account can take work, a used

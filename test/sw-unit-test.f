@@ -13,6 +13,7 @@ require ../src/sw-identity.f
 require ../src/sw-sqlite.f
 require ../src/sw-db.f
 require ../src/sw-store.f
+require ../src/sw-time.f
 require ../src/sw-usage.f
 require ../src/sw-cli.f
 require src/lib/test.f
@@ -37,15 +38,12 @@ require src/lib/aio.f
 require src/lib/net/tcp4.f
 require src/lib/net/http.f
 
-\ White-box: reopens SW for sw-usage.f's private URL-BASE and RFC3339>EPOCH;
-\ SW-TEST: words land in SW-TEST, the rest in SW.
+\ White-box: reopens SW for sw-usage.f's private URL-BASE; SW-TEST: words
+\ land in SW-TEST, the rest in SW.
 package SW
 
 \ every request goes to b u followed by its URL after the https://
 : SW-TEST:UT-SERVE-AT ( ^u8 n -- ) URL-BASE URL-BASE-U PATH! ;
-
-\ the private RFC 3339 reader, under its own name for UT-RFC3339
-: SW-TEST:RFC3339>EPOCH ( ^u8 n -- n ) RFC3339>EPOCH ;
 
 ;package
 
@@ -2223,9 +2221,8 @@ create UT-REAL 256 allot
 : UT-USED-UP ( ^u8 n -- ) {: t tu :}
    UT-CODEX-USAGE$ t tu 200 s\" {\"rate_limit\":{\"primary_window\":{\"used_percent\":100,\"limit_window_seconds\":604800,\"reset_at\":1789904220}}}" UT-ANSWER ;
 
-\ next tries the row whose last reading had room before the one with
-\ little room, passes it over when its fresh reading has none, and installs
-\ the second before reaching the row whose last reading was blocked
+\ next tries rows in room order, passing over one whose fresh reading has
+\ no room: fine, tight, session used up, week used up, then unplanned
 : UT-NEXT-ORDER ( -- )
    s" at-full" UT-USED-UP
    s" e@x.test" s" idle" UT-PUT-AT
@@ -2239,6 +2236,16 @@ create UT-REAL 256 allot
    s\" Bearer at-full\n" s\" Bearer at-d2\n" UT-SENT-FIRST? TTRUE
    P-CODEX s" f@x.test" UT-PROBED? TTRUE
    P-CODEX s" e@x.test" UT-PROBED? TFALSE
+   P-CODEX s" c@x.test" CMD-USE
+   s" at-idle" UT-USED-UP
+   P-CODEX s" d@x.test" s" unsubscribed" 10 20 UT-SET-USED
+   P-CODEX s" e@x.test" UT-SET-BLOCKED
+   P-CODEX s" f@x.test" s" ok" 100 100 UT-SET-USED
+   UT-LOG-MARK
+   P-CODEX CMD-NEXT
+   CODEX-AUTH$ READ-FILE$ AUTH-D2$ T$=
+   s\" Bearer at-idle\n" s\" Bearer at-full\n" UT-SENT-FIRST? TTRUE
+   s\" Bearer at-full\n" s\" Bearer at-d2\n" UT-SENT-FIRST? TTRUE
    P-CODEX s" c@x.test" CMD-USE
    P-CODEX s" e@x.test" CMD-FORGET
    P-CODEX s" f@x.test" CMD-FORGET
@@ -2782,11 +2789,11 @@ variable UT-V
 \ the status snapshot's bytes: two saved Claude logins under one email, the
 \ live one in the second organization, and a live Codex login never saved
 : SNAP-LIT$ ( -- ^u8 n )
-   s\" {\"providers\":[{\"accounts\":[{\"active\":false,\"name\":\"a@x.test\",\"plan\":\"max\",\"usage\":{\"fetchedAt\":1700000000,\"limits\":[{\"label\":\"Session (5-hour)\",\"left\":70,\"percent\":30,\"resetsAt\":\"2026-11-13T10:00:00Z\"},{\"label\":\"Weekly \\/ Opus\",\"percent\":-1,\"resetsAt\":\"\"}],\"note\":\"a\\/b \\\"q\\\"\\n\",\"resets\":{\"count\":2,\"grant\":\"g-1\",\"program\":\"cedar_ember\"},\"state\":\"throttled\"}},{\"active\":true,\"name\":\"a@x.test #2\",\"plan\":\"team\"}],\"installedAt\":1700000500,\"live\":{\"email\":\"a@x.test\",\"plan\":\"team\"},\"provider\":\"claude\"},{\"accounts\":[],\"live\":{\"email\":\"c@x.test\",\"plan\":\"plus\"},\"provider\":\"codex\"}]}" ;
+   s\" {\"providers\":[{\"accounts\":[{\"active\":false,\"figures\":[{\"label\":\"Session (5-hour)\",\"left\":70,\"low\":false}],\"name\":\"a@x.test\",\"oldAt\":1700003600,\"outcome\":\"failed\",\"plan\":\"max\",\"rank\":0,\"relogin\":true,\"shownPlan\":\"max\",\"standing\":\"fine\",\"usage\":{\"fetchedAt\":1700000000,\"limits\":[{\"label\":\"Session (5-hour)\",\"left\":70,\"percent\":30,\"resetsAt\":\"2026-11-13T10:00:00Z\"},{\"label\":\"Weekly \\/ Opus\",\"percent\":-1,\"resetsAt\":\"\"}],\"note\":\"a\\/b \\\"q\\\"\\n\",\"resets\":{\"count\":2,\"grant\":\"g-1\",\"program\":\"cedar_ember\"},\"state\":\"throttled\"}},{\"active\":true,\"name\":\"a@x.test #2\",\"plan\":\"team\",\"rank\":1,\"relogin\":false,\"shownPlan\":\"team\",\"standing\":\"unprobed\"}],\"installedAt\":1700000500,\"live\":{\"email\":\"a@x.test\",\"plan\":\"team\"},\"provider\":\"claude\"},{\"accounts\":[],\"live\":{\"email\":\"c@x.test\",\"plan\":\"plus\"},\"provider\":\"codex\"}]}" ;
 
 \ the same store once the Claude config is not JSON and c@x.test is saved
 : SNAP-ERROR-LIT$ ( -- ^u8 n )
-   s\" {\"providers\":[{\"accounts\":[{\"active\":false,\"name\":\"a@x.test\",\"plan\":\"max\",\"usage\":{\"fetchedAt\":1700000000,\"limits\":[{\"label\":\"Session (5-hour)\",\"left\":70,\"percent\":30,\"resetsAt\":\"2026-11-13T10:00:00Z\"},{\"label\":\"Weekly \\/ Opus\",\"percent\":-1,\"resetsAt\":\"\"}],\"note\":\"a\\/b \\\"q\\\"\\n\",\"resets\":{\"count\":2,\"grant\":\"g-1\",\"program\":\"cedar_ember\"},\"state\":\"throttled\"}},{\"active\":false,\"name\":\"a@x.test #2\",\"plan\":\"team\"}],\"error\":\"a login file is not valid JSON\",\"installedAt\":1700000500,\"provider\":\"claude\"},{\"accounts\":[{\"active\":true,\"name\":\"c@x.test\",\"plan\":\"plus\"}],\"live\":{\"email\":\"c@x.test\",\"plan\":\"plus\"},\"provider\":\"codex\"}]}" ;
+   s\" {\"providers\":[{\"accounts\":[{\"active\":false,\"figures\":[{\"label\":\"Session (5-hour)\",\"left\":70,\"low\":false}],\"name\":\"a@x.test\",\"oldAt\":1700003600,\"outcome\":\"failed\",\"plan\":\"max\",\"rank\":0,\"relogin\":true,\"shownPlan\":\"max\",\"standing\":\"fine\",\"usage\":{\"fetchedAt\":1700000000,\"limits\":[{\"label\":\"Session (5-hour)\",\"left\":70,\"percent\":30,\"resetsAt\":\"2026-11-13T10:00:00Z\"},{\"label\":\"Weekly \\/ Opus\",\"percent\":-1,\"resetsAt\":\"\"}],\"note\":\"a\\/b \\\"q\\\"\\n\",\"resets\":{\"count\":2,\"grant\":\"g-1\",\"program\":\"cedar_ember\"},\"state\":\"throttled\"}},{\"active\":false,\"name\":\"a@x.test #2\",\"plan\":\"team\",\"rank\":1,\"relogin\":false,\"shownPlan\":\"team\",\"standing\":\"unprobed\"}],\"error\":\"a login file is not valid JSON\",\"installedAt\":1700000500,\"provider\":\"claude\"},{\"accounts\":[{\"active\":true,\"name\":\"c@x.test\",\"plan\":\"plus\",\"rank\":0,\"relogin\":false,\"shownPlan\":\"plus\",\"standing\":\"unprobed\"}],\"live\":{\"email\":\"c@x.test\",\"plan\":\"plus\"},\"provider\":\"codex\"}]}" ;
 
 : UT-STATUS-ROWS ( -- )
    s" DELETE FROM account" s" test" DB-EXEC
@@ -2798,6 +2805,19 @@ variable UT-V
    [: P-CLAUDE s" a@x.test #2" ID-SLOT CREDS-A2$ UT-NUL -1 false DB-PUT
       P-CLAUDE s" a@x.test #2" 1700000500 true DB-NOTE-INSTALLED ;] DB-WRITE ;
 
+\ the value the JSON pointer p u names in the status snapshot, as written;
+\ false when it names none
+: UT-STATUS-AT ( ^u8 n -- ^u8 n bool ) {: p u :}
+   STATUS-JSON$ {: j ju :}
+   j ju p u JSON:POINTER-SPAN {: at len found :}
+   j at + len found ;
+
+\ the member the JSON pointer names in the status snapshot reads as written
+: UT-AT= ( ^u8 n ^u8 n -- ) {: p u a v :}
+   p u UT-STATUS-AT TTRUE a v T$= ;
+
+: UT-NO-AT ( ^u8 n -- ) UT-STATUS-AT TFALSE 2drop ;
+
 \ the active mark follows the live organization
 : UT-STATUS-JSON ( -- )
    UT-STATUS-ROWS
@@ -2807,8 +2827,8 @@ variable UT-V
    STATUS-JSON$ SNAP-LIT$ T$=
    CLAUDE-CONFIG$ CFG-A$ WRITE-PRIVATE
    CLAUDE-CREDS$ CREDS-A$ WRITE-PRIVATE
-   STATUS-JSON$ s\" {\"active\":true,\"name\":\"a@x.test\",\"plan\":\"max\"" CONTAINS? TTRUE
-   STATUS-JSON$ s\" {\"active\":false,\"name\":\"a@x.test #2\"" CONTAINS? TTRUE ;
+   s" /providers/0/accounts/0/active" UT-STATUS-AT TTRUE s" true" T$=
+   s" /providers/0/accounts/1/active" UT-STATUS-AT TTRUE s" false" T$= ;
 
 \ an unreadable Claude login is Claude's error alone: its saved accounts and
 \ install time still show, and Codex reads as before
@@ -2883,7 +2903,7 @@ create UT-SQL 2048 allot   variable UT-SQL-U
    [: P-CLAUDE s" w@x.test" ID-SLOT CREDS-A$ OAUTH-A$ true DB-PUT ;] DB-WRITE ;
 
 : FIGURES-LIT$ ( -- ^u8 n )
-   s\" {\"active\":false,\"name\":\"w@x.test\",\"plan\":\"max\",\"usage\":{\"fetchedAt\":1,\"limits\":[{\"label\":\"Weekly \\/ Opus\",\"left\":9,\"percent\":91,\"resetsAt\":\"2026-11-21T00:00:00Z\"},{\"label\":\"Weekly (7-day)\",\"left\":40,\"percent\":60,\"resetsAt\":\"2026-11-20T00:00:00Z\"},{\"label\":\"Weekly \\/ Sonnet\",\"percent\":-1,\"resetsAt\":\"\"},{\"label\":\"Session (5-hour)\",\"left\":70,\"percent\":30,\"resetsAt\":\"2026-11-14T10:00:00Z\"}],\"note\":\"\",\"state\":\"ok\"}}" ;
+   s\" {\"active\":false,\"figures\":[{\"label\":\"Session (5-hour)\",\"left\":70,\"low\":false},{\"label\":\"Weekly (7-day)\",\"left\":40,\"low\":true},{\"label\":\"Weekly \\/ Opus\",\"left\":9,\"low\":true}],\"name\":\"w@x.test\",\"oldAt\":3601,\"outcome\":\"answered\",\"plan\":\"max\",\"rank\":1,\"relogin\":false,\"shownPlan\":\"max\",\"standing\":\"tight\",\"usage\":{\"fetchedAt\":1,\"limits\":[{\"label\":\"Weekly \\/ Opus\",\"left\":9,\"percent\":91,\"resetsAt\":\"2026-11-21T00:00:00Z\"},{\"label\":\"Weekly (7-day)\",\"left\":40,\"percent\":60,\"resetsAt\":\"2026-11-20T00:00:00Z\"},{\"label\":\"Weekly \\/ Sonnet\",\"percent\":-1,\"resetsAt\":\"\"},{\"label\":\"Session (5-hour)\",\"left\":70,\"percent\":30,\"resetsAt\":\"2026-11-14T10:00:00Z\"}],\"note\":\"\",\"state\":\"ok\"}}" ;
 
 \ the text gives the session, the week, then the other windows with a
 \ reading; JSON keeps the record's order and gives each window with a
@@ -2893,6 +2913,200 @@ create UT-SQL 2048 allot   variable UT-SQL-U
    STATUS-JSON$ FIGURES-LIT$ CONTAINS? TTRUE
    UT-STATUS-TEXT$ s\" \n    w@x.test (max)  70% · 40% · 9%\n" CONTAINS? TTRUE
    [: P-CLAUDE s" w@x.test" DB-REMOVE ;] DB-WRITE ;
+
+create UT-PTR 128 allot
+
+\ the JSON pointer to member k ku of Claude's account i, in UT-PTR
+: UT-ACCOUNT$ ( n ^u8 n -- ^u8 n ) {: i k ku :}
+   SB-RESET s" /providers/0/accounts/" SB-APPEND i FMT:SB-U
+   [char] / SB-APPEND-C k ku SB-APPEND
+   SB$ UT-PTR 128 SPAN-COPY ;
+
+\ the usage record of a probe in state s su that read no window yet
+: UT-ROOM-REC ( ^u8 n -- ) {: s su :}
+   SB-RESET s\" {\"fetchedAt\":1,\"limits\":[],\"note\":\"\",\"state\":\"" SB-APPEND
+   s su SB-APPEND s\" \"}" SB-APPEND SB$ DB-USAGE-DECODE ;
+
+\ the session and the week, each its percent used and its reset
+: UT-ROOM-SW ( n ^u8 n n ^u8 n -- ) {: sp sa su wp wa wu :}
+   s" Session (5-hour)" sp sa su DB-LIMIT+
+   s" Weekly (7-day)" wp wa wu DB-LIMIT+ ;
+
+\ saves Claude row a u, with the decoded record when with is true
+: UT-CLAUDE-PUT ( ^u8 n bool -- ) {: a u with :}
+   CFG-A$ CREDS-A$ ID-SLOT CLAUDE-IDENTITY TTRUE
+   [: P-CLAUDE a u ID-SLOT CREDS-A$ OAUTH-A$ with DB-PUT ;] DB-WRITE ;
+
+\ Claude row a u, ok, its session sp and its week wp percent used
+: UT-ROOM-OK ( ^u8 n n n -- ) {: a u sp wp :}
+   s" ok" UT-ROOM-REC sp s" " wp s" " UT-ROOM-SW
+   a u true UT-CLAUDE-PUT ;
+
+\ d its week used up, reopening with it; e, g and h their session used
+\ up, e with no reset, h's reset in another zone, first as an instant
+: UT-ROOM-BLOCKED ( -- )
+   s" ok" UT-ROOM-REC 100 s" 2026-11-20T00:00:00Z"
+   100 s" 2026-11-25T00:00:00Z" UT-ROOM-SW
+   s" d@x.test" true UT-CLAUDE-PUT
+   s" ok" UT-ROOM-REC 100 s" " 20 s" 2026-11-19T00:00:00Z" UT-ROOM-SW
+   s" e@x.test" true UT-CLAUDE-PUT
+   s" ok" UT-ROOM-REC 100 s" 2026-11-22T00:00:00Z" 20 s" " UT-ROOM-SW
+   s" g@x.test" true UT-CLAUDE-PUT
+   s" ok" UT-ROOM-REC
+   100 s" 2026-11-22T05:00:00+08:00" 20 s" " UT-ROOM-SW
+   s" h@x.test" true UT-CLAUDE-PUT ;
+
+\ f and m both used up, only f's session and m's week reset readable
+: UT-ROOM-BOTH ( -- )
+   s" ok" UT-ROOM-REC
+   100 s" 2026-11-21T00:00:00Z" 100 s" soon" UT-ROOM-SW
+   s" f@x.test" true UT-CLAUDE-PUT
+   s" ok" UT-ROOM-REC
+   100 s" soon" 100 s" 2026-11-23T00:00:00Z" UT-ROOM-SW
+   s" m@x.test" true UT-CLAUDE-PUT ;
+
+\ b no record; c unplanned; i a model window used up; j tight; k fine; l
+\ dead, its session used up and reopening before any other
+: UT-ROOM-OTHERS ( -- )
+   s" b@x.test" false UT-CLAUDE-PUT
+   s" unsubscribed" UT-ROOM-REC 10 s" " 20 s" " UT-ROOM-SW
+   s" c@x.test" true UT-CLAUDE-PUT
+   s" ok" UT-ROOM-REC 10 s" " 20 s" " UT-ROOM-SW
+   s" Weekly / Opus" 100 s" " DB-LIMIT+
+   s" i@x.test" true UT-CLAUDE-PUT
+   s" j@x.test" 60 20 UT-ROOM-OK
+   s" k@x.test" 10 20 UT-ROOM-OK
+   s" revoked" UT-ROOM-REC
+   100 s" 2026-11-18T00:00:00Z" 20 s" " UT-ROOM-SW
+   s" l@x.test" true UT-CLAUDE-PUT ;
+
+: UT-ROOM-RANKS ( -- )
+   0 s" rank" UT-ACCOUNT$ s" 0" UT-AT=
+   1 s" rank" UT-ACCOUNT$ s" 12" UT-AT=
+   2 s" rank" UT-ACCOUNT$ s" 13" UT-AT=
+   3 s" rank" UT-ACCOUNT$ s" 10" UT-AT=
+   4 s" rank" UT-ACCOUNT$ s" 9" UT-AT=
+   5 s" rank" UT-ACCOUNT$ s" 6" UT-AT=
+   6 s" rank" UT-ACCOUNT$ s" 7" UT-AT=
+   7 s" rank" UT-ACCOUNT$ s" 5" UT-AT=
+   8 s" rank" UT-ACCOUNT$ s" 4" UT-AT=
+   9 s" rank" UT-ACCOUNT$ s" 3" UT-AT=
+   10 s" rank" UT-ACCOUNT$ s" 2" UT-AT=
+   11 s" rank" UT-ACCOUNT$ s" 1" UT-AT=
+   12 s" rank" UT-ACCOUNT$ s" 11" UT-AT=
+   13 s" rank" UT-ACCOUNT$ s" 8" UT-AT= ;
+
+: UT-ROOM-REOPENS ( -- )
+   0 s" reopensAt" UT-ACCOUNT$ UT-NO-AT
+   1 s" reopensAt" UT-ACCOUNT$ UT-NO-AT
+   2 s" reopensAt" UT-ACCOUNT$ UT-NO-AT
+   3 s" reopensAt" UT-ACCOUNT$ UT-NO-AT
+   4 s" reopensAt" UT-ACCOUNT$
+   s\" \"2026-11-25T00:00:00Z\"" UT-AT=
+   5 s" reopensAt" UT-ACCOUNT$ s\" \"\"" UT-AT=
+   6 s" reopensAt" UT-ACCOUNT$
+   s\" \"2026-11-21T00:00:00Z\"" UT-AT=
+   7 s" reopensAt" UT-ACCOUNT$
+   s\" \"2026-11-22T00:00:00Z\"" UT-AT=
+   8 s" reopensAt" UT-ACCOUNT$
+   s\" \"2026-11-22T05:00:00+08:00\"" UT-AT=
+   9 s" reopensAt" UT-ACCOUNT$ UT-NO-AT
+   10 s" reopensAt" UT-ACCOUNT$ UT-NO-AT
+   11 s" reopensAt" UT-ACCOUNT$ UT-NO-AT
+   12 s" reopensAt" UT-ACCOUNT$ UT-NO-AT
+   13 s" reopensAt" UT-ACCOUNT$
+   s\" \"2026-11-23T00:00:00Z\"" UT-AT= ;
+
+: UT-ROOM-DROP ( ^u8 n -- ) {: a u :}
+   [: P-CLAUDE a u DB-REMOVE ;] DB-WRITE ;
+
+: UT-ROOM-FORGET ( -- )
+   s" b@x.test" UT-ROOM-DROP s" c@x.test" UT-ROOM-DROP
+   s" d@x.test" UT-ROOM-DROP s" e@x.test" UT-ROOM-DROP
+   s" f@x.test" UT-ROOM-DROP s" g@x.test" UT-ROOM-DROP
+   s" h@x.test" UT-ROOM-DROP s" i@x.test" UT-ROOM-DROP
+   s" j@x.test" UT-ROOM-DROP s" k@x.test" UT-ROOM-DROP
+   s" l@x.test" UT-ROOM-DROP s" m@x.test" UT-ROOM-DROP ;
+
+\ rows of every class out of name order: each one's rank, and when a
+\ blocked one reopens
+: UT-ROOM-ORDER ( -- )
+   UT-ROOM-BLOCKED
+   UT-ROOM-BOTH
+   UT-ROOM-OTHERS
+   UT-ROOM-RANKS
+   UT-ROOM-REOPENS
+   UT-ROOM-FORGET ;
+
+\ saves a Codex row of c@x.test's login under the name, with the decoded
+\ record
+: UT-CODEX-PUT ( ^u8 n -- ) {: a u :}
+   AUTH-C$ ID-SLOT CODEX-IDENTITY TTRUE
+   [: P-CODEX a u ID-SLOT AUTH-C$ UT-NUL -1 true DB-PUT ;] DB-WRITE ;
+
+\ Claude rows after a@x.test and a@x.test #2: fa's week is used up and two
+\ windows share a label, fb is revoked, fd unsubscribed
+: UT-FIELDS-CLAUDE ( -- )
+   s\" {\"fetchedAt\":1700000000,\"limits\":[],\"note\":\"\",\"state\":\"ok\"}" DB-USAGE-DECODE
+   s" Weekly / Opus" 20 s" " DB-LIMIT+
+   s" Session (5-hour)" 30 s" " DB-LIMIT+
+   s" Weekly (7-day)" 100 s" " DB-LIMIT+
+   s" Weekly / Opus" 70 s" " DB-LIMIT+
+   s" fa@x.test" true UT-CLAUDE-PUT
+   s\" {\"fetchedAt\":5,\"limits\":[],\"note\":\"\",\"state\":\"revoked\"}" DB-USAGE-DECODE
+   s" fb@x.test" true UT-CLAUDE-PUT
+   s\" {\"fetchedAt\":8,\"limits\":[],\"note\":\"\",\"state\":\"unsubscribed\"}" DB-USAGE-DECODE
+   s" fd@x.test" true UT-CLAUDE-PUT ;
+
+\ Codex rows: c@x.test, the live login, and d@x.test, saved, both expired
+: UT-FIELDS-CODEX ( -- )
+   s\" {\"fetchedAt\":9,\"limits\":[],\"note\":\"\",\"state\":\"expired\"}" DB-USAGE-DECODE
+   s" Session (5-hour)" 10 s" " DB-LIMIT+
+   s" c@x.test" UT-CODEX-PUT
+   s\" {\"fetchedAt\":11,\"limits\":[],\"note\":\"\",\"state\":\"expired\"}" DB-USAGE-DECODE
+   s" d@x.test" UT-CODEX-PUT ;
+
+\ a used-up week leaves Claude's session 0, low; each window of a shared
+\ label gives its own left
+: UT-FIELDS-BLOCKED ( -- )
+   s" /providers/0/accounts/2/standing" s\" \"blocked\"" UT-AT=
+   s" /providers/0/accounts/2/outcome" s\" \"answered\"" UT-AT=
+   s" /providers/0/accounts/2/relogin" s" false" UT-AT=
+   s" /providers/0/accounts/2/figures/0/label" s\" \"Session (5-hour)\"" UT-AT=
+   s" /providers/0/accounts/2/figures/0/left" s" 0" UT-AT=
+   s" /providers/0/accounts/2/figures/0/low" s" true" UT-AT=
+   s" /providers/0/accounts/2/figures/2/low" s" false" UT-AT=
+   s" /providers/0/accounts/2/usage/limits/0/left" s" 80" UT-AT=
+   s" /providers/0/accounts/2/usage/limits/3/left" s" 30" UT-AT= ;
+
+\ a record with no limits has no oldAt; a saved revoked login asks for a
+\ new login
+: UT-FIELDS-SAVED ( -- )
+   s" /providers/0/accounts/3/standing" s\" \"dead\"" UT-AT=
+   s" /providers/0/accounts/3/outcome" s\" \"answered\"" UT-AT=
+   s" /providers/0/accounts/3/relogin" s" true" UT-AT=
+   s" /providers/0/accounts/3/figures" s" []" UT-AT=
+   s" /providers/0/accounts/3/oldAt" UT-NO-AT
+   s" /providers/0/accounts/4/standing" s\" \"unplanned\"" UT-AT=
+   s" /providers/0/accounts/4/shownPlan" s\" \"no plan\"" UT-AT= ;
+
+\ the live login's expired token waits, a saved one's is dead
+: UT-FIELDS-OTHER ( -- )
+   s" /providers/1/accounts/0/active" s" true" UT-AT=
+   s" /providers/1/accounts/0/standing" s\" \"fine\"" UT-AT=
+   s" /providers/1/accounts/0/outcome" s\" \"waiting\"" UT-AT=
+   s" /providers/1/accounts/0/relogin" s" false" UT-AT=
+   s" /providers/1/accounts/1/standing" s\" \"dead\"" UT-AT=
+   s" /providers/1/accounts/1/outcome" s\" \"answered\"" UT-AT=
+   s" /providers/1/accounts/1/relogin" s" true" UT-AT= ;
+
+\ each account carries what the panel shows of it
+: UT-ACCOUNT-FIELDS ( -- )
+   UT-FIELDS-CLAUDE UT-FIELDS-CODEX
+   UT-FIELDS-BLOCKED UT-FIELDS-SAVED UT-FIELDS-OTHER
+   [: P-CLAUDE s" fa@x.test" DB-REMOVE P-CLAUDE s" fb@x.test" DB-REMOVE
+      P-CLAUDE s" fd@x.test" DB-REMOVE
+      P-CODEX s" c@x.test" DB-REMOVE P-CODEX s" d@x.test" DB-REMOVE ;] DB-WRITE ;
 
 \ the live read's reason is the one it stopped on, though decoding a row's
 \ usage overflows another buffer before the error is written
@@ -2974,6 +3188,8 @@ create UT-LABEL 200 allot   create UT-RESET 100 allot
    UT-STATUS-JSON
    UT-STATUS-MANY
    UT-STATUS-FIGURES
+   UT-ROOM-ORDER
+   UT-ACCOUNT-FIELDS
    UT-STATUS-ERROR
    UT-STATUS-REASON
    UT-DB-COMPACT

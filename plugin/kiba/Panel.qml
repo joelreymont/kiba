@@ -4,8 +4,8 @@ import qs.Commons
 import qs.Ui
 
 // Bar widget: which saved account has room, and how much; one click
-// switches to it through the kiba CLI. Each row reads its account's state
-// from its usage record (rowState) and is ranked by it (rank).
+// switches to it through the kiba CLI. Each row shows the standing, figures
+// and room order the CLI gives its account.
 Panel {
   id: root
   moduleName: "kiba"
@@ -37,35 +37,6 @@ Panel {
   function alpha(c, a) { return Qt.rgba(c.r, c.g, c.b, a) }
 
   // ---------------------------------------------------------------- rows
-  //
-  // Only the session and the weekly window decide whether an account can
-  // take work; a model's own window (Fable, Opus) bars only that model.
-  readonly property string sessionLabel: "Session (5-hour)"
-  readonly property string weeklyLabel: "Weekly (7-day)"
-
-  // the window under `label` with a reading; -1 for none
-  function windowAt(usage, label) {
-    if (!usage) return -1
-    for (var i = 0; i < usage.limits.length; i += 1)
-      if (usage.limits[i].label === label && usage.limits[i].percent >= 0) return i
-    return -1
-  }
-
-  function deciding(usage) {
-    return [windowAt(usage, sessionLabel), windowAt(usage, weeklyLabel)].filter(function(i) { return i >= 0 })
-  }
-
-  function weekly(usage) {
-    var w = windowAt(usage, weeklyLabel)
-    return w >= 0 ? usage.limits[w] : null
-  }
-
-  // the window that decides the color: the session, else the week
-  function headline(usage) {
-    var s = windowAt(usage, sessionLabel)
-    return s >= 0 ? usage.limits[s] : weekly(usage)
-  }
-
   // `YYYY-MM-DDTHH:MM[:SS[.fraction]]` then `Z` or `±HH[[:]MM]`, as epoch
   // milliseconds; NaN for anything else, a missing zone included
   function parseISO(text) {
@@ -80,114 +51,24 @@ Panel {
     return Date.UTC(y, mo - 1, d, h, mi, sec) + (m[7] ? parseFloat("0" + m[7]) * 1000 : 0) - off
   }
 
-  // The used-up deciding window that reopens last; the first used-up one
-  // when no later reset parses.
-  function blocking(usage) {
-    if (!usage) return null
-    var worst = null, worstAt = NaN
-    var d = deciding(usage)
-    for (var i = 0; i < d.length; i += 1) {
-      var l = usage.limits[d[i]]
-      if (l.percent < 100) continue
-      var at = parseISO(l.resetsAt)
-      if (!worst) { worst = l; worstAt = at; continue }
-      if (isFinite(at) && (!isFinite(worstAt) || at > worstAt)) { worst = l; worstAt = at }
-    }
-    return worst
-  }
-
-  // ok, tight, blocked (the session or the week used up), dead (the saved
-  // login no longer works), unsubscribed (no plan the CLI may use), unknown
-  function rowState(usage, active) {
-    if (status.dead(usage, active)) return "dead"
-    if (usage && (usage.state === "unsubscribed" || usage.state === "free")) return "unsubscribed"
-    if (!usage || usage.limits.length === 0) return "unknown"
-    if (blocking(usage)) return "blocked"
-    var h = headline(usage)
-    if (h && 100 - h.percent < 50) return "tight"
-    var d = deciding(usage)
-    for (var i = 0; i < usage.limits.length; i += 1)
-      if (d.indexOf(i) < 0 && 100 - usage.limits[i].percent < 50) return "tight"
-    return "ok"
-  }
-
-  // a model window, one that does not decide, is used up
-  function modelOut(usage) {
-    if (!usage) return false
-    var d = deciding(usage)
-    for (var i = 0; i < usage.limits.length; i += 1)
-      if (d.indexOf(i) < 0 && usage.limits[i].percent >= 100) return true
+  // the status dot's verdict from the account's standing: it can take work;
+  // null while unprobed
+  function usable(standing) {
+    if (standing === "fine" || standing === "tight") return true
+    if (standing === "unprobed") return null
     return false
   }
 
-  // Room first, then running low, then a model window used up, then the
-  // session used up, then the week, then dead or without a plan, then unknown.
-  function rank(usage, active) {
-    var s = rowState(usage, active)
-    if (s === "ok") return 0
-    if (s === "tight") return modelOut(usage) ? 2 : 1
-    if (s === "blocked") { var w = weekly(usage); return w && w.percent >= 100 ? 4 : 3 }
-    if (s === "dead" || s === "unsubscribed") return 5
-    return 6
-  }
+  // every bar segment an empty track: the login no longer works or has no
+  // plan the CLI may use, so no window holds anything usable
+  function drained(standing) { return standing === "dead" || standing === "unplanned" }
 
-  // by rank; limited rows by when they reopen, soonest first and the ones
-  // with no parseable reset last; otherwise the CLI's order
-  function sorted(accounts) {
-    var keyed = accounts.map(function(a, i) {
-      var r = rank(a.usage, a.active), at = Infinity
-      if (r === 3 || r === 4) {
-        var b = blocking(a.usage)
-        var t = b ? parseISO(b.resetsAt) : NaN
-        if (isFinite(t)) at = t
-      }
-      return { rank: r, at: at, idx: i, account: a }
-    })
-    keyed.sort(function(x, y) {
-      if (x.rank !== y.rank) return x.rank - y.rank
-      if (x.at !== y.at) return x.at < y.at ? -1 : 1
-      return x.idx - y.idx
-    })
-    return keyed.map(function(k) { return k.account })
-  }
-
-  // Session, weekly, then every other window, each with the percent left
-  // the CLI gives its figure (Claude's session reads 0 while its week is
-  // used up).
-  function figures(usage) {
-    if (!usage) return []
-    var s = windowAt(usage, sessionLabel), w = windowAt(usage, weeklyLabel)
-    var order = []
-    if (s >= 0) order.push(s)
-    if (w >= 0) order.push(w)
-    for (var i = 0; i < usage.limits.length; i += 1) if (i !== s && i !== w) order.push(i)
-    var out = []
-    for (var j = 0; j < order.length; j += 1) {
-      var l = usage.limits[order[j]]
-      if (l.left !== null) out.push({ label: l.label, left: l.left })
-    }
-    return out
-  }
-
-  function isLow(f) { return f.left < 50 }
-
-  // the status dot's verdict: the account can take work; null while unknown
-  function usable(state) {
-    if (state === "ok" || state === "tight") return true
-    if (state === "unknown") return null
-    return false
-  }
-
-  // every bar segment an empty track: no window holds anything usable
-  function drained(state) { return state === "dead" || state === "unsubscribed" }
-
-  // A reading more than an hour old is marked as old: usage is probed only
-  // when asked, so a row may hold one from days ago.
-  readonly property real oldAfterMs: 3600000
   readonly property real oldOpacity: 0.45
 
-  function aged(usage) {
-    return !!usage && usage.limits.length > 0 && usage.fetchedAt > 0 && nowMs - usage.fetchedAt * 1000 > oldAfterMs
+  // The reading is marked as old once past the time the CLI names: usage is
+  // probed only when asked, so a row may hold one from days ago.
+  function aged(a) {
+    return a.oldAt > 0 && nowMs / 1000 > a.oldAt
   }
 
   // "5h ago" under 48 hours, else "2d ago"
@@ -196,27 +77,19 @@ Panel {
     return h < 48 ? h + "h ago" : Math.round(h / 24) + "d ago"
   }
 
-  function figuresText(usage) {
-    if (rowState(usage, false) === "blocked") return "limit"
-    return figures(usage).map(function(f) { return f.left + "%" }).join(" · ")
-  }
-
-  // the token document still claims the plan the organization no longer has
-  function planLabel(a) {
-    if (a.usage && a.usage.state === "unsubscribed") return "no plan"
-    if (a.usage && a.usage.state === "free") return "free"
-    return a.plan
+  function figuresText(a) {
+    if (a.standing === "blocked") return "limit"
+    return a.figures.map(function(f) { return f.left + "%" }).join(" · ")
   }
 
   // "(pro)", "(pro, 5d)" while blocked, "(pro, log in again)" when dead,
   // "(no plan)", "(free)", or ""
   function planText(a) {
     var parts = []
-    var label = planLabel(a)
-    if (label !== "") parts.push(label)
-    var b = blocking(a.usage)
-    if (b) { var when = resetShort(b.resetsAt); if (when !== "") parts.push(when) }
-    if (status.dead(a.usage, a.active)) parts.push("log in again")
+    if (a.shownPlan !== "") parts.push(a.shownPlan)
+    var when = resetShort(a.reopensAt)
+    if (when !== "") parts.push(when)
+    if (a.standing === "dead") parts.push("log in again")
     return parts.length > 0 ? "(" + parts.join(", ") + ")" : ""
   }
 
@@ -235,8 +108,7 @@ Panel {
 
   function tooltipText(p, a) {
     var head = a.name
-    var label = planLabel(a)
-    if (label !== "") head += " · " + label
+    if (a.shownPlan !== "") head += " · " + a.shownPlan
     if (a.active) head += " · current"
     var lines = [head]
     var u = a.usage
@@ -251,7 +123,7 @@ Panel {
       if (u.resets > 0) lines.push(resetsLine(u))
       if (u.fetchedAt > 0) lines.push("Probed " + age(u.fetchedAt))
     } else lines.push("Usage not probed yet")
-    if (status.relogin(u, a.active)) lines.push("Click to log in to this account again")
+    if (a.relogin) lines.push("Click to log in to this account again")
     else if (!a.active) lines.push("Click to switch " + p.title + " to this account")
     return lines.join("\n")
   }
@@ -292,10 +164,10 @@ Panel {
   }
 
   // ---------------------------------------------------------------- panel
-  // the providers as the panel shows them; a live login that is readable
-  // and not saved can be saved
+  // the providers as the panel shows them, accounts in room order; a live
+  // login that is readable and not saved can be saved
   readonly property var view: providers.map(function(p) {
-    return { id: p.id, title: p.title, live: p.live, error: p.error, accounts: sorted(p.accounts),
+    return { id: p.id, title: p.title, live: p.live, error: p.error, accounts: p.accounts.slice().sort(function(x, y) { return x.rank - y.rank }),
       canSave: !!p.live && p.error === "" && !p.accounts.some(function(a) { return a.active }) }
   })
 
@@ -332,18 +204,17 @@ Panel {
     return gaugeCell(p)
   })
 
-  // the current account's headline room; spent when nothing usable is left,
+  // the current account's first figure; spent when nothing usable is left,
   // unknown while its reading is old
   function gaugeCell(p) {
     var a = p ? p.accounts.find(function(x) { return x.active }) : undefined
     if (!a) return { kind: "unknown", left: 0 }
-    var s = rowState(a.usage, true)
-    if (s === "dead" || s === "unsubscribed") return { kind: "spent", left: 0 }
-    if (aged(a.usage)) return { kind: "unknown", left: 0 }
+    var s = a.standing
+    if (s === "dead" || s === "unplanned") return { kind: "spent", left: 0 }
+    if (aged(a)) return { kind: "unknown", left: 0 }
     if (s === "blocked") return { kind: "spent", left: 0 }
-    var h = s === "unknown" ? null : headline(a.usage)
-    if (!h) return { kind: "unknown", left: 0 }
-    return { kind: "level", left: Math.max(0, Math.min(100, 100 - h.percent)) }
+    if (a.figures.length === 0) return { kind: "unknown", left: 0 }
+    return { kind: "level", left: Math.max(0, Math.min(100, a.figures[0].left)) }
   }
 
   // ---------------------------------------------------------------- cursor
@@ -376,7 +247,7 @@ Panel {
           out.push(mk("keep", p.id, a.name))
         } else {
           out.push(mk("use", p.id, a.name))
-          if (status.relogin(a.usage, a.active)) out.push(mk("relogin", p.id, a.name))
+          if (a.relogin) out.push(mk("relogin", p.id, a.name))
           if (a.usage && a.usage.resets > 0) out.push(mk("redeem", p.id, a.name))
         }
       }
@@ -904,7 +775,7 @@ Panel {
             width: parent.fraction > 0 ? Math.max(parent.width * parent.fraction, parent.height) : 0
             visible: width > 0
             radius: Math.min(Style.space(2), width / 2)
-            color: parent.figure && root.isLow(parent.figure) ? root.caution : root.good
+            color: parent.figure && parent.figure.low ? root.caution : root.good
             Behavior on width { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
           }
         }
@@ -924,12 +795,12 @@ Panel {
     required property var account
     readonly property string key: root.keyOf("use", provider.id, account.name)
     readonly property bool asking: root.confirmingRow(provider.id, account.name)
-    readonly property string standing: root.rowState(account.usage, account.active)
+    readonly property string standing: account.standing
     readonly property bool red: root.usable(standing) === false
     readonly property int offer: account.usage ? account.usage.resets : 0
-    readonly property bool relogin: status.relogin(account.usage, account.active)
+    readonly property bool relogin: account.relogin
     // the dot, figures and bars of an old reading are drawn faint
-    readonly property bool aged: root.aged(account.usage)
+    readonly property bool aged: root.aged(account)
     // the row and its badges act only while no command runs
     readonly property bool live: !status.busy
     readonly property real inset: Style.space(10)
@@ -1030,7 +901,7 @@ Panel {
         anchors.right: parent.right
         anchors.rightMargin: row.badgesWidth > 0 ? row.badgesWidth + nameLine.gap : 0
         anchors.verticalCenter: parent.verticalCenter
-        text: root.figuresText(row.account.usage)
+        text: root.figuresText(row.account)
         textFormat: Text.PlainText
         color: row.aged ? root.dim : (row.red ? root.urgent : root.foreground)
         font.family: root.fontFamily
@@ -1049,7 +920,7 @@ Panel {
       anchors.rightMargin: row.inset + (ageText.visible ? ageText.implicitWidth + Style.space(6) : 0)
       anchors.top: nameLine.bottom
       anchors.topMargin: Style.space(5)
-      figures: root.figures(row.account.usage)
+      figures: row.account.figures
       drained: root.drained(row.standing)
     }
 
@@ -1093,7 +964,7 @@ Panel {
         key: root.keyOf("relogin", row.provider.id, row.account.name)
         label: "!"
         live: row.live
-        tip: (status.dead(row.account.usage, row.account.active) ? "This login no longer works."
+        tip: (row.standing === "dead" ? "This login no longer works."
           : "Usage checks are rate limited.") + " Click to log in again."
         onActivated: status.logInAgain(row.provider.id, row.account.name)
         onHoverEnded: if (rowMouse.containsMouse && !row.overBadge) root.pointKey(row.key)

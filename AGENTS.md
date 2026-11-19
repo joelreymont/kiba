@@ -42,7 +42,8 @@ checked Habu program; a thin Omarchy bar widget runs it.
 - All Forth lives in `package SW`, split one concern per file under `src/`:
   `sw-base.f` errors and byte helpers, `sw-paths.f` file locations, `sw-io.f`
   buffers, the JSON writer, private writes and stdout writes, `sw-json.f`
-  field access over in-memory JSON, `sw-identity.f` who a login belongs to,
+  field access over in-memory JSON, `sw-time.f` RFC 3339 date-times as
+  epoch seconds, `sw-identity.f` who a login belongs to,
   `sw-claude.f` and `sw-codex.f` the live files per provider, `sw-sqlite.f`
   the SQLite binding, `sw-db.f` the account store, `sw-turn.f` the
   per-provider turn, `sw-store.f` saving, installing and forgetting through
