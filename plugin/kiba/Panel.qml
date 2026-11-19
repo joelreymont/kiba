@@ -116,7 +116,7 @@ Panel {
       if (u.limits.length === 0) lines.push(u.note !== "" ? u.note : "No limits reported")
       else for (var i = 0; i < u.limits.length; i += 1) {
         var l = u.limits[i]
-        var left = l.percent >= 100 ? "limit reached" : (100 - l.percent) + "% left"
+        var left = l.percent < 0 ? "no reading" : l.percent >= 100 ? "limit reached" : (100 - l.percent) + "% left"
         var when = l.resetsAt !== "" ? " · resets in " + resetLong(l.resetsAt) : ""
         lines.push(l.label + ": " + left + when)
       }
