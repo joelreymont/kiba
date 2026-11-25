@@ -1,11 +1,14 @@
 split-str
 \ kiba.f - entry point: argument dispatch and process exit.
 require ../src/sw-cli.f
+require ../src/sw-apart.f
 require ../src/sw-base.f
 require ../src/sw-io.f
 require src/lib/prelude.f
 require src/lib/string.f
 require src/lib/fd.f
+require src/lib/fs.f
+require src/lib/ffi-abi.f
 
 package SW
 
@@ -73,18 +76,64 @@ package SW
    ALLOC-BUFFERS
    DISPATCH ;
 
-: FINISH ( n -- ) {: rc :}
-   rc 0= if s" " 0 die then
-   rc E-SW-USAGE = if USAGE s" " 64 die then
-   rc E-SW-REPORTED = if s" " 1 die then
+\ the exit code for throw code rc, its usage or reason printed
+: CODE ( n -- n ) {: rc :}
+   rc 0= if 0 exit then
+   rc E-SW-USAGE = if USAGE 64 exit then
+   rc E-SW-REPORTED = if 1 exit then
    rc REASON$ ERR-NOTE
-   s" " 1 die ;
+   1 ;
+
+: RUN-CODE ( -- n ) [: RUN ;] catch CODE ;
+
+: APART-CODE ( [ -- n ] -- n ) {: body :}
+   0 [: drop body APART ;] catch
+   dup 0= if drop exit then
+   nip CODE ;
+
+\ the commands that may refresh a saved login
+: REFRESHES? ( ^u8 n -- bool ) {: c cu :}
+   c cu s" usage" STR:= if true exit then
+   c cu s" use" STR:= if true exit then
+   c cu s" next" STR:= if true exit then
+   c cu s" redeem" STR:= ;
+
+: APART? ( -- bool )
+   SCRIPT-ARGC 0= if false exit then
+   0 SCRIPT-ARGV$ REFRESHES? ;
+
+: MAIN-CODE ( -- n )
+   APART? if [: RUN-CODE ;] APART-CODE exit then
+   RUN-CODE ;
+
+17 constant LINUX-SIGCHLD
+0 constant SIG-DFL
+
+PROCESS-SYMBOLS
+FUNCTION: SIGNAL-CALL signal ( n n -- n ) ;FUNCTION
+
+\ a child of a process that ignores SIGCHLD cannot be waited for, and exec
+\ passes the ignore on
+: CHLD-DEFAULT ( -- ) LINUX-SIGCHLD SIG-DFL SIGNAL-CALL drop ;
+
+: NULL-FD ( -- n )
+   s\" /dev/null\z" drop FS:O-RDONLY 0 open {: fd :}
+   fd 0 < if s" kiba: cannot open /dev/null" 1 die then
+   fd ;
+
+\ a pipe kiba opens would take the number of a closed stdin, stdout or stderr,
+\ and what is printed would then go down it
+: STDIO-FILL ( -- )
+   begin NULL-FD dup 3 < while drop repeat close ;
 
 public
 
 \ SIGPIPE is ignored for the run: a write to a pipe with no reader fails like
 \ any other write, and the commands kiba starts inherit the ignore
-: MAIN ( -- ) FD:STDERR [: [: RUN ;] catch FINISH ;] FD:WITH-NOSIGPIPE ;
+: MAIN ( -- )
+   STDIO-FILL
+   CHLD-DEFAULT
+   FD:STDERR [: s" " MAIN-CODE die ;] FD:WITH-NOSIGPIPE ;
 
 ;package
 

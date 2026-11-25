@@ -34,6 +34,8 @@ public
 -100025 constant E-SW-REMOTE      \ a provider did not spend a limit reset; its note says why
 -100026 constant E-SW-OUTPUT      \ stdout refused a write
 -100027 constant E-SW-NO-ROOM     \ no other saved account has room
+-100028 constant E-SW-APART       \ the process a command runs apart in gave no exit code
+-100029 constant E-SW-CALLER-GONE \ the caller of a command run apart is gone
 
 0 constant P-CLAUDE
 1 constant P-CODEX

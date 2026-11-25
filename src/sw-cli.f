@@ -7,6 +7,7 @@ require ../src/sw-usage.f
 require ../src/sw-db.f
 require ../src/sw-status.f
 require ../src/sw-turn.f
+require ../src/sw-apart.f
 require ../src/sw-base.f
 require ../src/sw-paths.f
 require ../src/sw-io.f
@@ -77,6 +78,8 @@ public
    rc E-SW-REMOTE = if REMOTE-REASON$ exit then
    rc E-SW-OUTPUT = if s" kiba: could not write the output" exit then
    rc E-SW-NO-ROOM = if s" kiba: no other saved account was found with room" exit then
+   rc E-SW-APART = if s" kiba: the command's own process did not start or stopped early" exit then
+   rc E-SW-CALLER-GONE = if s" kiba: stopped: the process that started it is gone" exit then
    rc E-STR-CAPACITY = if s" kiba: a path or name is too long" exit then
    rc E-FS-OPEN = if s" kiba: cannot open a login file" exit then
    rc E-FS-IO = if s" kiba: a file read, write, or rename failed" exit then
@@ -284,8 +287,12 @@ private
 : WITH-STORE ( [ -- ] -- ) {: body :}
    DB-OPEN [: body execute ;] [: DB-CLOSE ;] finally ;
 
+: RUN-WANTED ( [ -- ] -- ) {: body :}
+   CALLER-GONE? if E-SW-CALLER-GONE throw then
+   body execute ;
+
 : IN-TURN ( n [ -- ] -- ) {: p body :}
-   p TURN-ENTER [: body execute ;] [: p TURN-LEAVE ;] finally ;
+   p TURN-ENTER [: body RUN-WANTED ;] [: p TURN-LEAVE ;] finally ;
 
 : STORE-TURN ( n [ -- ] -- ) {: p body :}
    [: p body IN-TURN ;] WITH-STORE ;
@@ -394,8 +401,9 @@ create OLD-NAME NAME-CAP allot   variable OLD-NAME-U
    LIVE-ROW$ OLD-NAME OLD-NAME-U NAME-CAP SPAN! ;
 
 \ the login saved back, if any, is probed as saved unless it is a u, just
-\ installed
+\ installed, or the caller is gone
 : PROBE-OLD ( n ^u8 n -- ) {: p a u :}
+   CALLER-GONE? if exit then
    OLD-NAME OLD-NAME-U @ {: o ou :}
    ou 0= if exit then
    o ou a u STR:= if exit then
@@ -447,10 +455,14 @@ create NEXT-NAME NAME-CAP allot   variable NEXT-NAME-U
    r DB-ROW-NAME$ NEXT-NAME NEXT-NAME-U NAME-CAP SPAN! true ;
 
 \ the first row in room order to install, its name in NEXT-NAME;
-\ E-SW-NO-ROOM when none has room
+\ E-SW-NO-ROOM when none has room, E-SW-CALLER-GONE once the caller is gone
 : PICK ( n -- ) {: p :}
    -1 ROOM-SORT
-   DB-ROW# 0 ?do p i ROOM-AT TRY-ROOM if unloop exit then loop
+   DB-ROW# 0 ?do
+      p i ROOM-AT TRY-ROOM
+      CALLER-GONE? if E-SW-CALLER-GONE throw then
+      if unloop exit then
+   loop
    E-SW-NO-ROOM throw ;
 
 \ the live login is saved back right before the install, so a token the CLI
@@ -477,7 +489,7 @@ private
 ENUM usage-step checking saving listing listing-mixed probing reported failed ;ENUM
 ENUM check-input answered stale threw ;ENUM
 ENUM list-input listed threw ;ENUM
-ENUM probe-input recorded unrecorded finished ;ENUM
+ENUM probe-input recorded unrecorded finished abandoned ;ENUM
 
 variable USAGE-ASKED                \ epoch second the run began
 variable USAGE-ROW                  \ the row being probed
@@ -554,6 +566,7 @@ DYNAMIC-BUFFER FAULTS u8     variable FAULTS-U     \ the provider error; empty w
 
 : ROW-SENSE ( n -- probe-input )
    USAGE-ROW @ DB-ROW# >= if drop construct probe-input finished exit then
+   CALLER-GONE? if drop construct probe-input abandoned exit then
    [: ROW-RUN ;] catch {: rc :} drop
    rc 0= if construct probe-input recorded exit then
    rc USAGE-RC ! construct probe-input unrecorded ;
@@ -605,6 +618,7 @@ FSM:DEFINE USAGE-STEPS ( n ) usage-step check-input
       recorded    .ROW             >probing
       unrecorded  NOTE-UNRECORDED  >probing
       finished    -                >reported
+      abandoned   -                >failed
    FINAL reported -
    FINAL failed -
 ;DEFINE

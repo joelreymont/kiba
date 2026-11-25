@@ -5,6 +5,7 @@ split-str
 \ fixture rows and logs what each one carried.
 require ../src/kiba.f
 require ../src/sw-turn.f
+require ../src/sw-apart.f
 require ../src/sw-base.f
 require ../src/sw-paths.f
 require ../src/sw-io.f
@@ -21,7 +22,10 @@ require src/lib/fs-list.f
 require src/lib/fs-lock.f
 require src/lib/fd.f
 require src/lib/process.f
+require src/lib/process-fork.f
+require src/lib/process-tree.f
 require src/lib/spawn.f
+require src/lib/task.f
 require src/lib/time.f
 require src/lib/test/stderr.f
 require src/lib/test/runner.f
@@ -38,12 +42,15 @@ require src/lib/aio.f
 require src/lib/net/tcp4.f
 require src/lib/net/http.f
 
-\ White-box: reopens SW for sw-usage.f's private URL-BASE; SW-TEST: words
-\ land in SW-TEST, the rest in SW.
+\ White-box: reopens SW for sw-usage.f's private URL-BASE and kiba.f's
+\ private APART-CODE; SW-TEST: words land in SW-TEST, the rest in SW.
 package SW
 
 \ every request goes to b u followed by its URL after the https://
 : SW-TEST:UT-SERVE-AT ( ^u8 n -- ) URL-BASE URL-BASE-U PATH! ;
+
+\ the exit code kiba ends with for a body run apart
+: SW-TEST:UT-APART-CODE ( [ -- n ] -- n ) APART-CODE ;
 
 ;package
 
@@ -1088,12 +1095,25 @@ create UT-CODEX-TURN PATH-CAP allot   variable UT-CODEX-TURN-U
    fu 0= if exit then
    f fu i UT-F-BYTES UT-ROW$ FS:WRITE-ALL ;
 
+variable UT-HELD-ROW               \ the row whose answer waits, -1 for none
+variable UT-ASKED-W                \ where a worker says it was asked for
+variable UT-GO-R                   \ where the worker then waits for a byte
+10000 constant UT-APART-MS         \ the longest a test waits for another process
+-1 UT-HELD-ROW !
+
+: UT-ROW-HOLD ( n -- ) {: i :}
+   i 0 < if exit then
+   i UT-HELD-ROW atomic@ <> if exit then
+   UT-ASKED-W @ >FD s" ." FD:WRITE-FULL
+   UT-GO-R @ >FD UT-APART-MS >MS PROCESS:POLL-IN-OR-TIMEOUT drop ;
+
 \ a request to route r ru of provider p: logged, then answered from the rows
 : UT-SERVE ( HTTP:request HTTP:response ^u8 n n -- )
    {: q:HTTP:request a:HTTP:response r ru p :}
    q p UT-SEEN
    r ru q UT-BEARER$ q HTTP:BODY$ UT-REFRESH$ UT-FIND {: i :}
    i UT-ROW-WRITE
+   i UT-ROW-HOLD
    q a i UT-REPLY ;
 
 : UT-CLAUDE-USAGE$ ( -- ^u8 n ) s" /api.anthropic.com/api/oauth/usage" ;
@@ -3378,26 +3398,29 @@ create UT-LIST UT-LIST-CAP allot
 \ ---- the order of the queue -------------------------------------------------
 create UT-READY 8 allot
 
-\ a shell that locks the stale entry, says so on fd w and holds the lock
-\ until it is killed
-: UT-HOLDER ( fd -- pid ) {: w:fd :}
+\ a shell that locks the file f fu, says so on fd w and holds the lock until
+\ it is killed
+: UT-HOLDER ( ^u8 n fd -- pid ) {: f fu w:fd :}
    s" /bin/sh" PROCESS:NEW
    s" -c" PROCESS:ARG
    s\" exec 9<\"$0\" && /usr/bin/flock 9 && echo ready && exec /usr/bin/sleep 600" PROCESS:ARG
-   UT-STALE$ PROCESS:ARG
+   f fu PROCESS:ARG
    1 >FD w PROCESS:FD
    PROCESS:SPAWN ;
 
-\ the stale entry, locked by a holder that has said it holds it
-: UT-HOLD-ENTRY ( -- pid )
-   UT-STALE$ s" " WRITE-PRIVATE
+\ the file f fu, locked by a holder that has said it holds it
+: UT-HOLD ( ^u8 n -- pid ) {: f fu :}
    FD:PIPE-PAIR {: r:fd w:fd :}
-   w UT-HOLDER {: pid :}
+   f fu w UT-HOLDER {: pid :}
    w FD>N close
    r FD>N UT-READY 8 read 6 T=
    r FD>N close
    UT-READY 6 s\" ready\n" T$=
    pid ;
+
+: UT-HOLD-ENTRY ( -- pid )
+   UT-STALE$ s" " WRITE-PRIVATE
+   UT-STALE$ UT-HOLD ;
 
 : UT-STOP ( pid -- ) {: pid :}
    pid PROCESS:SIGKILL PROCESS:KILL-RAW RC>N 0 T=
@@ -3555,6 +3578,224 @@ create UT-WRAP-BUF 1024 allot
    UT-LOG-NEW$ nip 0 T=
    P-CLAUDE s" a@x.test" UT-PROBED? TFALSE ;
 
+\ ---- commands run apart ------------------------------------------------------
+\ A forked caller runs a command apart; the caller is killed while the server
+\ holds the refresh of the command's first row, or while another process holds
+\ the command's turn, then what held it lets go. The command's process and the
+\ caller hold UT-ALIVE-W, so UT-ALIVE-R ends once both are gone.
+variable UT-ALIVE-R   variable UT-ALIVE-W
+variable UT-ASKED-R   variable UT-GO-W
+variable UT-RUNNER                 \ the pid of the process running the command
+
+: UT-PIPE! ( ^n ^n -- ) {: rp:^ wp:^ :}
+   FD:PIPE {: r:fd w:fd :}
+   r FD>N rp ! w FD>N wp ! ;
+
+: UT-PIPES ( -- )
+   0 UT-RUNNER !
+   UT-ALIVE-R UT-ALIVE-W UT-PIPE!
+   UT-ASKED-R UT-ASKED-W UT-PIPE!
+   UT-GO-R UT-GO-W UT-PIPE! ;
+
+: UT-PIPES-SHUT ( -- )
+   UT-ALIVE-R @ close
+   UT-ASKED-R @ close UT-ASKED-W @ close
+   UT-GO-R @ close UT-GO-W @ close ;
+
+\ how many bytes, up to a cell, came from r into buf; 0 at its end
+: UT-AWAIT ( n ^u8 -- n ) {: r buf:^ :}
+   r >FD UT-APART-MS >MS PROCESS:POLL-IN-OR-TIMEOUT drop
+   r buf 8 read ;
+
+: UT-ENDED ( n -- ) UT-READY UT-AWAIT 0 T= ;
+
+: UT-TELL-PID ( -- )
+   getpid UT-RUNNER !
+   UT-ALIVE-W @ >FD UT-RUNNER BYTE-VIEW 8 FD:WRITE-FULL ;
+
+\ the forked caller, which leads a process group and never returns to the suite
+: UT-CALLER ( [ -- n ] -- ) {: body :}
+   0 >PID 0 >PID PROC-FORK:SET-PGID drop
+   0 [: drop body APART ;] catch 2drop
+   s" " 0 die ;
+
+: UT-FORK-CALLER ( [ -- n ] -- pid ) {: body :}
+   PROC-FORK:CHECKED {: pid:pid :}
+   pid PID>N 0= if body UT-CALLER then
+   pid ;
+
+\ the command's process ends by itself; one that does not is killed
+: UT-RUNNER-END ( -- )
+   UT-GO-W @ >FD s" ." FD:WRITE-FULL
+   UT-ALIVE-R @ >FD UT-APART-MS >MS PROCESS:POLL-IN COUNT>N 1 = dup TTRUE
+   if UT-ALIVE-R @ UT-ENDED exit then
+   UT-RUNNER @ 1 <= if exit then
+   UT-RUNNER @ >PID PROCESS:SIGKILL PROCESS:KILL-RAW RC>N 0 T= ;
+
+: UT-PID-READ ( -- )
+   UT-ALIVE-R @ UT-RUNNER BYTE-VIEW UT-AWAIT 8 T= ;
+
+\ the held refresh was asked for
+: UT-ASKED ( -- ) UT-ASKED-R @ UT-READY UT-AWAIT 1 T= ;
+
+\ ready comes true within UT-APART-MS
+: UT-UNTIL ( [ -- bool ] -- ) {: ready :}
+   TIME:MONO-NS UT-APART-MS 1000000 * + {: end :}
+   begin ready execute 0= TIME:MONO-NS end < and while
+      10 >MS TASK:SLEEP
+   repeat
+   ready execute TTRUE ;
+
+\ Claude's queue has the command's entry
+: UT-QUEUED ( -- ) [: UT-QUEUE-LEN 0 > ;] UT-UNTIL ;
+
+\ the process pid, its descendants and their groups are killed
+: UT-TREE-END ( pid -- ) {: pid:pid :}
+   pid PROC-TREE:KILL-TREE
+   pid PROCESS:WAIT PROCESS:STATUS>RC RC>N 137 T= ;
+
+\ the body's caller is killed once the wait for the command has ended
+: UT-KILL-AFTER ( [ -- n ] [ -- ] -- ) {: body wait :}
+   body UT-FORK-CALLER {: pid:pid :}
+   UT-ALIVE-W @ close
+   [: UT-PID-READ wait execute ;] [: pid UT-TREE-END ;] finally ;
+
+\ kill leaves a command whose caller is gone
+: UT-LEFT-BEHIND ( [ -- ] -- ) {: kill :}
+   UT-PIPES
+   [: kill [: UT-RUNNER-END ;] finally ;]
+   [: -1 UT-HELD-ROW atomic! UT-PIPES-SHUT ;] finally ;
+
+\ the body's caller is killed while the held refresh is under way
+: UT-CALLER-KILLED ( [ -- n ] -- ) {: body :}
+   [: body [: UT-ASKED ;] UT-KILL-AFTER ;] UT-LEFT-BEHIND ;
+
+: UT-KILL-QUEUED ( [ -- n ] -- ) {: body :}
+   UT-TURN$ UT-HOLD {: hold:pid :}
+   [: body [: UT-QUEUED ;] UT-KILL-AFTER ;] [: hold UT-STOP ;] finally ;
+
+\ the body's caller is killed while the command waits for Claude's turn
+: UT-WAITER-KILLED ( [ -- n ] -- ) {: body :}
+   [: body UT-KILL-QUEUED ;] UT-LEFT-BEHIND ;
+
+\ row 0@x.test, the first to be probed, refreshes its login to sk-0-new when
+\ the held answer comes; its week is then used up
+: UT-HELD-ROWS ( -- )
+   UT-ANSWERS-RESET
+   UT-CLAUDE-USAGE$ s" " 200 s\" {\"seven_day\":{\"utilization\":100}}" UT-ANSWER
+   UT-NEXT-ROW UT-HELD-ROW atomic!
+   UT-CLAUDE-TOKEN$ s" r-0" 200 s\" {\"access_token\":\"sk-0-new\",\"refresh_token\":\"r-0-new\",\"expires_in\":3600}" UT-ANSWER
+   P-CLAUDE s" 0@x.test" s" 0" UT-PAST CREDS-TOKEN$ UT-PUT ;
+
+: UT-HELD-GONE ( -- )
+   P-CLAUDE s" 0@x.test" CMD-FORGET
+   UT-ANSWERS-DEFAULT ;
+
+: UT-USAGE-BODY ( -- n ) UT-TELL-PID P-CLAUDE CMD-USAGE 0 ;
+
+: UT-NEXT-BODY ( -- n ) UT-TELL-PID P-CLAUDE CMD-NEXT 0 ;
+
+\ since the mark only 0@x.test was asked about: its usage, with its new token
+: UT-ASKED-ONE ( -- )
+   UT-LOG-NEW$ {: l lu :}
+   l lu s\" Bearer sk-0-new\n" STR:CONTAINS? TTRUE
+   l lu s\" Bearer sk-a\n" STR:CONTAINS? TFALSE
+   l lu s" r-o" STR:CONTAINS? TFALSE ;
+
+\ rows a@x.test, live, and o@x.test, expired, come after 0@x.test in usage's
+\ order, and o@x.test in next's
+: UT-REST-ROWS ( -- )
+   UT-HELD-ROWS
+   P-CLAUDE UT-OUTCOME$ s" o" UT-PAST CREDS-TOKEN$ UT-PUT
+   P-CLAUDE s" 0@x.test" UT-SET-FINE
+   P-CLAUDE UT-OUTCOME$ UT-SET-TIGHT
+   UT-LOG-MARK ;
+
+: UT-REST-LEFT ( [ -- n ] -- ) {: body :}
+   UT-REST-ROWS
+   body UT-CALLER-KILLED
+   UT-ASKED-ONE
+   UT-OUTCOME-GONE
+   P-CLAUDE s" 0@x.test" [: 2dup s" sk-0-new" STR:CONTAINS? TTRUE s" r-0-new" STR:CONTAINS? TTRUE ;] UT-ROW-LOGIN
+   UT-HELD-GONE ;
+
+\ once its caller is gone, usage and next save the refresh under way and probe
+\ no row after the one in hand
+: UT-CALLER-GONE ( -- )
+   [: UT-USAGE-BODY ;] UT-REST-LEFT
+   [: UT-NEXT-BODY ;] UT-REST-LEFT ;
+
+\ row n@x.test, the one next would pick, refreshes its login to sk-b-new when
+\ the held answer comes
+: UT-PICK-ROW ( -- )
+   UT-PUT-N
+   P-CLAUDE s" n@x.test" UT-SET-FINE
+   UT-NEXT-ROW UT-HELD-ROW atomic!
+   UT-CLAUDE-TOKEN$ s" r-n" 200 s\" {\"access_token\":\"sk-b-new\",\"refresh_token\":\"r-b-new\",\"expires_in\":3600}" UT-ANSWER
+   UT-LOG-MARK ;
+
+\ next, its caller gone while the row it would pick refreshes, neither switches
+\ nor asks anything after that row's usage
+: UT-PICK-LEFT ( -- )
+   UT-PICK-ROW
+   [: UT-NEXT-BODY ;] UT-CALLER-KILLED
+   UT-LOG-NEW$ s\" Bearer sk-b-new\nturn held request\n" STR:ENDS-WITH? TTRUE
+   P-CLAUDE s" n@x.test" UT-RECORD s" ok" UT-STATE=
+   P-CLAUDE UT-LIVE-NAME s" a@x.test" T$=
+   CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
+   P-CLAUDE s" n@x.test" CMD-FORGET
+   UT-ANSWERS-DEFAULT ;
+
+$40000 constant UT-WAS-CAP
+UT-WAS-CAP BUFFER: UT-WAS   variable UT-WAS-U   \ the store file's bytes
+
+: UT-STORE-KEEP ( -- )
+   DB-PATH$ READ-FILE$ UT-WAS UT-WAS-CAP SPAN-COPY nip UT-WAS-U ! ;
+
+: UT-STORE-KEPT ( -- )
+   DB-PATH$ READ-FILE$ UT-WAS UT-WAS-U @ STR:= TTRUE ;
+
+: UT-USE-BODY ( -- n ) UT-TELL-PID P-CLAUDE s" n@x.test" CMD-USE 0 ;
+
+\ use, its caller gone before its turn came, neither switches nor saves the
+\ login its CLI has renewed
+: UT-USE-LEFT ( -- )
+   UT-PUT-N
+   CLAUDE-CREDS$ CREDS-A2$ WRITE-PRIVATE
+   UT-STORE-KEEP
+   [: UT-USE-BODY ;] UT-WAITER-KILLED
+   UT-STORE-KEPT
+   UT-QUEUE-LEN 0 T=
+   CLAUDE-CREDS$ READ-FILE$ CREDS-A2$ T$=
+   P-CLAUDE UT-LIVE-NAME s" a@x.test" T$=
+   CLAUDE-CREDS$ CREDS-A$ WRITE-PRIVATE
+   P-CLAUDE s" n@x.test" CMD-FORGET ;
+
+\ the exit code kiba ends with for the body run apart, its process then gone
+: UT-APART ( [ -- n ] -- n ) {: body :}
+   UT-ALIVE-R UT-ALIVE-W UT-PIPE!
+   body UT-APART-CODE
+   UT-ALIVE-W @ close
+   UT-ALIVE-R @ UT-ENDED
+   UT-ALIVE-R @ close ;
+
+: UT-KILLED-BODY ( -- n )
+   getpid >PID PROCESS:SIGKILL PROCESS:KILL-RAW RC>N ;
+
+\ the body's output and exit code reach the caller; a body that ends without
+\ a code is 1 with the reason
+: UT-APART-CODES ( -- )
+   [: [: s\" apart\n" .TEXT 0 ;] UT-APART UT-N ! ;] UT-CAPTURE$ s\" apart\n" T$=
+   UT-N @ 0 T=
+   [: 64 ;] UT-APART 64 T=
+   UT-ERR-PATH!
+   UT-ERR$ STDERR:CAPTURE
+   [: [: UT-KILLED-BODY ;] UT-APART UT-N ! ;] [: STDERR:;CAPTURE ;] finally
+   UT-N @ 1 T=
+   UT-ERR$ READ-FILE$
+   s\" kiba: the command's own process did not start or stopped early\n" T$=
+   CALLER-GONE? TFALSE ;
+
 \ ---- kiba as a program -------------------------------------------------------
 \ MAIN ends the process through die, so a child runs it: the hb running this
 \ suite loads src/kiba.f and a file that calls MAIN. The child's HOME and
@@ -3599,10 +3840,9 @@ $1A4 constant UT-MODE-OUT                              \ 0644
 : UT-OFFLINE-MAIN$ ( -- ^u8 n )
    s\" split-str\npackage SW\n: UT-OFFLINE ( -- ) s\" none://\" URL-BASE URL-BASE-U PATH! ;\nUT-OFFLINE\n;package\nMAIN\n" ;
 
-\ kiba's MAIN, its arguments to follow
-: UT-KIBA-NEW ( -- PROCESS:request )
+\ the request runs kiba's MAIN, its arguments to follow
+: UT-KIBA-ARGS ( PROCESS:request -- PROCESS:request )
    UT-MAIN-F$ UT-OFFLINE-MAIN$ FS:WRITE-ALL
-   UT-HB$ PROCESS:NEW
    s" --load" PROCESS:ARG
    UT-KIBA-F$ PROCESS:ARG
    UT-MAIN-F$ PROCESS:ARG
@@ -3610,6 +3850,15 @@ $1A4 constant UT-MODE-OUT                              \ 0644
    s" HOME" UT-CHILD$ PROCESS:ENV
    s" XDG_DATA_HOME" UT-CHILD$ s" /data" UT-AT$ PROCESS:ENV
    s" PATH" UT-CHILD$ s" /bin" UT-AT$ PROCESS:ENV ;
+
+: UT-KIBA-NEW ( -- PROCESS:request ) UT-HB$ PROCESS:NEW UT-KIBA-ARGS ;
+
+\ kiba started with SIGCHLD ignored
+: UT-DEAF-NEW ( -- PROCESS:request )
+   s" /usr/bin/env" PROCESS:NEW
+   s" --ignore-signal=CHLD" PROCESS:ARG
+   UT-HB$ PROCESS:ARG
+   UT-KIBA-ARGS ;
 
 : UT-CREATE ( ^u8 n -- n )
    FS:>PATHZ FS:O-WRONLY FS:O-CREAT or FS:O-TRUNC or UT-MODE-OUT open {: fd :}
@@ -3655,6 +3904,93 @@ $1A4 constant UT-MODE-OUT                              \ 0644
    UT-KIBA-NEW s" next" PROCESS:ARG s" claude" PROCESS:ARG
    s" " s\" kiba: no other saved account was found with room\n" 1 UT-KIBA=
    UT-KIBA-NEW s" " USAGE-TEXT$ 64 UT-KIBA= ;
+
+: UT-USE-ENDS ( PROCESS:request -- )
+   s" use" PROCESS:ARG s" claude" PROCESS:ARG s" a@x.test" PROCESS:ARG
+   s\" claude: now a@x.test\n" s" " 0 UT-KIBA= ;
+
+: UT-NEXT-ENDS ( PROCESS:request -- )
+   s" next" PROCESS:ARG s" claude" PROCESS:ARG
+   s" " s\" kiba: no other saved account was found with room\n" 1 UT-KIBA= ;
+
+\ a command run apart ends alike with SIGCHLD ignored and not
+: UT-CHLD-IGNORED ( -- )
+   s" /chld-home" UT-CHILD!
+   UT-CHILD$ s" /.claude" UT-AT$ ENSURE-PRIVATE
+   UT-CHILD$ s" /.claude.json" UT-AT$ CFG-A$ WRITE-PRIVATE
+   UT-CHILD$ s" /.claude/.credentials.json" UT-AT$ CREDS-A$ WRITE-PRIVATE
+   UT-KIBA-NEW s" save" PROCESS:ARG s" claude" PROCESS:ARG
+   s\" claude: saved a@x.test\n" s" " 0 UT-KIBA=
+   UT-KIBA-NEW UT-USE-ENDS
+   UT-DEAF-NEW UT-USE-ENDS
+   UT-KIBA-NEW UT-NEXT-ENDS
+   UT-DEAF-NEW UT-NEXT-ENDS ;
+
+\ ---- kiba killed while it waits for its turn -----------------------------------
+\ A holder has Claude's turn in the child's store, so kiba joins its queue and
+\ waits. Every process of the run holds UT-ALIVE-W, as its stdout.
+: UT-WAIT-TURN$ ( -- ^u8 n ) UT-CHILD$ s" /data/kiba/turn-claude" UT-AT$ ;
+
+: UT-WAIT-QUEUE$ ( -- ^u8 n ) UT-CHILD$ s" /data/kiba/turn-claude.queue" UT-AT$ ;
+
+\ the first entry of the queue whose names are the span
+: UT-WAIT-ENTRY$ ( ^u8 n -- ^u8 n )
+   STR:LF 0 STR:SPLIT-NEXT 2drop {: e eu :}
+   UT-WAIT-QUEUE$ {: q qu :}
+   SB-RESET q qu SB-APPEND FS:SLASH SB-APPEND-C e eu SB-APPEND
+   SB$ UT-AT UT-AT-U PATH!
+   UT-AT UT-AT-U @ ;
+
+\ a process holds the lock of the queue's first entry
+: UT-WAITING? ( -- bool )
+   UT-WAIT-QUEUE$ FS:DIR? 0= if false exit then
+   UT-WAIT-QUEUE$ UT-LIST UT-LIST-CAP FS-LIST:NAMES {: n :}
+   n 0= if false exit then
+   UT-LIST n UT-WAIT-ENTRY$ FS:>PATHZ open-rd {: fd :}
+   fd 0 < if false exit then
+   fd >FD FS-LOCK:TRY 0=
+   fd close ;
+
+\ the process the request starts, killed with its tree as it waits
+: UT-WAITER-END ( PROCESS:request -- )
+   UT-ERR-OUT$ UT-CREATE {: err :}
+   1 >FD UT-ALIVE-W @ >FD PROCESS:FD
+   2 >FD err >FD PROCESS:FD
+   PROCESS:SPAWN {: pid :}
+   UT-ALIVE-W @ close
+   err close-rc 0 T=
+   [: [: UT-WAITING? ;] UT-UNTIL ;] [: pid UT-TREE-END ;] finally ;
+
+\ whether the queue entry is held once the request's process tree is killed
+: UT-WAITER-KILLED? ( [ -- PROCESS:request ] -- bool ) {: new :}
+   UT-WAIT-TURN$ UT-HOLD {: hold:pid :}
+   false [: drop new execute UT-WAITER-END UT-WAITING? ;] [: hold UT-STOP ;] finally ;
+
+: UT-OUTLIVES ( [ -- PROCESS:request ] -- ) {: new :}
+   [: new UT-WAITER-KILLED? TTRUE ;] UT-LEFT-BEHIND
+   UT-WAITING? TFALSE ;
+
+: UT-ENDS-TOO ( [ -- PROCESS:request ] -- ) {: new :}
+   [: new UT-WAITER-KILLED? TFALSE ;] UT-LEFT-BEHIND ;
+
+: UT-WAIT-ALL ( ^u8 n -- PROCESS:request ) {: c cu :}
+   UT-KIBA-NEW c cu PROCESS:ARG s" claude" PROCESS:ARG ;
+
+: UT-WAIT-ONE ( ^u8 n -- PROCESS:request )
+   UT-WAIT-ALL s" a@x.test" PROCESS:ARG ;
+
+\ usage, use, next and redeem outlive kiba's process tree; save and forget end
+\ with it
+: UT-APART-WIRED ( -- )
+   s" /wait-home" UT-CHILD!
+   UT-CHILD$ s" /data/kiba" UT-AT$ ENSURE-PRIVATE
+   UT-WAIT-TURN$ s" " WRITE-PRIVATE
+   [: s" usage" UT-WAIT-ALL ;] UT-OUTLIVES
+   [: s" use" UT-WAIT-ONE ;] UT-OUTLIVES
+   [: s" next" UT-WAIT-ALL ;] UT-OUTLIVES
+   [: s" redeem" UT-WAIT-ONE ;] UT-OUTLIVES
+   [: s" save" UT-WAIT-ALL ;] UT-ENDS-TOO
+   [: s" forget" UT-WAIT-ONE ;] UT-ENDS-TOO ;
 
 \ UT-KIBA-NEW with the live files placed in UT-CC$ and UT-CX$
 : UT-PLACED-NEW ( -- PROCESS:request )
@@ -3780,6 +4116,10 @@ $1A4 constant UT-MODE-OUT                              \ 0644
    UT-NEXT-UNREPAIRED
    UT-COMMANDS-HELD
    UT-USAGE-BUSY
+   UT-CALLER-GONE
+   UT-PICK-LEFT
+   UT-USE-LEFT
+   UT-APART-CODES
    UT-REDEEM-CLAUDE
    UT-REDEEM-RENEWED
    UT-REDEEM-SEGMENT
@@ -3798,6 +4138,8 @@ $1A4 constant UT-MODE-OUT                              \ 0644
    UT-TURN-BUSY
    UT-TURN-ORDER
    UT-EXIT-CODES
+   UT-CHLD-IGNORED
+   UT-APART-WIRED
    UT-CONFIG-PLACES ;
 
 \ test.sh's second run starts kiba with CLAUDE_CONFIG_DIR and CODEX_HOME

@@ -48,8 +48,9 @@ checked Habu program; a thin Omarchy bar widget runs it.
   the SQLite binding, `sw-db.f` the account store, `sw-turn.f` the
   per-provider turn, `sw-store.f` saving, installing and forgetting through
   the store, `sw-status.f` the status read, `sw-run.f` provider commands in
-  the foreground, `sw-usage.f` usage probes and limit resets through Habu's
-  `CURL` (libcurl), `sw-cli.f` the commands, `kiba.f` the entry and `MAIN`.
+  the foreground, `sw-apart.f` running a command apart from its caller,
+  `sw-usage.f` usage probes and limit resets through Habu's `CURL`
+  (libcurl), `sw-cli.f` the commands, `kiba.f` the entry and `MAIN`.
 - Library words come from the installed [Habu](https://github.com/joelreymont/habu),
   the one `hb` on `PATH` resolves to. `build.sh` and `test.sh` run its
   `bin/hb` from its root, so relative `require src/lib/...` resolves there. To
@@ -64,6 +65,10 @@ checked Habu program; a thin Omarchy bar widget runs it.
 - Every command but `status` opens the store itself and holds its
   provider's turn (`STORE-TURN`) from start to end, network calls included;
   each store write is one `DB-WRITE` transaction.
+- A command that may refresh a login (`usage`, `use`, `next`, `redeem`) runs
+  apart from its caller (`APART`), because the refresh spends the old tokens;
+  once its caller is gone it stops between accounts, and does nothing when it
+  was still waiting for its turn.
 
 ## Layout
 

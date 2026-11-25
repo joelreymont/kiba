@@ -148,7 +148,9 @@ work again.
 - **Turns**: every command but `status` holds its provider's turn, a lock
   shared by every kiba process, from start to end, network calls included.
   Waiters take it in the order they arrived and give up after two minutes;
-  Claude and Codex commands run side by side.
+  Claude and Codex commands run side by side. A `usage`, `use`, `next` or
+  `redeem` that is interrupted finishes the account it is on, so no login is
+  lost; one still waiting for its turn does nothing.
 - **Save-back**: both CLIs rotate tokens while they run, so before installing
   another account `use` first saves the currently live login into its own row.
   A saved copy is therefore never staler than the last switch away from it.
