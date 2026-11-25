@@ -3771,6 +3771,39 @@ UT-WAS-CAP BUFFER: UT-WAS   variable UT-WAS-U   \ the store file's bytes
    CLAUDE-CREDS$ CREDS-A$ WRITE-PRIVATE
    P-CLAUDE s" n@x.test" CMD-FORGET ;
 
+\ row n@x.test's token is still good, and its usage answer is held
+: UT-OLD-ROW ( -- )
+   UT-PUT-N
+   P-CLAUDE s" n@x.test" s" n" UT-FAR CREDS-TOKEN$ UT-SET-LOGIN
+   P-CLAUDE s" n@x.test" UT-AGE
+   P-CLAUDE s" a@x.test" UT-AGE
+   UT-NEXT-ROW UT-HELD-ROW atomic!
+   UT-CLAUDE-USAGE$ s" sk-n" 200 s\" {\"five_hour\":{\"utilization\":10}}" UT-ANSWER
+   UT-LOG-MARK ;
+
+\ the login installed stays live and its reading is recorded; the one saved
+\ back keeps its old reading
+: UT-OLD-KEPT ( -- )
+   P-CLAUDE UT-LIVE-NAME s" n@x.test" T$=
+   CLAUDE-CREDS$ READ-FILE$ s" n" UT-FAR CREDS-TOKEN$ T$=
+   P-CLAUDE s" n@x.test" UT-PROBED? TTRUE
+   s" ok" UT-STATE=
+   P-CLAUDE s" a@x.test" CREDS-A$ UT-LOGIN=
+   P-CLAUDE s" a@x.test" UT-PROBED? TFALSE ;
+
+\ use, its caller gone while the usage of the login it installed is read,
+\ asks nothing for the login it saved back
+: UT-OLD-LEFT ( -- )
+   UT-OLD-ROW
+   [: UT-USE-BODY ;] UT-CALLER-KILLED
+   UT-LOG-NEW$ s\" Bearer sk-n\nturn held request\n" STR:ENDS-WITH? TTRUE
+   UT-OLD-KEPT
+   P-CLAUDE s" a@x.test" CMD-USE
+   CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
+   CLAUDE-CONFIG$ READ-FILE$ CFG-BA$ T$=
+   P-CLAUDE s" n@x.test" CMD-FORGET
+   UT-ANSWERS-DEFAULT ;
+
 \ the exit code kiba ends with for the body run apart, its process then gone
 : UT-APART ( [ -- n ] -- n ) {: body :}
    UT-ALIVE-R UT-ALIVE-W UT-PIPE!
@@ -3925,6 +3958,28 @@ $1A4 constant UT-MODE-OUT                              \ 0644
    UT-DEAF-NEW UT-USE-ENDS
    UT-KIBA-NEW UT-NEXT-ENDS
    UT-DEAF-NEW UT-NEXT-ENDS ;
+
+\ kiba started by the shell program a u, which execs "$0" "$@"
+: UT-SHELL-NEW ( ^u8 n -- PROCESS:request ) {: a u :}
+   s" /bin/sh" PROCESS:NEW
+   s" -c" PROCESS:ARG
+   a u PROCESS:ARG
+   UT-HB$ PROCESS:ARG
+   UT-KIBA-ARGS ;
+
+\ kiba started by a u prints nothing, and ends as it does with stdio open
+: UT-SHUT-ENDS ( ^u8 n -- ) {: a u :}
+   a u UT-SHELL-NEW s" next" PROCESS:ARG s" claude" PROCESS:ARG
+   s" " s" " 1 UT-KIBA=
+   a u UT-SHELL-NEW s" use" PROCESS:ARG s" bogus" PROCESS:ARG s" x" PROCESS:ARG
+   s" " s" " 64 UT-KIBA= ;
+
+\ what a command run apart prints on a closed stderr reaches no pipe of kiba's:
+\ its exit code is the one UT-EXIT-CODES checks with stdio open
+: UT-STDIO-SHUT ( -- )
+   s" /shut-home" UT-CHILD!
+   s\" exec \"$0\" \"$@\" <&- 2>&-" UT-SHUT-ENDS
+   s\" exec \"$0\" \"$@\" >&- 2>&-" UT-SHUT-ENDS ;
 
 \ ---- kiba killed while it waits for its turn -----------------------------------
 \ A holder has Claude's turn in the child's store, so kiba joins its queue and
@@ -4119,6 +4174,7 @@ $1A4 constant UT-MODE-OUT                              \ 0644
    UT-CALLER-GONE
    UT-PICK-LEFT
    UT-USE-LEFT
+   UT-OLD-LEFT
    UT-APART-CODES
    UT-REDEEM-CLAUDE
    UT-REDEEM-RENEWED
@@ -4139,6 +4195,7 @@ $1A4 constant UT-MODE-OUT                              \ 0644
    UT-TURN-ORDER
    UT-EXIT-CODES
    UT-CHLD-IGNORED
+   UT-STDIO-SHUT
    UT-APART-WIRED
    UT-CONFIG-PLACES ;
 
