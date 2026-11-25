@@ -88,6 +88,10 @@ checked Habu program; a thin Omarchy bar widget runs it.
 
 - Tests: `./test.sh` runs the suite inside a scratch `HOME` with an empty
   environment; it never touches real credentials.
+- Any other scratch run of kiba starts from an empty environment with `HOME`
+  and `XDG_DATA_HOME` both in scratch (`env -i HOME=... XDG_DATA_HOME=...`):
+  the store is under `XDG_DATA_HOME` when that is set, so a scratch `HOME`
+  alone opens the real store.
 - Widget: `omarchy plugin validate plugin/kiba`, then
   `omarchy-shell kiba open` and check `journalctl --user` for QML
   errors.
