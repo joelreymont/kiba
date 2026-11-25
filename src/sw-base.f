@@ -116,22 +116,22 @@ public
 \ the number after "email #", or -1 when the name is not of that form
 : NAME-SUFFIX# ( ^u8 n ^u8 n -- n ) {: a u e eu :}
    u eu 2 + <= if -1 exit then
-   a eu e eu STR= 0= if -1 exit then
-   a eu + 2 s"  #" STR= 0= if -1 exit then
-   a eu + 2 + u eu - 2 - STR-DIGITS? 0= if -1 exit then
-   a eu + 2 + u eu - 2 - STR>NUMBER? MATCH option
+   a eu e eu STR:= 0= if -1 exit then
+   a eu + 2 s"  #" STR:= 0= if -1 exit then
+   a eu + 2 + u eu - 2 - STR:DIGITS? 0= if -1 exit then
+   a eu + 2 + u eu - 2 - STR:>NUMBER? MATCH option
      none OF -1 ENDOF
      some OF ENDOF
    ;MATCH ;
 
 \ a slot name belongs to an email when it is the email or "email #n"
 : NAME-FOR-EMAIL? ( ^u8 n ^u8 n -- bool ) {: a u e eu :}
-   a u e eu STR= if true exit then
+   a u e eu STR:= if true exit then
    a u e eu NAME-SUFFIX# 0 > ;
 
 \ the email part of a slot name
 : NAME-EMAIL ( ^u8 n -- ^u8 n ) {: a u :}
-   a u s"  #" FIND-SUB MATCH option
+   a u s"  #" STR:FIND-SUB MATCH option
      none OF a u ENDOF
      some OF IDX>N {: i :} a i ENDOF
    ;MATCH ;
@@ -151,7 +151,7 @@ public
 \ the first index from at whose byte is not a digit
 : DIGIT-RUN ( ^u8 n n -- n ) {: a u at :}
    at begin
-      dup u < if dup a + c@ STR-DIGIT? else false then
+      dup u < if dup a + c@ STR:DIGIT? else false then
    while 1+ repeat ;
 
 ;package

@@ -29,7 +29,7 @@ TYPED-VARIABLE OBJ-A ^u8    variable OBJ-U     \ an oauthAccount object or a JWT
 TYPED-VARIABLE TOK-A ^u8    variable TOK-U     \ a raw id_token string
 TYPED-VARIABLE VAL-A ^u8    variable VAL-U     \ a decoded token
 TYPED-VARIABLE ACCT-ID-A ^u8  variable ACCT-ID-U  \ a ChatGPT account id
-TYPED-VARIABLE JSON-A ^u8                      \ the JSON writer's output
+TYPED-VARIABLE JSON-V ^VEC:vector<u8>           \ the JSON writer's output
 TYPED-VARIABLE SDOC-A ^u8   variable SDOC-U    \ one saved login's document
 TYPED-VARIABLE BACK-A ^u8   variable BACK-U    \ the credentials read back after a failed install
 create LINK-BUF PATH-CAP allot  variable LINK-U
@@ -105,7 +105,7 @@ public
    TOK-A ALLOC-ONE
    VAL-A ALLOC-ONE
    ACCT-ID-A ALLOC-ONE
-   JSON-A ALLOC-ONE
+   HEAP:ALLOCATOR 0 [type] u8 VEC:NEW JSON-V !
    SDOC-A ALLOC-ONE
    BACK-A ALLOC-ONE ;
 
@@ -114,7 +114,6 @@ public
 : FILE-BUF ( -- ^u8 ) FILE-A @ ;
 : OBJ-BUF ( -- ^u8 ) OBJ-A @ ;
 : TOK-BUF ( -- ^u8 ) TOK-A @ ;
-: JSON-BUF ( -- ^u8 ) JSON-A @ ;
 : SDOC-BUF ( -- ^u8 ) SDOC-A @ ;
 : BACK-BUF ( -- ^u8 ) BACK-A @ ;
 
@@ -125,12 +124,12 @@ public
 : SDOC$ ( -- ^u8 n ) SDOC-BUF SDOC-U @ ;
 : BACK$ ( -- ^u8 n ) BACK-BUF BACK-U @ ;
 
-\ every JSON document kiba emits is built in JSON-BUF through one writer:
+\ every JSON document kiba emits is built in JSON-V through one writer:
 \ JSON-OPEN starts a document and JSON:WRITTEN$ ends its chain with the bytes
 TYPED-VARIABLE JSON-W JSON:writer
 
 : JSON-OPEN ( -- ^JSON:writer )
-   JSON-W JSON-BUF BUF-CAP JSON:WRITE-OPEN ;
+   JSON-W JSON-V @ JSON:OPEN ;
 
 \ strings named by offset and length in a byte vector, kept by appends that
 \ may move the bytes; a store's first TEXTS-RESET makes its vector and each
@@ -165,7 +164,7 @@ TYPED-VARIABLE JSON-W JSON:writer
 \ two documents READ-OPT read, either of which may be missing
 : SAME-OPT? ( ^u8 n ^u8 n -- bool ) {: a u b v :}
    u 0 < v 0 < or if u v = exit then
-   a u b v STR= ;
+   a u b v STR:= ;
 
 : READ-FILE$ ( ^u8 n -- ^u8 n )
    FILE-BUF FILE-U READ-INTO ;

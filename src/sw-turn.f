@@ -121,13 +121,13 @@ TICKETS-SHUT
 \ the value in decimal, zero-padded to the width, so names sort as numbers do
 : SB-PADDED ( n n -- ) {: v w :}
    v FMT:INT$ {: a u :}
-   w u - 0 ?do STR-ZERO SB-APPEND-C loop
+   w u - 0 ?do STR:ZERO SB-APPEND-C loop
    a u SB-APPEND ;
 
 : NAME-NEXT ( n -- ) {: p :}
    SB-RESET
-   TIME:MONO-NS STAMP-DIGITS SB-PADDED STR-MINUS SB-APPEND-C
-   getpid PID-DIGITS SB-PADDED STR-MINUS SB-APPEND-C
+   TIME:MONO-NS STAMP-DIGITS SB-PADDED STR:MINUS SB-APPEND-C
+   getpid PID-DIGITS SB-PADDED STR:MINUS SB-APPEND-C
    ENTRY-COUNT @ COUNT-DIGITS SB-PADDED
    1 ENTRY-COUNT +!
    SB$ drop p ENTRY-NAME$ BYTE-COPY ;
@@ -178,8 +178,8 @@ TICKETS-SHUT
    p QUEUE$ LIST-BUF LIST-CAP FS-LIST:NAMES {: len :}
    0 begin dup len < while
       {: at :}
-      LIST-BUF len STR-LF at SPLIT-NEXT drop {: a u next :}
-      a u p ENTRY-NAME$ STR< 0= if false exit then
+      LIST-BUF len STR:LF at STR:SPLIT-NEXT drop {: a u next :}
+      a u p ENTRY-NAME$ STR:< 0= if false exit then
       p a u LIVE? if true exit then
       next
    repeat drop false ;

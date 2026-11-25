@@ -98,7 +98,7 @@ private
 : BARE-REASON$ ( n -- ^u8 n )
    REASON$ {: a u :}
    s" kiba: " {: k ku :}
-   a u k ku STARTS-WITH? 0= if a u exit then
+   a u k ku STR:STARTS-WITH? 0= if a u exit then
    a ku + u ku - ;
 
 \ ---- status: the read -------------------------------------------------------
@@ -355,8 +355,8 @@ create LIVE-B NAME-CAP allot   variable LIVE-B-U    \ -1 when none
    mixed if p INSTALLED-LIVE then ;
 
 : LIVE-NAME? ( ^u8 n -- bool ) {: a u :}
-   LIVE-A-U @ 0 >= if a u LIVE-A LIVE-A-U @ STR= if true exit then then
-   LIVE-B-U @ 0 >= if a u LIVE-B LIVE-B-U @ STR= exit then
+   LIVE-A-U @ 0 >= if a u LIVE-A LIVE-A-U @ STR:= if true exit then then
+   LIVE-B-U @ 0 >= if a u LIVE-B LIVE-B-U @ STR:= exit then
    false ;
 
 \ a probe that throws becomes row r's error outcome, not the command's failure
@@ -369,7 +369,7 @@ create LIVE-B NAME-CAP allot   variable LIVE-B-U    \ -1 when none
 \ probe's login points into the row table until a renewal, so no store read
 \ may come between the probe and this
 : LOGIN-CHANGED? ( n -- bool ) {: r :}
-   PROBE-DOC$ r DB-ROW-LOGIN$ STR= 0= ;
+   PROBE-DOC$ r DB-ROW-LOGIN$ STR:= 0= ;
 
 \ row r's usage record, the plan the provider named and any refreshed login,
 \ in one transaction; a login the provider revoked keeps its row
@@ -398,7 +398,7 @@ create OLD-NAME NAME-CAP allot   variable OLD-NAME-U
 : PROBE-OLD ( n ^u8 n -- ) {: p a u :}
    OLD-NAME OLD-NAME-U @ {: o ou :}
    ou 0= if exit then
-   o ou a u STR= if exit then
+   o ou a u STR:= if exit then
    p o ou false PROBE-IN-TURN ;
 
 \ after the install the new login is probed as live, then the login saved
@@ -733,7 +733,7 @@ create LINE-BUF 256 allot
 
 : .ADDED ( n ^u8 n -- ) {: p e eu :}
    p PROVIDER$ .TEXT s" : saved " .TEXT LIVE-ROW$ .TEXT
-   eu 0 > LIVE-ROW$ e eu STR= 0= and if
+   eu 0 > LIVE-ROW$ e eu STR:= 0= and if
       s"  (you signed in to a different account than " .TEXT e eu .TEXT s" )" .TEXT
    then
    .NL ;

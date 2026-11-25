@@ -55,7 +55,7 @@ public
 
 : STATUS-ACTIVE? ( n -- bool ) {: i :}
    STATUS-LIVE? 0= if false exit then
-   i DB-ROW-NAME$ STAT-NAME STAT-NAME-U @ STR= ;
+   i DB-ROW-NAME$ STAT-NAME STAT-NAME-U @ STR:= ;
 
 \ ---- figures --------------------------------------------------------------------
 \ The panel's reading of the usage record DB-ROW-USAGE last decoded.
@@ -68,7 +68,7 @@ private
 \ the first window under the label that has a reading; -1 for none
 : WINDOW ( ^u8 n -- n ) {: a u :}
    DB-LIMIT# 0 ?do
-      i DB-LIMIT-LABEL$ a u STR= i DB-LIMIT-PERCENT 0 >= and if i unloop exit then
+      i DB-LIMIT-LABEL$ a u STR:= i DB-LIMIT-PERCENT 0 >= and if i unloop exit then
    loop -1 ;
 
 \ each window gives at most one figure, so FIGURES reserves DB-LIMIT# of each
@@ -330,7 +330,7 @@ private
       unprobed OF 6 ENDOF
    ;MATCH ;
 
-STR-MAX-I64 constant REOPENS-NEVER   \ after every epoch second
+STR:MAX-I64 constant REOPENS-NEVER   \ after every epoch second
 
 \ ROOM-SORT reserves DB-ROW# of each
 DYNAMIC-BUFFER ROOM-ROWS n      \ the row at each place

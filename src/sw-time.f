@@ -41,7 +41,7 @@ RFC-HOUR-POS 8 + constant RFC-CLOCK-END   \ just past HH:MM:SS
 \ T, t or a space, which parts the date from the time
 : RFC-SEP? ( n -- bool )
    {: c :}
-   c [char] T =  c [char] t = or  c STR-SPACE = or ;
+   c [char] T =  c [char] t = or  c STR:SPACE = or ;
 
 \ the epoch seconds of the date and time as if they were UTC
 : RFC-LOCAL ( ^u8 -- option<n> )

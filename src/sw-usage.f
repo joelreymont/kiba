@@ -56,7 +56,7 @@ variable EXP-VALUE                  \ the exponent, its magnitude held to a cap
 
 \ the value digits lo..hi-1 spell, held to cap
 : DIGIT-VALUE ( ^u8 n n n -- n ) {: a lo hi cap :}
-   0 hi lo ?do 10 * a i + c@ STR-DIGIT-VALUE + cap min loop ;
+   0 hi lo ?do 10 * a i + c@ STR:DIGIT-VALUE + cap min loop ;
 
 \ the mantissa from index at; false when a side of its point has no digit
 : MANTISSA? ( ^u8 n n -- bool ) {: a u at :}
@@ -71,7 +71,7 @@ variable EXP-VALUE                  \ the exponent, its magnitude held to a cap
 
 \ the exponent at index at, if any, into EXP-VALUE; the index after it, -1
 \ when malformed. Its magnitude is held to u + 20: past that a nonzero
-\ mantissa is past STR-MAX-I64, or below 0.1, either way.
+\ mantissa is past STR:MAX-I64, or below 0.1, either way.
 : EXPONENT-AT ( ^u8 n n -- n ) {: a u at :}
    0 EXP-VALUE !
    a u at $65 BYTE-IS? a u at $45 BYTE-IS? or 0= if at exit then
@@ -86,28 +86,28 @@ variable EXP-VALUE                  \ the exponent, its magnitude held to a cap
 : MANT-DIGIT ( ^u8 n -- n ) {: a k :}
    MANT-START @ k + dup MANT-POINT @ >= if 1+ then {: at :}
    at MANT-END @ >= if 0 exit then
-   at a + c@ STR-DIGIT-VALUE ;
+   at a + c@ STR:DIGIT-VALUE ;
 
-\ acc * 10 + d; -1 once past STR-MAX-I64
+\ acc * 10 + d; -1 once past STR:MAX-I64
 : SHIFT-DIGIT ( n n -- n ) {: acc d :}
    acc 0 < if -1 exit then
-   acc STR-MAX-I64 d - 10 / > if -1 exit then
+   acc STR:MAX-I64 d - 10 / > if -1 exit then
    acc 10 * d + ;
 
 : MANT-ZERO? ( ^u8 -- bool ) {: a :}
    true MANT-END @ MANT-START @ ?do a i + c@ dup $30 = swap $2E = or and loop ;
 
-\ the mantissa rounded to its first p digits, half up; -1 past STR-MAX-I64
+\ the mantissa rounded to its first p digits, half up; -1 past STR:MAX-I64
 : MANT-ROUNDED ( ^u8 n -- n ) {: a p :}
    0 p 0 ?do a i MANT-DIGIT SHIFT-DIGIT loop {: w :}
    w 0 < if -1 exit then
    p 0 < if w exit then
    a p MANT-DIGIT 5 < if w exit then
-   w STR-MAX-I64 = if -1 exit then
+   w STR:MAX-I64 = if -1 exit then
    w 1+ ;
 
 \ the whole percent reading a u spells, rounded half up;
-\ -1 when it is malformed, below zero or past STR-MAX-I64
+\ -1 when it is malformed, below zero or past STR:MAX-I64
 : USED-PERCENT ( ^u8 n -- n ) {: a u :}
    a u 0 $2D BYTE-IS? {: neg :}
    a u neg if 1 else 0 then MANTISSA? 0= if -1 exit then
@@ -464,9 +464,9 @@ variable SC-PCT
 
 \ the window word a kind names
 : SC-WINDOW$ ( ^u8 n -- ^u8 n ) {: a u :}
-   a u s" weekly" STARTS-WITH? if s" Weekly" exit then
-   a u s" five_hour" STARTS-WITH? if s" Session" exit then
-   a u s" session" STARTS-WITH? if s" Session" exit then
+   a u s" weekly" STR:STARTS-WITH? if s" Weekly" exit then
+   a u s" five_hour" STR:STARTS-WITH? if s" Session" exit then
+   a u s" session" STR:STARTS-WITH? if s" Session" exit then
    s" " ;
 
 \ on the kind's value: the window word it names; else skipped
@@ -634,8 +634,8 @@ create REF-URI TEXT-CAP allot    variable REF-URI-U    \ -1 when the answer name
 \ Anthropic's on-hold refusal, as Claude Code 2.1.285 reads it
 : ON-HOLD? ( n -- bool ) {: code :}
    code REFUSED-STATUS? code 403 = or
-   REF-CODE$ s" invalid_grant" STR= REF-CODE$ s" access_denied" STR= or and
-   REF-DESC$ s" account_on_hold" STR= and ;
+   REF-CODE$ s" invalid_grant" STR:= REF-CODE$ s" access_denied" STR:= or and
+   REF-DESC$ s" account_on_hold" STR:= and ;
 
 create DETAIL-RAW TEXT-CAP 2 * 32 + allot   variable DETAIL-RAW-U
 
@@ -662,12 +662,12 @@ create HOST-BUF DETAIL-MAX allot    variable HOST-U
 : UPPER? ( n -- bool ) dup $41 >= swap $5A <= and ;
 
 : URI-CHAR? ( n -- bool ) {: c :}
-   c LOWER? c UPPER? or c STR-DIGIT? or if true exit then
+   c LOWER? c UPPER? or c STR:DIGIT? or if true exit then
    c $2F = c $2E = or c $5F = or c $7E = or c $25 = or
    c $2D = or c $3F = or c $3D = or c $26 = or ;
 
 : HOST-CHAR? ( n -- bool ) {: c :}
-   c LOWER? c STR-DIGIT? or c $2E = or c $2D = or ;
+   c LOWER? c STR:DIGIT? or c $2E = or c $2D = or ;
 
 : ALL? ( ^u8 n [ n -- bool ] -- bool ) {: a u ok :}
    u 0 ?do a i + c@ ok execute 0= if false unloop exit then loop
@@ -688,9 +688,9 @@ create HOST-BUF DETAIL-MAX allot    variable HOST-U
 
 \ the host is d or a subdomain of it
 : DOMAIN? ( ^u8 n ^u8 n -- bool ) {: h hu d du :}
-   h hu d du STR= if true exit then
+   h hu d du STR:= if true exit then
    hu du 1+ < if false exit then
-   h hu du - + du d du STR= 0= if false exit then
+   h hu du - + du d du STR:= 0= if false exit then
    h hu du - 1- + c@ $2E = ;
 
 : HOST-OURS? ( -- bool )
@@ -701,7 +701,7 @@ create HOST-BUF DETAIL-MAX allot    variable HOST-U
 
 : APPEAL-OK? ( ^u8 n -- bool ) {: a u :}
    u DETAIL-MAX > if false exit then
-   a u SCHEME$ STARTS-WITH? 0= if false exit then
+   a u SCHEME$ STR:STARTS-WITH? 0= if false exit then
    a u + 1- c@ dup $2E = swap $3F = or if false exit then
    SCHEME$ nip {: s :}
    a s + u s - [: URI-CHAR? ;] ALL? 0= if false exit then
@@ -739,8 +739,8 @@ create MSG-BUF DETAIL-MAX 4 * allot   variable MSG-U
 \ rate limit; its profile tells the two apart: free only when it names the
 \ organization and a type Claude Code maps to no plan
 : PAID? ( ^u8 n -- bool ) {: a u :}
-   a u s" claude_max" STR= a u s" claude_pro" STR= or
-   a u s" claude_team" STR= or a u s" claude_enterprise" STR= or ;
+   a u s" claude_max" STR:= a u s" claude_pro" STR:= or
+   a u s" claude_team" STR:= or a u s" claude_enterprise" STR:= or ;
 
 : FREE-PLAN? ( ^u8 n -- bool ) {: b bu :}
    b bu FIELDS? 0= if false exit then
@@ -1345,8 +1345,8 @@ create RID-BUF 36 allot
 
 \ the request for the offer's program; E-SW-NO-RESETS for one kiba does not know
 : CLAUDE-RESET-BODY ( -- )
-   DB-RESETS-PROGRAM$ s" cedar_ember" STR= if DB-RESETS-GRANT$ BANKED-BODY exit then
-   DB-RESETS-PROGRAM$ s" juniper_tide" STR= if WEEKLY-BODY exit then
+   DB-RESETS-PROGRAM$ s" cedar_ember" STR:= if DB-RESETS-GRANT$ BANKED-BODY exit then
+   DB-RESETS-PROGRAM$ s" juniper_tide" STR:= if WEEKLY-BODY exit then
    E-SW-NO-RESETS throw ;
 
 : CODEX-RESET-BODY ( -- )
@@ -1358,9 +1358,9 @@ create RID-BUF 36 allot
 
 \ RFC 3986's unreserved bytes, which a path segment carries as they are
 : UNRESERVED? ( n -- bool ) {: c :}
-   c ASCII-UPPER {: up :}
+   c STR:ASCII-UPPER {: up :}
    up [char] A >= up [char] Z <= and
-   c STR-DIGIT? or
+   c STR:DIGIT? or
    c [char] - = or c [char] . = or
    c [char] _ = or c [char] ~ = or ;
 
@@ -1423,7 +1423,7 @@ create RID-BUF 36 allot
    CODEX-RESET-SEND ;
 
 : GOT ( reset-outcome -- bool ) RESET-GOT ! true ;
-: WORD-IS? ( ^u8 n -- bool ) RESET-WORD$ STR= ;
+: WORD-IS? ( ^u8 n -- bool ) RESET-WORD$ STR:= ;
 
 : CLAUDE-WORD? ( -- bool )
    s" reset" WORD-IS? if construct reset-outcome reset GOT exit then

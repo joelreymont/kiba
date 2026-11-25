@@ -99,7 +99,7 @@ create MIXED-NAME NAME-CAP allot   variable MIXED-NAME-U
 : SAME-ORG? ( -- bool )
    ID-LIVE ORG$ nip 0= if true exit then
    0 DB-ROW-ORG$ nip 0= if true exit then
-   ID-LIVE ORG$ 0 DB-ROW-ORG$ STR= ;
+   ID-LIVE ORG$ 0 DB-ROW-ORG$ STR:= ;
 
 \ the installed row exists, the live config names another account, and the
 \ live credentials are still that row's login
@@ -109,7 +109,7 @@ create MIXED-NAME NAME-CAP allot   variable MIXED-NAME-U
    P-CLAUDE MIXED-NAME$ DB-FETCH 0= if false exit then
    CLAUDE-DECODE 2drop
    MIXED-NAME$ ID-LIVE EMAIL$ NAME-FOR-EMAIL? SAME-ORG? and if false exit then
-   FILE$ 0 DB-ROW-LOGIN$ STR= ;
+   FILE$ 0 DB-ROW-LOGIN$ STR:= ;
 
 \ The live files are read first, so orphan credentials throw even while an
 \ install is pending. A pending install is mixed whatever the files hold.

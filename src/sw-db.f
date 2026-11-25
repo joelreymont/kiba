@@ -249,7 +249,7 @@ create DEC-WORD 16 allot   variable DEC-WORD-U     \ a longer word is no state
 
 : MEMBER? ( JSON:reader ^u8 n -- JSON:reader bool ) JSON:READ-STR-EQ? ;
 
-: STATE-IS? ( ^u8 n -- bool ) DEC-WORD DEC-WORD-U @ STR= ;
+: STATE-IS? ( ^u8 n -- bool ) DEC-WORD DEC-WORD-U @ STR:= ;
 
 : NAMED-STATE ( -- usage-state )
    s" ok" STATE-IS? if construct usage-state ok exit then
@@ -659,7 +659,7 @@ variable FREE-K
 \ which candidate k the name is; 0 when none
 : CANDIDATE# ( ^u8 n n -- n ) {: a u id :}
    SLOT-TRIES 1+ 1 ?do
-      i id EMAIL$ CANDIDATE a u STR= if i unloop exit then
+      i id EMAIL$ CANDIDATE a u STR:= if i unloop exit then
    loop 0 ;
 
 \ bit k of TAKEN marks candidate k as saved, of SAME as saved with the live org
@@ -672,7 +672,7 @@ variable SAME
    a u id CANDIDATE# {: k :}
    k 0= if exit then
    TAKEN @ 1 k lshift or TAKEN !
-   1 DB-COL-BYTES id ORG$ STR= if SAME @ 1 k lshift or SAME ! then ;
+   1 DB-COL-BYTES id ORG$ STR:= if SAME @ 1 k lshift or SAME ! then ;
 
 \ the first candidate saved with the live org, else the first unsaved one
 : CANDIDATE-CHECK ( n n -- ) {: k id :}

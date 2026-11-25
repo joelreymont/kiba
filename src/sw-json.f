@@ -73,19 +73,18 @@ TYPED-VARIABLE TEXT-HDR ^VEC:vector<u8>
 \ keys: HM:PROBE finds the slot of a hash of the object and the key, and the
 \ keys listed under that slot are compared byte for byte. A member takes at
 \ least five source bytes ("":0,), so u bytes hold at most u/5 + 1 keys,
-\ which decode to at most u bytes, and at most u/2 + 1 containers are open
-\ at once.
+\ and at most u/2 + 1 containers are open at once.
 DYNAMIC-BUFFER KEY-HASHES n   \ HM:PROBE's keys: each slot's hash
 DYNAMIC-BUFFER KEY-SLOTS n    \ HM:PROBE's used: the slot's latest key + 1
 \ a member's key: link is the slot's earlier key + 1, or 0; off and len place
-\ it in KEY-ROOM
+\ it in KEY-TEXT
 STRUCTURE member DERIVE addr
    FIELD link n FIELD object n FIELD off n FIELD len n
 ;STRUCTURE
 DYNAMIC-BUFFER KEY-LIST member
-DYNAMIC-BUFFER KEY-ROOM u8    \ the decoded keys, end to end
+TYPED-VARIABLE KEY-TEXT ^VEC:vector<u8>   \ the decoded keys, end to end
 DYNAMIC-BUFFER OPEN-IDS n     \ per open container, its opening byte's address
-variable KEY-CAP   variable ROOM-CAP   variable KEY-N   variable KEY-END
+variable KEY-CAP   variable KEY-N
 variable OPEN-N
 
 $7FFFFFFFFFFFFFFF constant ANY-DEPTH
@@ -105,12 +104,12 @@ $100000001B3 constant FNV-PRIME
 : SIZE-KEYS ( n -- ) {: du :}
    du 5 / 1+ {: keys :}
    keys SIZE-TABLE  keys KEY-LIST-RESERVE
-   du KEY-ROOM-RESERVE  du ROOM-CAP !  0 KEY-END !
+   KEY-TEXT TEXTS-RESET
    du 2 / 1+ OPEN-IDS-RESERVE  0 OPEN-N ! ;
 
 : FREE-KEYS ( -- )
    KEY-HASHES-RELEASE KEY-SLOTS-RELEASE KEY-LIST-RELEASE
-   KEY-ROOM-RELEASE OPEN-IDS-RELEASE ;
+   OPEN-IDS-RELEASE ;
 
 \ FNV-1a over a key's bytes, seeded with its object; HM:PROBE mixes it
 : KEY-HASH ( n ^u8 n -- n ) {: obj a u :}
@@ -118,11 +117,11 @@ $100000001B3 constant FNV-PRIME
    u 0 ?do a i + c@ xor FNV-PRIME * loop ;
 
 : KEY-AT$ ( n -- ^u8 n ) {: e :}
-   e KEY-LIST MEMBER-OFF @ KEY-ROOM  e KEY-LIST MEMBER-LEN @ ;
+   KEY-TEXT @ e KEY-LIST MEMBER-OFF @ e KEY-LIST MEMBER-LEN @ TEXTS$ ;
 
 : SAME-KEY? ( n n ^u8 n -- bool ) {: e obj a u :}
    e KEY-LIST MEMBER-OBJECT @ obj <> if false exit then
-   e KEY-AT$ a u STR= ;
+   e KEY-AT$ a u STR:= ;
 
 \ whether the keys listed from link, a key + 1 or 0, hold obj's key a u
 : LISTED? ( n n ^u8 n -- bool ) {: link obj a u :}
@@ -133,17 +132,17 @@ $100000001B3 constant FNV-PRIME
 
 \ the key at the reader, decoded after the keys before it
 : DECODE-KEY ( JSON:reader -- JSON:reader ^u8 n )
-   KEY-END @ {: off :}
-   off KEY-ROOM  ROOM-CAP @ off -  JSON:READ-STR {: u :}
-   off KEY-ROOM u ;
+   KEY-TEXT @ TEXTS-READ {: off u :}
+   KEY-TEXT @ off u TEXTS$ ;
 
 \ obj's key of u bytes, just decoded, becomes slot's latest key, hashed h
 : KEEP-KEY ( n n n n -- ) {: slot h obj u :}
    KEY-N @ {: e :}
    slot KEY-SLOTS @ e KEY-LIST MEMBER-LINK !  obj e KEY-LIST MEMBER-OBJECT !
-   KEY-END @ e KEY-LIST MEMBER-OFF !  u e KEY-LIST MEMBER-LEN !
+   KEY-TEXT @ TEXTS-END u - e KEY-LIST MEMBER-OFF !
+   u e KEY-LIST MEMBER-LEN !
    h slot KEY-HASHES !  e 1+ slot KEY-SLOTS !
-   1 KEY-N +!  u KEY-END +! ;
+   1 KEY-N +! ;
 
 \ whether the key at the reader repeats one of obj's; else obj keeps it
 : REPEATED? ( JSON:reader n -- JSON:reader bool ) {: obj :}

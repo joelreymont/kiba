@@ -19,16 +19,13 @@ variable EXE-U
 : EXE$ ( -- ^u8 n ) EXE-BUF EXE-U @ ;
 
 : FOUND? ( ^u8 n -- bool )
-   >LEN EXE-BUF FIND-EXECUTABLE MATCH option
+   EXE-BUF FIND-EXECUTABLE MATCH option
      none OF false ENDOF
-     some OF LEN>N EXE-U ! true ENDOF
+     some OF EXE-U ! true ENDOF
    ;MATCH ;
 
 : RESOLVE ( ^u8 n -- )
    FOUND? 0= if E-SW-NO-CLI throw then ;
-
-: ARG+ ( ^u8 n -- )
-   >LEN PROC-ARGV+ ;
 
 \ ---- the child's environment ------------------------------------------------
 : PROVIDER-HOME-VAR$ ( n -- ^u8 n )
@@ -40,7 +37,7 @@ variable EXE-U
 \ PROC-ENV-INHERIT-MISSING skips a name already set
 : LOGIN-ENV ( n -- ) {: p :}
    PROC-ENV-RESET
-   p PROVIDER-HOME-VAR$ >LEN p LOGIN-DIR$ >LEN PROC-ENV-SET
+   p PROVIDER-HOME-VAR$ p LOGIN-DIR$ PROC-ENV-SET
    PROC-ENV-INHERIT-MISSING ;
 
 \ the child keeps this process's group, terminal, and descriptors: the
@@ -51,7 +48,7 @@ variable EXE-U
    s" kiba: could not start the provider command" 127 die ;
 
 : RUN-STAGED ( -- n )
-   EXE$ >LEN PROC-ARGV-PREPARE PROC-ENV-PREPARE {: pathz argv envp :}
+   EXE$ PROC-ARGV-PREPARE PROC-ENV-PREPARE {: pathz argv envp :}
    PROC-FORK:CHECKED {: pid :}
    pid PID>N 0= if pathz argv envp EXEC-STAGED then
    PROC-ARGV-ENV-RESET
@@ -63,14 +60,14 @@ public
 \ on where the login command can prefill it
 : CLAUDE-LOGIN ( ^u8 n -- n ) {: e eu :}
    s" claude" RESOLVE
-   PROC-ARGV-RESET s" auth" ARG+ s" login" ARG+
-   eu 0 > if s" --email" ARG+ e eu ARG+ then
+   PROC-ARGV-RESET s" auth" PROC-ARGV+ s" login" PROC-ARGV+
+   eu 0 > if s" --email" PROC-ARGV+ e eu PROC-ARGV+ then
    P-CLAUDE LOGIN-ENV
    RUN-STAGED ;
 
 : CODEX-LOGIN ( -- n )
    s" codex" RESOLVE
-   PROC-ARGV-RESET s" login" ARG+
+   PROC-ARGV-RESET s" login" PROC-ARGV+
    P-CODEX LOGIN-ENV
    RUN-STAGED ;
 

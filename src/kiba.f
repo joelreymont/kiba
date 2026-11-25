@@ -29,8 +29,8 @@ package SW
 \ the provider argument n: claude or codex, any other refused
 : PROVIDER# ( n -- n )
    ARG$ {: a u :}
-   a u s" claude" STR= if P-CLAUDE exit then
-   a u s" codex" STR= if P-CODEX exit then
+   a u s" claude" STR:= if P-CLAUDE exit then
+   a u s" codex" STR:= if P-CODEX exit then
    E-SW-USAGE throw ;
 
 \ the account name argument n, refused unless NAME-OK? takes it
@@ -42,7 +42,7 @@ package SW
 : DISPATCH-STATUS ( -- )
    SCRIPT-ARGC 1 = if false CMD-STATUS exit then
    2 ARG-COUNT
-   1 ARG$ s" --json" STR= 0= if E-SW-USAGE throw then
+   1 ARG$ s" --json" STR:= 0= if E-SW-USAGE throw then
    true CMD-STATUS ;
 
 : DISPATCH-PROVIDERS ( [ n -- ] -- )
@@ -59,14 +59,14 @@ package SW
 : DISPATCH ( -- )
    SCRIPT-ARGC 0= if E-SW-USAGE throw then
    0 ARG$ {: c cu :}
-   c cu s" status" STR= if DISPATCH-STATUS exit then
-   c cu s" save" STR= if [: CMD-SAVE ;] DISPATCH-PROVIDERS exit then
-   c cu s" usage" STR= if [: CMD-USAGE ;] DISPATCH-PROVIDERS exit then
-   c cu s" use" STR= if 3 ARG-COUNT 1 PROVIDER# 2 NAME-ARG$ CMD-USE exit then
-   c cu s" next" STR= if 2 ARG-COUNT 1 PROVIDER# CMD-NEXT exit then
-   c cu s" add" STR= if DISPATCH-ADD exit then
-   c cu s" forget" STR= if 3 ARG-COUNT 1 PROVIDER# 2 NAME-ARG$ CMD-FORGET exit then
-   c cu s" redeem" STR= if 3 ARG-COUNT 1 PROVIDER# 2 NAME-ARG$ CMD-REDEEM exit then
+   c cu s" status" STR:= if DISPATCH-STATUS exit then
+   c cu s" save" STR:= if [: CMD-SAVE ;] DISPATCH-PROVIDERS exit then
+   c cu s" usage" STR:= if [: CMD-USAGE ;] DISPATCH-PROVIDERS exit then
+   c cu s" use" STR:= if 3 ARG-COUNT 1 PROVIDER# 2 NAME-ARG$ CMD-USE exit then
+   c cu s" next" STR:= if 2 ARG-COUNT 1 PROVIDER# CMD-NEXT exit then
+   c cu s" add" STR:= if DISPATCH-ADD exit then
+   c cu s" forget" STR:= if 3 ARG-COUNT 1 PROVIDER# 2 NAME-ARG$ CMD-FORGET exit then
+   c cu s" redeem" STR:= if 3 ARG-COUNT 1 PROVIDER# 2 NAME-ARG$ CMD-REDEEM exit then
    E-SW-USAGE throw ;
 
 : RUN ( -- )

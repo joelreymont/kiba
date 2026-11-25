@@ -744,7 +744,7 @@ create UT-CFG0 UT-CFG0-CAP allot   variable UT-CFG0-U
    CLAUDE-CREDS$ READ-FILE$ CREDS-A9$ T$=
    CLAUDE-CONFIG$ FS:FILE? TFALSE
    CLAUDE-CONFIG$ {: c cu :}
-   E-SW-ORPHAN-LIVE REASON$ c cu CONTAINS? TTRUE
+   E-SW-ORPHAN-LIVE REASON$ c cu STR:CONTAINS? TTRUE
    CLAUDE-CONFIG$ CFG-BA$ WRITE-PRIVATE ;
 
 create UT-DEEP 1024 allot
@@ -885,6 +885,7 @@ variable UT-LOG0
 $7F000001 constant UT-LOOPBACK
 2 constant UT-WORKERS        \ a worker lingers on a connection it answered
 500 constant UT-IDLE-MS
+TYPED-VARIABLE UT-HTTP-CFG HTTP:config
 64 constant UT-ROW-MAX
 $500000 constant UT-ARENA-CAP   \ the rows' bytes: one body past BUF-CAP and the rest
 
@@ -1041,14 +1042,14 @@ create UT-CODEX-TURN PATH-CAP allot   variable UT-CODEX-TURN-U
 
 \ b bu up to its first quote
 : UT-TO-QUOTE ( ^u8 n -- ^u8 n ) {: b bu :}
-   b bu s\" \"" FIND-SUB MATCH option
+   b bu s\" \"" STR:FIND-SUB MATCH option
       none OF b bu ENDOF
       some OF IDX>N b swap ENDOF
    ;MATCH ;
 
 \ the refresh token a grant body names; empty when it names none
 : UT-REFRESH$ ( ^u8 n -- ^u8 n ) {: b bu :}
-   b bu UT-GRANT-KEY$ FIND-SUB MATCH option
+   b bu UT-GRANT-KEY$ STR:FIND-SUB MATCH option
       none OF b 0 ENDOF
       some OF IDX>N UT-GRANT-KEY$ nip + {: at :} b at + bu at - UT-TO-QUOTE ENDOF
    ;MATCH ;
@@ -1057,14 +1058,14 @@ create UT-CODEX-TURN PATH-CAP allot   variable UT-CODEX-TURN-U
 \ or the refresh token g gu it posts
 : UT-KEY? ( ^u8 n ^u8 n ^u8 n -- bool ) {: k ku t tu g gu :}
    ku 0= if true exit then
-   k ku t tu STR= if true exit then
-   k ku g gu STR= ;
+   k ku t tu STR:= if true exit then
+   k ku g gu STR:= ;
 
 \ the newest row for route r ru whose key takes the request; -1 when none does
 : UT-FIND ( ^u8 n ^u8 n ^u8 n -- n ) {: r ru t tu g gu :}
    UT-ROW-N atomic@ {: n :}
    n 0 ?do
-      n 1- i - dup UT-F-ROUTE UT-ROW$ r ru STR=
+      n 1- i - dup UT-F-ROUTE UT-ROW$ r ru STR:=
       over UT-F-KEY UT-ROW$ t tu g gu UT-KEY? and
       if unloop exit then
       drop
@@ -1131,6 +1132,14 @@ create UT-CODEX-TURN PATH-CAP allot   variable UT-CODEX-TURN-U
    SB-RESET s su SB-APPEND s" /turn-" SB-APPEND p PROVIDER$ SB-APPEND
    SB$ buf up PATH! ;
 
+\ the server on any free loopback port
+: UT-HTTP-CONFIG ( -- ^HTTP:config )
+   UT-LOOPBACK UT-HTTP-CFG HTTP-CONFIG:ADDRESS !
+   0 UT-HTTP-CFG HTTP-CONFIG:PORT !
+   UT-WORKERS UT-HTTP-CFG HTTP-CONFIG:WORKERS !
+   UT-IDLE-MS >MS UT-HTTP-CFG HTTP-CONFIG:IDLE !
+   UT-HTTP-CFG ;
+
 \ the paths a worker writes and locks are fixed before it runs
 : UT-SERVE-START ( -- )
    UT-ARENA-CAP MEM-ALLOC-BYTES drop UT-ARENA-A !
@@ -1140,7 +1149,7 @@ create UT-CODEX-TURN PATH-CAP allot   variable UT-CODEX-TURN-U
    UT-ANSWERS-RESET
    AIO:START
    UT-ROUTES
-   UT-LOOPBACK 0 UT-WORKERS UT-IDLE-MS HTTP:START
+   UT-HTTP-CONFIG HTTP:START
    SB-RESET s" http://127.0.0.1:" SB-APPEND HTTP:PORT FMT:SB-U
    [char] / SB-APPEND-C SB$ UT-SERVE-AT ;
 
@@ -1324,10 +1333,10 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    s" ok" UT-STATE=
    UT-LONG-U @ {: o :}
    s" Authorization: Bearer " UT-LONG+ UT-TOK+ $0A 1 UT-LONG-FILL
-   LOG$ READ-FILE$ o UT-LONG$ CONTAINS? TTRUE
+   LOG$ READ-FILE$ o UT-LONG$ STR:CONTAINS? TTRUE
    UT-LONG-U @ {: i :}
    s" ChatGPT-Account-Id: " UT-LONG+ UT-ACCT+ $0A 1 UT-LONG-FILL
-   LOG$ READ-FILE$ i UT-LONG$ CONTAINS? TTRUE ;
+   LOG$ READ-FILE$ i UT-LONG$ STR:CONTAINS? TTRUE ;
 
 : UT-PLAN= ( n ^u8 n ^u8 n -- ) {: p a u l lu :}
    [: p a u DB-FETCH TTRUE 0 DB-ROW-PLAN$ l lu T$= ;] UT-STORE ;
@@ -1424,14 +1433,14 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
 \ each request names its endpoint, its token and its client
 : UT-USAGE-LOG ( -- )
    LOG$ READ-FILE$ {: l lu :}
-   l lu s" https://platform.claude.com/v1/oauth/token" CONTAINS? TTRUE
-   l lu s" https://api.anthropic.com/api/oauth/usage?cedar_ember=1&at_wall=1" CONTAINS? TTRUE
-   l lu s" https://auth.openai.com/oauth/token" CONTAINS? TTRUE
-   l lu s" Authorization: Bearer sk-a" CONTAINS? TTRUE
-   l lu s" Authorization: Bearer at-y" CONTAINS? TTRUE
-   l lu s" ua User-Agent: kiba" CONTAINS? TTRUE
-   l lu s" ua User-Agent: codex-cli" CONTAINS? TTRUE
-   l lu s" ua User-Agent: claude-cli/2.1.282 (external, cli)" CONTAINS? TTRUE ;
+   l lu s" https://platform.claude.com/v1/oauth/token" STR:CONTAINS? TTRUE
+   l lu s" https://api.anthropic.com/api/oauth/usage?cedar_ember=1&at_wall=1" STR:CONTAINS? TTRUE
+   l lu s" https://auth.openai.com/oauth/token" STR:CONTAINS? TTRUE
+   l lu s" Authorization: Bearer sk-a" STR:CONTAINS? TTRUE
+   l lu s" Authorization: Bearer at-y" STR:CONTAINS? TTRUE
+   l lu s" ua User-Agent: kiba" STR:CONTAINS? TTRUE
+   l lu s" ua User-Agent: codex-cli" STR:CONTAINS? TTRUE
+   l lu s" ua User-Agent: claude-cli/2.1.282 (external, cli)" STR:CONTAINS? TTRUE ;
 
 \ a saved Claude login whose access token has expired
 : CREDS-T$ ( -- ^u8 n )
@@ -1444,14 +1453,14 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    UT-CLAUDE-TOKEN$ s" " 200 s\" {\"access_token\":\"sk-t-new\",\"refresh_token\":\"r-t-new\",\"expires_in\":3600}" UT-ANSWER
    UT-CLAUDE-USAGE$ s" " 200 s" {}" UT-ANSWER
    UT-CLAUDE-USAGE$ s" sk-t-new" 200 UT-ANSWER-OPEN
-   STR-SPACE 4194305 UT-BODY-FILL
+   STR:SPACE 4194305 UT-BODY-FILL
    UT-ANSWER-CLOSE ;
 
 : UT-RENEWED-T ( ^u8 n -- ) {: c cu :}
    c cu CHECK-OBJECT
-   c cu s\" \"accessToken\":\"sk-t-new\"" CONTAINS? TTRUE
-   c cu s\" \"refreshToken\":\"r-t-new\"" CONTAINS? TTRUE
-   c cu s\" \"expiresAt\":2," CONTAINS? TFALSE ;
+   c cu s\" \"accessToken\":\"sk-t-new\"" STR:CONTAINS? TTRUE
+   c cu s\" \"refreshToken\":\"r-t-new\"" STR:CONTAINS? TTRUE
+   c cu s\" \"expiresAt\":2," STR:CONTAINS? TFALSE ;
 
 \ a probe that throws after renewing the token records its error and keeps
 \ the renewed login in the row
@@ -1525,10 +1534,10 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
 \ usage gives what is left, as status does: a used-up week leaves Claude's
 \ session nothing, and an account with no reading gives its note
 : UT-USAGE-TEXT ( ^u8 n -- ) {: o ou :}
-   o ou s\" claude: a@x.test  Session (5-hour) 0% left · Weekly (7-day) 0% left · Fable Weekly 52% left\n" CONTAINS? TTRUE
-   o ou s\" claude: e@x.test  Anthropic's token endpoint answered 429\n" CONTAINS? TTRUE
-   o ou s\" codex: c@x.test  Weekly (7-day) 0% left\n" CONTAINS? TTRUE
-   o ou s\" codex: d@x.test  Session (5-hour) 88% left · Weekly (7-day) 60% left\n" CONTAINS? TTRUE ;
+   o ou s\" claude: a@x.test  Session (5-hour) 0% left · Weekly (7-day) 0% left · Fable Weekly 52% left\n" STR:CONTAINS? TTRUE
+   o ou s\" claude: e@x.test  Anthropic's token endpoint answered 429\n" STR:CONTAINS? TTRUE
+   o ou s\" codex: c@x.test  Weekly (7-day) 0% left\n" STR:CONTAINS? TTRUE
+   o ou s\" codex: d@x.test  Session (5-hour) 88% left · Weekly (7-day) 60% left\n" STR:CONTAINS? TTRUE ;
 
 \ each saved login UT-USAGE probes, every one there is
 : UT-USAGE-ROWS ( [ n ^u8 n -- ] -- ) {: each :}
@@ -1564,19 +1573,19 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
 
 : UT-RENEWED-B ( ^u8 n -- ) {: c cu :}
    c cu CHECK-OBJECT
-   c cu s\" \"accessToken\":\"sk-b-new\"" CONTAINS? TTRUE
-   c cu s\" \"refreshToken\":\"r-b-new\"" CONTAINS? TTRUE
-   c cu s\" \"expiresAt\":2," CONTAINS? TFALSE
-   c cu s\" \"refreshTokenExpiresAt\":1," CONTAINS? TFALSE
-   c cu s\" \"refreshTokenExpiresAt\":" CONTAINS? TTRUE
-   c cu s\" \"subscriptionType\":\"pro\"" CONTAINS? TTRUE ;
+   c cu s\" \"accessToken\":\"sk-b-new\"" STR:CONTAINS? TTRUE
+   c cu s\" \"refreshToken\":\"r-b-new\"" STR:CONTAINS? TTRUE
+   c cu s\" \"expiresAt\":2," STR:CONTAINS? TFALSE
+   c cu s\" \"refreshTokenExpiresAt\":1," STR:CONTAINS? TFALSE
+   c cu s\" \"refreshTokenExpiresAt\":" STR:CONTAINS? TTRUE
+   c cu s\" \"subscriptionType\":\"pro\"" STR:CONTAINS? TTRUE ;
 
 : UT-RENEWED-D ( ^u8 n -- ) {: d du :}
    d du CHECK-OBJECT
-   d du s\" \"access_token\":\"at-d2\"" CONTAINS? TTRUE
-   d du s\" \"refresh_token\":\"rt-d2\"" CONTAINS? TTRUE
-   d du s\" \"account_id\":\"acct\"" CONTAINS? TTRUE
-   d du s\" \"last_refresh\":\"" CONTAINS? TTRUE
+   d du s\" \"access_token\":\"at-d2\"" STR:CONTAINS? TTRUE
+   d du s\" \"refresh_token\":\"rt-d2\"" STR:CONTAINS? TTRUE
+   d du s\" \"account_id\":\"acct\"" STR:CONTAINS? TTRUE
+   d du s\" \"last_refresh\":\"" STR:CONTAINS? TTRUE
    d du ID-SLOT CODEX-IDENTITY TTRUE ID-SLOT EMAIL$ s" d@x.test" T$= ;
 
 \ a renewed token is saved back into its row: Claude's members replaced,
@@ -1597,7 +1606,7 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    P-CODEX s" z@x.test" AUTH-Z$ UT-PUT
    P-CODEX CMD-USAGE
    UT-REVOKED-Z
-   LOG$ READ-FILE$ s" Authorization: Bearer at-z" CONTAINS? TTRUE ;
+   LOG$ READ-FILE$ s" Authorization: Bearer at-z" STR:CONTAINS? TTRUE ;
 
 \ the next usage probes the revoked login again, as it probes every saved
 \ login: its refresh grant is posted again and the row stays revoked
@@ -1606,8 +1615,8 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    P-CODEX CMD-USAGE
    UT-REVOKED-Z
    UT-LOG-NEW$ {: l lu :}
-   l lu s" wham/usage Authorization: Bearer at-z" CONTAINS? TTRUE
-   l lu s\" \"refresh_token\":\"rt-z\"" CONTAINS? TTRUE
+   l lu s" wham/usage Authorization: Bearer at-z" STR:CONTAINS? TTRUE
+   l lu s\" \"refresh_token\":\"rt-z\"" STR:CONTAINS? TTRUE
    P-CODEX s" z@x.test" CMD-FORGET ;
 
 \ row a u holding the Codex login whose access token is at-<t>
@@ -1670,10 +1679,10 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    UT-LOG-MARK
    P-CODEX CMD-USAGE
    UT-LOG-NEW$ {: l lu :}
-   l lu s" /rate-limit-reset-credits Authorization: Bearer at-whole" CONTAINS? TTRUE
-   l lu s" /rate-limit-reset-credits Authorization: Bearer at-nolist" CONTAINS? TTRUE
-   l lu s" /rate-limit-reset-credits Authorization: Bearer at-html" CONTAINS? TTRUE
-   l lu s" /rate-limit-reset-credits Authorization: Bearer at-none" CONTAINS? TFALSE
+   l lu s" /rate-limit-reset-credits Authorization: Bearer at-whole" STR:CONTAINS? TTRUE
+   l lu s" /rate-limit-reset-credits Authorization: Bearer at-nolist" STR:CONTAINS? TTRUE
+   l lu s" /rate-limit-reset-credits Authorization: Bearer at-html" STR:CONTAINS? TTRUE
+   l lu s" /rate-limit-reset-credits Authorization: Bearer at-none" STR:CONTAINS? TFALSE
    UT-ANSWER-REPEATS
    UT-ANSWER-WHOLE
    UT-ANSWER-LONG
@@ -1692,7 +1701,7 @@ create UT-LONG UT-LONG-CAP allot   variable UT-LONG-U
    UT-ANSWERS-RESET
    UT-CODEX-USAGE$ s" at-big" 200 s\" {\"rate_limit\":{\"primary_window\":{\"used_percent\":10,\"limit_window_seconds\":604800,\"reset_at\":1789904220}},\"rate_limit_reset_credits\":{\"available_count\":1}}" UT-ANSWER
    UT-CODEX-CREDITS$ s" at-big" 200 UT-ANSWER-OPEN
-   STR-SPACE 4194305 UT-BODY-FILL
+   STR:SPACE 4194305 UT-BODY-FILL
    UT-ANSWER-CLOSE
    s" big@x.test" s" big" UT-PUT-AT
    P-CODEX CMD-USAGE
@@ -1872,9 +1881,9 @@ create UT-OFF-PATH 256 allot
    P-CODEX s" c@x.test" AUTH-C9$ UT-LOGIN=
    P-CODEX LOGIN-HOME$ FS:DIR? TFALSE
    LOG$ READ-FILE$ {: l lu :}
-   l lu s\" present\nua User-Agent: codex-cli" CONTAINS? TTRUE
-   l lu s" /login-codex/.codex" CONTAINS? TTRUE
-   l lu s" absent" CONTAINS? TFALSE ;
+   l lu s\" present\nua User-Agent: codex-cli" STR:CONTAINS? TTRUE
+   l lu s" /login-codex/.codex" STR:CONTAINS? TTRUE
+   l lu s" absent" STR:CONTAINS? TFALSE ;
 
 \ a login that leaves nothing in the throwaway home saves nothing
 : UT-ADD-EMPTY ( -- )
@@ -1891,8 +1900,8 @@ create UT-OFF-PATH 256 allot
 \ the new Claude row's login and profile
 : UT-CLAUDE-B ( -- )
    P-CLAUDE s" b@x.test" DB-FETCH TTRUE
-   0 DB-ROW-LOGIN$ s\" \"accessToken\":\"sk-b" CONTAINS? TTRUE
-   0 DB-ROW-PROFILE$ s\" \"organizationUuid\":\"org-b\"" CONTAINS? TTRUE ;
+   0 DB-ROW-LOGIN$ s\" \"accessToken\":\"sk-b" STR:CONTAINS? TTRUE
+   0 DB-ROW-PROFILE$ s\" \"organizationUuid\":\"org-b\"" STR:CONTAINS? TTRUE ;
 
 \ a Claude add with an expected account prefills the email and saves under
 \ the name that actually came back, saying so when it differs
@@ -1900,8 +1909,8 @@ create UT-OFF-PATH 256 allot
    UT-FAKE-CLAUDE
    P-CLAUDE s" b@x.test" UT-ROW? TFALSE
    P-CLAUDE s" b@x.test" CMD-ADD
-   LOG$ READ-FILE$ s" auth login --email b@x.test cfg=" CONTAINS? TTRUE
-   LOG$ READ-FILE$ s" /login-claude/.claude" CONTAINS? TTRUE
+   LOG$ READ-FILE$ s" auth login --email b@x.test cfg=" STR:CONTAINS? TTRUE
+   LOG$ READ-FILE$ s" /login-claude/.claude" STR:CONTAINS? TTRUE
    [: UT-CLAUDE-B ;] UT-STORE
    CLAUDE-CONFIG$ READ-FILE$ CFG-BA$ T$=
    CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
@@ -1941,12 +1950,12 @@ create UT-REAL 256 allot
    var vu GETENV r ru T$=
    UT-LOG-MARK
    p s" " CMD-ADD
-   UT-LOG-NEW$ r ru CONTAINS? TFALSE
+   UT-LOG-NEW$ r ru STR:CONTAINS? TFALSE
    p LOGIN-HOME$ UT-BUF 256 SPAN-COPY {: h hu :}
    SB-RESET s" env " SB-APPEND var vu SB-APPEND s" =" SB-APPEND
    h hu SB-APPEND
    p UT-DIR-TAIL$ SB-APPEND s\" \n" SB-APPEND
-   UT-LOG-NEW$ SB$ CONTAINS? TTRUE ;
+   UT-LOG-NEW$ SB$ STR:CONTAINS? TTRUE ;
 
 : UT-LOGIN-ENVS ( -- )
    UT-FAKE-CLAUDE
@@ -1966,7 +1975,7 @@ create UT-REAL 256 allot
    P-CLAUDE s" a@x.test" UT-RECORD s" expired" UT-STATE=
    DB-USAGE-NOTE$ s" access token expired; Claude Code refreshes it on its next run" T$=
    DB-LIMIT# 0 T=
-   LOG$ READ-FILE$ s" Bearer sk-a-old" CONTAINS? TFALSE
+   LOG$ READ-FILE$ s" Bearer sk-a-old" STR:CONTAINS? TFALSE
    CLAUDE-CREDS$ READ-FILE$ CREDS-A-OLD$ T$=
    P-CLAUDE s" a@x.test" CREDS-A-OLD$ UT-LOGIN=
    CLAUDE-CREDS$ CREDS-A$ WRITE-PRIVATE
@@ -2089,7 +2098,7 @@ create UT-REAL 256 allot
    P-CODEX s" d@x.test" CMD-USE
    P-CODEX s" d@x.test" UT-PROBED? TTRUE
    P-CODEX s" c@x.test" UT-PROBED? TTRUE
-   UT-LOG-NEW$ s" auth.openai.com/oauth/token" CONTAINS? TFALSE
+   UT-LOG-NEW$ s" auth.openai.com/oauth/token" STR:CONTAINS? TFALSE
    P-CODEX s" d@x.test" UT-RECORD s" expired" UT-STATE=
    DB-USAGE-NOTE$ s" access token rejected; run codex once to refresh it" T$=
    P-CODEX s" c@x.test" CMD-USE
@@ -2128,8 +2137,8 @@ create UT-REAL 256 allot
    P-CLAUDE s" n@x.test" UT-RECORD s" expired" UT-STATE=
    DB-USAGE-NOTE$ s" access token expired; Claude Code refreshes it on its next run" T$=
    P-CLAUDE s" a@x.test" UT-RECORD s" ok" UT-STATE=
-   UT-LOG-NEW$ s" r-a" UT-GRANT$ CONTAINS? TTRUE
-   UT-LOG-NEW$ s" r-n" UT-GRANT$ CONTAINS? TFALSE
+   UT-LOG-NEW$ s" r-a" UT-GRANT$ STR:CONTAINS? TTRUE
+   UT-LOG-NEW$ s" r-n" UT-GRANT$ STR:CONTAINS? TFALSE
    P-CLAUDE s" a@x.test" CREDS-A$ UT-SET-LOGIN
    P-CLAUDE s" a@x.test" CMD-USE
    CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
@@ -2139,7 +2148,7 @@ create UT-REAL 256 allot
 \ ---- next --------------------------------------------------------------------
 \ where x first occurs in l; -1 when it does not
 : UT-OFFSET ( ^u8 n ^u8 n -- n )
-   FIND-SUB MATCH option
+   STR:FIND-SUB MATCH option
       none OF -1 ENDOF
       some OF IDX>N ENDOF
    ;MATCH ;
@@ -2163,7 +2172,7 @@ create UT-REAL 256 allot
    UT-LOG-MARK
    [: P-CLAUDE CMD-NEXT ;] UT-CAPTURE$ s\" claude: now n@x.test\n" T$=
    P-CLAUDE UT-LIVE-NAME s" n@x.test" T$=
-   CLAUDE-CREDS$ READ-FILE$ s" sk-b-new" CONTAINS? TTRUE
+   CLAUDE-CREDS$ READ-FILE$ s" sk-b-new" STR:CONTAINS? TTRUE
    P-CLAUDE s" n@x.test" UT-PROBED? TTRUE
    P-CLAUDE s" a@x.test" UT-PROBED? TTRUE
    s\" \"refresh_token\":\"r-n\"" s\" \"refresh_token\":\"r-a\""
@@ -2280,7 +2289,7 @@ create UT-REAL 256 allot
    [: [: P-CLAUDE s" b@x.test" DB-NOTE-PENDING ;] DB-WRITE ;] UT-STORE
    UT-LOG-MARK
    [: P-CLAUDE CMD-NEXT ;] E-SW-UNREPAIRED TTHROWSQ
-   UT-LOG-NEW$ s" https://" CONTAINS? TFALSE
+   UT-LOG-NEW$ s" https://" STR:CONTAINS? TFALSE
    P-CLAUDE s" n@x.test" UT-PROBED? TFALSE
    P-CLAUDE s" a@x.test" UT-PROBED? TFALSE
    CLAUDE-CREDS$ READ-FILE$ CREDS-A$ T$=
@@ -2337,11 +2346,11 @@ create UT-AUTH-BUF 256 allot
 \ hex digit
 : UT-RID-C ( n n -- bool ) {: c i :}
    i 8 = i 13 = or i 18 = or i 23 = or if c $2D = exit then
-   c STR-DIGIT? c [char] A >= c [char] F <= and or ;
+   c STR:DIGIT? c [char] A >= c [char] F <= and or ;
 
 \ where the request id starts in the log, -1 when none is logged
 : UT-RID-AT ( ^u8 n -- n ) {: l lu :}
-   l lu s\" \"request_id\":\"" FIND-SUB MATCH option
+   l lu s\" \"request_id\":\"" STR:FIND-SUB MATCH option
      none OF -1 ENDOF
      some OF IDX>N 14 + ENDOF
    ;MATCH ;
@@ -2366,10 +2375,10 @@ create UT-AUTH-BUF 256 allot
    s" w-reset" s" Limit reset for r@x.test" UT-CLAUDE-WORD
    P-CLAUDE s" r@x.test" UT-PROBED? TTRUE
    UT-LOG-NEW$ {: l lu :}
-   l lu s" https://api.anthropic.com/api/organizations/org-r/reset_rate_limits Authorization: Bearer sk-r" CONTAINS? TTRUE
-   l lu s\" body {\"program\":\"cedar_ember\",\"grant_id\":\"w-reset\",\"request_id\":\"" CONTAINS? TTRUE
+   l lu s" https://api.anthropic.com/api/organizations/org-r/reset_rate_limits Authorization: Bearer sk-r" STR:CONTAINS? TTRUE
+   l lu s\" body {\"program\":\"cedar_ember\",\"grant_id\":\"w-reset\",\"request_id\":\"" STR:CONTAINS? TTRUE
    l lu UT-RID
-   l lu s" ua User-Agent: claude-cli/2.1.282 (external, cli)" CONTAINS? TTRUE
+   l lu s" ua User-Agent: claude-cli/2.1.282 (external, cli)" STR:CONTAINS? TTRUE
    s" w-already_used" s" That reset was already used" UT-CLAUDE-WORD
    s" w-not_limited" s" r@x.test is not at a limit; nothing was spent" UT-CLAUDE-WORD
    s" w-cooldown" s" Limit resets are cooling down for r@x.test; try again later" UT-CLAUDE-WORD
@@ -2380,7 +2389,7 @@ create UT-AUTH-BUF 256 allot
    P-CLAUDE s" r@x.test" s" juniper_tide" s" " UT-OFFER
    P-CLAUDE s" r@x.test" CMD-REDEEM
    s" r@x.test" REDEEMED$ s" Limit reset for r@x.test" T$=
-   UT-LOG-NEW$ s\" body {\"program\":\"juniper_tide\"}" CONTAINS? TTRUE
+   UT-LOG-NEW$ s\" body {\"program\":\"juniper_tide\"}" STR:CONTAINS? TTRUE
    s" sk-r" s" bogus" UT-RESULT
    P-CLAUDE s" r@x.test" s" cedar_ember" s" w-bogus" UT-OFFER
    [: P-CLAUDE s" r@x.test" CMD-REDEEM ;] E-SW-REMOTE TTHROWSQ
@@ -2402,9 +2411,9 @@ create UT-AUTH-BUF 256 allot
    s" s@x.test" REDEEMED$ s" Limit reset for s@x.test" T$=
    P-CLAUDE s" s@x.test" [: UT-RENEWED-B ;] UT-ROW-LOGIN
    UT-LOG-NEW$ {: l lu :}
-   l lu s" /org-s/reset_rate_limits Authorization: Bearer sk-s" CONTAINS? TTRUE
-   l lu s" https://platform.claude.com/v1/oauth/token" CONTAINS? TTRUE
-   l lu s" /org-s/reset_rate_limits Authorization: Bearer sk-b-new" CONTAINS? TTRUE
+   l lu s" /org-s/reset_rate_limits Authorization: Bearer sk-s" STR:CONTAINS? TTRUE
+   l lu s" https://platform.claude.com/v1/oauth/token" STR:CONTAINS? TTRUE
+   l lu s" /org-s/reset_rate_limits Authorization: Bearer sk-b-new" STR:CONTAINS? TTRUE
    P-CLAUDE s" s@x.test" CMD-FORGET ;
 
 \ the organization reaches the URL as one path segment, whatever it holds
@@ -2413,7 +2422,7 @@ create UT-AUTH-BUF 256 allot
    P-CLAUDE s" r@x.test" s" cedar_ember" s" w-reset" UT-OFFER
    UT-LOG-MARK
    P-CLAUDE s" r@x.test" CMD-REDEEM
-   UT-LOG-NEW$ s" /api/organizations/a%2Fb%3Fc/reset_rate_limits " CONTAINS? TTRUE
+   UT-LOG-NEW$ s" /api/organizations/a%2Fb%3Fc/reset_rate_limits " STR:CONTAINS? TTRUE
    P-CLAUDE s" r@x.test" CMD-FORGET ;
 
 1100 constant UT-GRANT-U   \ bytes in UT-GRANT-ROWS' grant id, all g
@@ -2457,7 +2466,7 @@ create UT-AUTH-BUF 256 allot
    s" g@x.test" REDEEMED$ s" Limit reset for g@x.test" T$=
    UT-LONG-U @ {: o :}
    s\" \"grant_id\":\"" UT-LONG+ [char] g UT-GRANT-U UT-LONG-FILL [char] " 1 UT-LONG-FILL
-   UT-LOG-NEW$ o UT-LONG$ CONTAINS? TTRUE
+   UT-LOG-NEW$ o UT-LONG$ STR:CONTAINS? TTRUE
    P-CLAUDE s" g@x.test" CMD-FORGET
    UT-ANSWERS-DEFAULT ;
 
@@ -2481,16 +2490,16 @@ create UT-AUTH-BUF 256 allot
    [: P-CLAUDE s" a@x.test" CMD-REDEEM ;] E-SW-REMOTE TTHROWSQ
    E-SW-REMOTE REASON$ s" kiba: access token expired; Claude Code refreshes it on its next run" T$=
    UT-LOG-NEW$ {: l lu :}
-   l lu s" /reset_rate_limits Authorization: Bearer sk-a" CONTAINS? TTRUE
-   l lu s" platform.claude.com" CONTAINS? TFALSE
+   l lu s" /reset_rate_limits Authorization: Bearer sk-a" STR:CONTAINS? TTRUE
+   l lu s" platform.claude.com" STR:CONTAINS? TFALSE
    P-CLAUDE s" a@x.test" CREDS-A$ UT-LOGIN=
    P-CODEX s" c@x.test" s" " s" " UT-OFFER
    UT-LOG-MARK
    [: P-CODEX s" c@x.test" CMD-REDEEM ;] E-SW-REMOTE TTHROWSQ
    E-SW-REMOTE REASON$ s" kiba: access token rejected; run codex once to refresh it" T$=
    UT-LOG-NEW$ {: m mu :}
-   m mu s" /rate-limit-reset-credits/consume Authorization: Bearer at-c" CONTAINS? TTRUE
-   m mu s" auth.openai.com" CONTAINS? TFALSE
+   m mu s" /rate-limit-reset-credits/consume Authorization: Bearer at-c" STR:CONTAINS? TTRUE
+   m mu s" auth.openai.com" STR:CONTAINS? TFALSE
    P-CODEX s" c@x.test" AUTH-C$ UT-LOGIN= ;
 
 \ a saved Codex login's 401 renews its token, which is saved back, and the
@@ -2504,11 +2513,11 @@ create UT-AUTH-BUF 256 allot
    s" d@x.test" REDEEMED$ s" Limit reset for d@x.test" T$=
    P-CODEX s" d@x.test" [: UT-RENEWED-D ;] UT-ROW-LOGIN
    UT-LOG-NEW$ {: l lu :}
-   l lu s" /rate-limit-reset-credits/consume Authorization: Bearer at-d" CONTAINS? TTRUE
-   l lu s" https://auth.openai.com/oauth/token" CONTAINS? TTRUE
-   l lu s" /rate-limit-reset-credits/consume Authorization: Bearer at-d2" CONTAINS? TTRUE
-   l lu s\" body {\"redeem_request_id\":\"" CONTAINS? TTRUE
-   l lu s" ua User-Agent: codex-cli" CONTAINS? TTRUE
+   l lu s" /rate-limit-reset-credits/consume Authorization: Bearer at-d" STR:CONTAINS? TTRUE
+   l lu s" https://auth.openai.com/oauth/token" STR:CONTAINS? TTRUE
+   l lu s" /rate-limit-reset-credits/consume Authorization: Bearer at-d2" STR:CONTAINS? TTRUE
+   l lu s\" body {\"redeem_request_id\":\"" STR:CONTAINS? TTRUE
+   l lu s" ua User-Agent: codex-cli" STR:CONTAINS? TTRUE
    s" reset" s" Limit reset for w@x.test" UT-CODEX-WORD
    s" nothing_to_reset" s" w@x.test is not at a limit; nothing was spent" UT-CODEX-WORD
    s" no_credit" s" No limit resets left for w@x.test" UT-CODEX-WORD
@@ -2525,8 +2534,8 @@ create UT-AUTH-BUF 256 allot
    [: P-CODEX s" z@x.test" CMD-REDEEM ;] E-SW-REMOTE TTHROWSQ
    E-SW-REMOTE REASON$ s" kiba: login revoked by a sign-out at chatgpt.com or in codex; log in again" T$=
    UT-LOG-NEW$ {: l lu :}
-   l lu s" /rate-limit-reset-credits/consume Authorization: Bearer at-z" CONTAINS? TTRUE
-   l lu s" https://auth.openai.com/oauth/token" CONTAINS? TTRUE
+   l lu s" /rate-limit-reset-credits/consume Authorization: Bearer at-z" STR:CONTAINS? TTRUE
+   l lu s" https://auth.openai.com/oauth/token" STR:CONTAINS? TTRUE
    P-CODEX s" z@x.test" AUTH-Z$ UT-LOGIN=
    P-CODEX s" z@x.test" CMD-FORGET ;
 
@@ -2584,16 +2593,16 @@ create UT-REASON 512 allot
    su 0 > TTRUE
    UT-MARK
    P-CLAUDE UT-USAGE-ERR
-   UT-ERR$ READ-FILE$ E-SW-ORPHAN-LIVE UT-BARE$ CONTAINS? TTRUE
+   UT-ERR$ READ-FILE$ E-SW-ORPHAN-LIVE UT-BARE$ STR:CONTAINS? TTRUE
    UT-LOG-NEW$ nip 0 T=
    P-CLAUDE UT-SNAP$ s su T$= ;
 
 \ status shows the reason as Claude's error beside its saved accounts
 : UT-ORPHAN-STATUS-KEEP ( -- )
    STATUS-JSON$ {: j ju :}
-   j ju E-SW-ORPHAN-LIVE UT-ERROR-KEY$ CONTAINS? TTRUE
-   j ju s\" \"name\":\"a@x.test\"" CONTAINS? TTRUE
-   j ju s\" \"name\":\"b@x.test\"" CONTAINS? TTRUE ;
+   j ju E-SW-ORPHAN-LIVE UT-ERROR-KEY$ STR:CONTAINS? TTRUE
+   j ju s\" \"name\":\"a@x.test\"" STR:CONTAINS? TTRUE
+   j ju s\" \"name\":\"b@x.test\"" STR:CONTAINS? TTRUE ;
 
 : UT-ORPHAN-STATUS ( -- ) [: UT-ORPHAN-STATUS-KEEP ;] UT-STORE ;
 
@@ -2609,8 +2618,8 @@ create UT-REASON 512 allot
    [: P-CLAUDE s" " CMD-ADD ;] E-SW-ORPHAN-LIVE TTHROWSQ
    CLAUDE-CONFIG$ {: c cu :}
    E-SW-ORPHAN-LIVE REASON$ {: r ru :}
-   r ru s" /login-claude/.claude/.claude.json" CONTAINS? TTRUE
-   r ru c cu CONTAINS? TFALSE ;
+   r ru s" /login-claude/.claude/.claude.json" STR:CONTAINS? TTRUE
+   r ru c cu STR:CONTAINS? TFALSE ;
 
 \ Claude credentials without a config stop usage, status, redeem and add
 : UT-ORPHAN-STOPS ( -- )
@@ -2624,7 +2633,7 @@ create UT-REASON 512 allot
    CLAUDE-CONFIG$ CFG-BA$ WRITE-PRIVATE ;
 
 : UT-UNNAMED-STATUS ( -- )
-   STATUS-JSON$ E-SW-JSON UT-ERROR-KEY$ CONTAINS? TTRUE ;
+   STATUS-JSON$ E-SW-JSON UT-ERROR-KEY$ STR:CONTAINS? TTRUE ;
 
 \ p's live file f made d, which names no account: status shows that as p's
 \ error and usage refreshes no saved login; f is put back afterwards
@@ -2638,7 +2647,7 @@ create UT-REASON 512 allot
    [: UT-UNNAMED-STATUS ;] UT-STORE
    UT-MARK
    p UT-USAGE-ERR
-   UT-LOG-NEW$ s" /oauth/token" CONTAINS? TFALSE
+   UT-LOG-NEW$ s" /oauth/token" STR:CONTAINS? TFALSE
    p UT-SNAP$ s su T$=
    g gu k ku WRITE-PRIVATE ;
 
@@ -2660,9 +2669,9 @@ create UT-REASON 512 allot
    E-SW-REMOTE REASON$ s\" kiba: Anthropic's reset endpoint sent an unknown result \"bogus\"" T$=
    P-CLAUDE s" b@x.test" [: UT-RENEWED-B ;] UT-ROW-LOGIN
    UT-LOG-NEW$ {: l lu :}
-   l lu s" https://platform.claude.com/v1/oauth/token" CONTAINS? TTRUE
-   l lu s" /org-b/reset_rate_limits Authorization: Bearer sk-b-new" CONTAINS? TTRUE
-   l lu s\" Bearer sk-b\n" CONTAINS? TFALSE
+   l lu s" https://platform.claude.com/v1/oauth/token" STR:CONTAINS? TTRUE
+   l lu s" /org-b/reset_rate_limits Authorization: Bearer sk-b-new" STR:CONTAINS? TTRUE
+   l lu s\" Bearer sk-b\n" STR:CONTAINS? TFALSE
    P-CLAUDE s" b@x.test" CMD-FORGET
    UT-ANSWERS-DEFAULT ;
 
@@ -2759,7 +2768,7 @@ variable UT-V
    DB-RESETS-EXPIRY$ s" 2026-11-24T14:00:00Z" T$=
    1 s" juniper_tide" s" " DB-RESETS!
    DB-RESETS-EXPIRY$ nip 0 T=
-   DB-USAGE-ENCODE s" expiresAt" CONTAINS? TFALSE ;
+   DB-USAGE-ENCODE s" expiresAt" STR:CONTAINS? TFALSE ;
 
 \ a second note replaces the first; clearing leaves none
 : UT-DB-PENDING ( -- )
@@ -2881,14 +2890,14 @@ create UT-SQL 2048 allot   variable UT-SQL-U
       s\" {\"label\":\"w\",\"left\":99,\"percent\":1,\"resetsAt\":\"r\"}" UT-WANT+
    loop
    s" ]" UT-WANT+
-   STATUS-JSON$ UT-WANT$ CONTAINS? TTRUE
+   STATUS-JSON$ UT-WANT$ STR:CONTAINS? TTRUE
    0 UT-WANT-U ! s" )  " UT-WANT+
    200 0 ?do
       i 0 > if s"  · " UT-WANT+ then
       s" 99%" UT-WANT+
    loop
    s\" \n" UT-WANT+
-   UT-STATUS-TEXT$ UT-WANT$ CONTAINS? TTRUE
+   UT-STATUS-TEXT$ UT-WANT$ STR:CONTAINS? TTRUE
    [: P-CLAUDE s" m@x.test" DB-REMOVE ;] DB-WRITE ;
 
 \ w@x.test's record: the session and the week stored after a model window,
@@ -2910,8 +2919,8 @@ create UT-SQL 2048 allot   variable UT-SQL-U
 \ reading the percent left
 : UT-STATUS-FIGURES ( -- )
    UT-FIGURES-ROW
-   STATUS-JSON$ FIGURES-LIT$ CONTAINS? TTRUE
-   UT-STATUS-TEXT$ s\" \n    w@x.test (max)  70% · 40% · 9%\n" CONTAINS? TTRUE
+   STATUS-JSON$ FIGURES-LIT$ STR:CONTAINS? TTRUE
+   UT-STATUS-TEXT$ s\" \n    w@x.test (max)  70% · 40% · 9%\n" STR:CONTAINS? TTRUE
    [: P-CLAUDE s" w@x.test" DB-REMOVE ;] DB-WRITE ;
 
 create UT-PTR 128 allot
@@ -3116,8 +3125,8 @@ create UT-PTR 128 allot
    UT-ODD-STATE
    CLAUDE-CONFIG$ CFG-A$ WRITE-PRIVATE
    CLAUDE-CREDS$ CREDS-LONG$ WRITE-PRIVATE
-   STATUS-JSON$ s\" \"error\":\"too many: bytes in a JSON string (limit 64)\"" CONTAINS? TTRUE
-   UT-STATUS-TEXT$ s\" claude: too many: bytes in a JSON string (limit 64)\n" CONTAINS? TTRUE
+   STATUS-JSON$ s\" \"error\":\"too many: bytes in a JSON string (limit 64)\"" STR:CONTAINS? TTRUE
+   UT-STATUS-TEXT$ s\" claude: too many: bytes in a JSON string (limit 64)\n" STR:CONTAINS? TTRUE
    CLAUDE-CONFIG$ s" {not json" WRITE-PRIVATE
    CLAUDE-CREDS$ CREDS-A$ WRITE-PRIVATE
    [: P-CLAUDE s" n@x.test" DB-REMOVE ;] DB-WRITE ;
@@ -3304,8 +3313,8 @@ create UT-LIST UT-LIST-CAP allot
    s" k@x.test" AUTH-KEY-AT$ UT-OUTCOME-RUN
    P-CODEX s" k@x.test" UT-RECORD s" unknown" UT-STATE=
    s" API-key login: no usage windows to read" UT-NOTE=
-   UT-LOG-NEW$ s" at-k" CONTAINS? TFALSE
-   UT-LOG-NEW$ s" rt-k" CONTAINS? TFALSE
+   UT-LOG-NEW$ s" at-k" STR:CONTAINS? TFALSE
+   UT-LOG-NEW$ s" rt-k" STR:CONTAINS? TFALSE
    P-CODEX s" k@x.test" CMD-FORGET ;
 
 \ the live login's 401 is reported, and its token is never refreshed
@@ -3314,8 +3323,8 @@ create UT-LIST UT-LIST-CAP allot
    P-CODEX CMD-USAGE
    P-CODEX s" c@x.test" UT-RECORD s" expired" UT-STATE=
    s" access token rejected; run codex once to refresh it" UT-NOTE=
-   UT-LOG-NEW$ s" Bearer at-c" CONTAINS? TTRUE
-   UT-LOG-NEW$ s" auth.openai.com/oauth/token" CONTAINS? TFALSE
+   UT-LOG-NEW$ s" Bearer at-c" STR:CONTAINS? TTRUE
+   UT-LOG-NEW$ s" auth.openai.com/oauth/token" STR:CONTAINS? TFALSE
    CODEX-AUTH$ READ-FILE$ AUTH-C$ T$= ;
 
 \ a refresh refused after a 401 that did not say token_revoked is an
@@ -3325,7 +3334,7 @@ create UT-LIST UT-LIST-CAP allot
    P-CODEX s" x@x.test" UT-RECORD s" expired" UT-STATE=
    s" access token rejected and the refresh was refused; log in again"
    UT-NOTE=
-   UT-LOG-NEW$ s" rt-x" CONTAINS? TTRUE
+   UT-LOG-NEW$ s" rt-x" STR:CONTAINS? TTRUE
    P-CODEX s" x@x.test" CMD-FORGET ;
 
 \ a 401 on a saved login with no refresh token saved posts nothing
@@ -3334,7 +3343,7 @@ create UT-LIST UT-LIST-CAP allot
    P-CODEX s" m@x.test" UT-RECORD s" expired" UT-STATE=
    s" access token rejected and no refresh token is saved; log in again"
    UT-NOTE=
-   UT-LOG-NEW$ s" auth.openai.com/oauth/token" CONTAINS? TFALSE
+   UT-LOG-NEW$ s" auth.openai.com/oauth/token" STR:CONTAINS? TFALSE
    P-CODEX s" m@x.test" CMD-FORGET ;
 
 \ a refresh answering 200 without an access token is an error; the login
@@ -3351,7 +3360,7 @@ create UT-LIST UT-LIST-CAP allot
    s" t@x.test" AUTH-T$ UT-OUTCOME-RUN
    P-CODEX s" t@x.test" UT-RECORD s" throttled" UT-STATE=
    s" OpenAI is rate limiting usage checks; try again later" UT-NOTE=
-   UT-LOG-NEW$ s" rt-t" CONTAINS? TFALSE
+   UT-LOG-NEW$ s" rt-t" STR:CONTAINS? TFALSE
    P-CODEX s" t@x.test" CMD-FORGET ;
 
 \ each outcome of a Codex probe that the shared answers never give, as its
@@ -3468,15 +3477,15 @@ create UT-WRAP-BUF 1024 allot
 
 : UT-TURN-LINE$ ( ^u8 n ^u8 n -- ^u8 n ) {: s su n nu :}
    SB-RESET s" turn " SB-APPEND s su SB-APPEND
-   STR-SPACE SB-APPEND-C n nu SB-APPEND SB$ ;
+   STR:SPACE SB-APPEND-C n nu SB-APPEND SB$ ;
 
 \ since the mark, name ran with its provider's turn held, never without:
 \ a fake's name, or request for the requests the server took
 : UT-RAN-HELD ( ^u8 n -- ) {: n nu :}
    UT-LOG-NEW$ {: l lu :}
-   l lu s" held" n nu UT-TURN-LINE$ CONTAINS? TTRUE
-   l lu s" free" n nu UT-TURN-LINE$ CONTAINS? TFALSE
-   l lu s" unknown" n nu UT-TURN-LINE$ CONTAINS? TFALSE ;
+   l lu s" held" n nu UT-TURN-LINE$ STR:CONTAINS? TTRUE
+   l lu s" free" n nu UT-TURN-LINE$ STR:CONTAINS? TFALSE
+   l lu s" unknown" n nu UT-TURN-LINE$ STR:CONTAINS? TFALSE ;
 
 \ usage probes each provider's logins inside that provider's turn
 : UT-USAGE-HELD ( -- )
@@ -3588,7 +3597,7 @@ $1A4 constant UT-MODE-OUT                              \ 0644
 
 \ the child's program: requests go nowhere, then MAIN
 : UT-OFFLINE-MAIN$ ( -- ^u8 n )
-   s\" package SW\n: UT-OFFLINE ( -- ) s\" none://\" URL-BASE URL-BASE-U PATH! ;\nUT-OFFLINE\n;package\nMAIN\n" ;
+   s\" split-str\npackage SW\n: UT-OFFLINE ( -- ) s\" none://\" URL-BASE URL-BASE-U PATH! ;\nUT-OFFLINE\n;package\nMAIN\n" ;
 
 \ kiba's MAIN, its arguments to follow
 : UT-KIBA-NEW ( -- PROCESS:request )
